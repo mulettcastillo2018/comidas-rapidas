@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MESERO
+  COCINA
+}
+
+model User {
+  id                 String        @id @default(cuid())
+  name               String
+  email              String        @unique
+  passwordHash       String
+  role               Role
+  isActive           Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  mesaSesiones       MesaSesion[]
+  pedidos            Pedido[]
+  pedidoStatusLogs   PedidoStatusLog[]
+  pedidoItemStatusLogs PedidoItemStatusLog[]
+  facturasCerradas   Factura[]
+  mesasAsignadas     Mesa[]            @relation("MesaAsignada")
+  notificaciones     Notificacion[]
+}
+
+model Categoria {
+  id        String     @id @default(cuid())
+  nombre    String
+  slug      String     @unique
+  icono     String?
+  productos Producto[]
+}
+
+model Producto {
+  id                     String       @id @default(cuid())
+  nombre                 String
+  descripcion            String
+  precio                 Int
+  tiempoPreparacionMinutos Int
+  categoriaId            String
+  categoria              Categoria    @relation(fields: [categoriaId], references: [id])
+  imagenUrl              String?
+  disponible             Boolean      @default(true)
+  isActive               Boolean      @default(true)
+  createdAt              DateTime     @default(now())
+  pedidoItems            PedidoItem[]
+}
+
+enum MesaEstado {
+  LIBRE
+  OCUPADA
+}
+
+model Mesa {
+  id               String       @id @default(cuid())
+  numero           String       @unique
+  capacidad        Int
+  estado           MesaEstado   @default(LIBRE)
+  // Si se asigna, solo ese mesero (o el Admin) puede abrir esta mesa. Si queda
+  // en null, la mesa está "libre" y cualquier mesero puede atenderla.
+  meseroAsignadoId String?
+  meseroAsignado   User?        @relation("MesaAsignada", fields: [meseroAsignadoId], references: [id])
+  sesiones         MesaSesion[]
+}
+
+enum MesaSesionEstado {
+  ABIERTA
+  CUENTA_SOLICITADA
+  CERRADA
+}
+
+model MesaSesion {
+  id                String           @id @default(cuid())
+  mesaId            String
+  mesa              Mesa             @relation(fields: [mesaId], references: [id])
+  meseroId          String
+  mesero            User             @relation(fields: [meseroId], references: [id])
+  nombreResponsable String
+  // Sillas por encima de la capacidad de la mesa (traídas de otra mesa o de
+  // bodega) — el mesero debe confirmarlo explícitamente al abrir la mesa.
+  sillasAdicionales Int              @default(0)
+  estado            MesaSesionEstado @default(ABIERTA)
+  abiertaEn         DateTime         @default(now())
+  cerradaEn         DateTime?
+  comensales        Comensal[]
+  pedidos           Pedido[]
+  factura           Factura?
+}
+
+model Comensal {
+  id           String       @id @default(cuid())
+  mesaSesionId String
+  mesaSesion   MesaSesion   @relation(fields: [mesaSesionId], references: [id])
+  nombre       String
+  pedidoItems  PedidoItem[]
+}
+
+enum PedidoEstado {
+  RECIBIDO
+  EN_PREPARACION
+  LISTO
+  ENTREGADO
+  CANCELADO
+}
+
+model Pedido {
+  id             String            @id @default(cuid())
+  mesaSesionId   String
+  mesaSesion     MesaSesion        @relation(fields: [mesaSesionId], references: [id])
+  meseroId       String
+  mesero         User              @relation(fields: [meseroId], references: [id])
+  estado         PedidoEstado      @default(RECIBIDO)
+  notasGenerales String?
+  creadoEn       DateTime          @default(now())
+  iniciadoEn     DateTime?
+  listoEn        DateTime?
+  entregadoEn    DateTime?
+  items          PedidoItem[]
+  statusLogs     PedidoStatusLog[]
+}
+
+// Cocina despacha producto por producto (no el pedido completo de una sola
+// vez), así que el estado real vive aquí. Pedido.estado es un agregado
+// derivado de estos ítems (ver services/pedidoAggregate.ts), útil para
+// listar/filtrar sin tener que revisar cada ítem.
+model PedidoItem {
+  id                       String       @id @default(cuid())
+  pedidoId                 String
+  pedido                   Pedido       @relation(fields: [pedidoId], references: [id])
+  comensalId               String?
+  comensal                 Comensal?    @relation(fields: [comensalId], references: [id])
+  productoId               String
+  producto                 Producto     @relation(fields: [productoId], references: [id])
+  cantidad                 Int
+  notas                    String?
+  precioUnitario           Int
+  tiempoPreparacionMinutos Int
+  estado                   PedidoEstado @default(RECIBIDO)
+  iniciadoEn               DateTime?
+  listoEn                  DateTime?
+  // Evita reenviar la alerta de retraso cada vez que el chequeo periódico
+  // corre; se marca true la primera vez que se notifica el retraso.
+  retrasoNotificado        Boolean      @default(false)
+  statusLogs               PedidoItemStatusLog[]
+}
+
+model PedidoItemStatusLog {
+  id            String        @id @default(cuid())
+  pedidoItemId  String
+  pedidoItem    PedidoItem    @relation(fields: [pedidoItemId], references: [id])
+  deEstado      PedidoEstado?
+  aEstado       PedidoEstado
+  cambiadoPorId String
+  cambiadoPor   User          @relation(fields: [cambiadoPorId], references: [id])
+  cambiadoEn    DateTime      @default(now())
+}
+
+// Trazabilidad de cada cambio de estado de un pedido (mismo patrón que
+// PqrsStatusLog/ProductDiscountLog en tienda-virtual) — permite medir después
+// tiempos reales de preparación vs. estimados.
+model PedidoStatusLog {
+  id           String       @id @default(cuid())
+  pedidoId     String
+  pedido       Pedido       @relation(fields: [pedidoId], references: [id])
+  deEstado     PedidoEstado?
+  aEstado      PedidoEstado
+  cambiadoPorId String
+  cambiadoPor  User         @relation(fields: [cambiadoPorId], references: [id])
+  cambiadoEn   DateTime     @default(now())
+}
+
+enum FacturaEstado {
+  PENDIENTE
+  PAGADA
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TARJETA
+  OTRO
+}
+
+enum NotificacionTipo {
+  PEDIDO_NUEVO
+  ITEM_RETRASADO
+  ITEM_LISTO
+}
+
+// Notificación entregada a un usuario puntual (mesero dueño de la mesa,
+// o cada usuario de COCINA activo cuando aplica) — persistida para que el
+// centro de notificaciones sobreviva a un refresh, y empujada en vivo por
+// Socket.IO al momento de crearse.
+model Notificacion {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id])
+  tipo         NotificacionTipo
+  mensaje      String
+  pedidoId     String?
+  pedidoItemId String?
+  leida        Boolean          @default(false)
+  creadaEn     DateTime         @default(now())
+}
+
+model Factura {
+  id            String        @id @default(cuid())
+  mesaSesionId  String        @unique
+  mesaSesion    MesaSesion    @relation(fields: [mesaSesionId], references: [id])
+  subtotal      Int
+  propinaMonto  Int           @default(0)
+  total         Int
+  estado        FacturaEstado @default(PENDIENTE)
+  metodoPago    MetodoPago?
+  generadaEn    DateTime      @default(now())
+  pagadaEn      DateTime?
+  cerradaPorId  String?
+  cerradaPor    User?         @relation(fields: [cerradaPorId], references: [id])
+}

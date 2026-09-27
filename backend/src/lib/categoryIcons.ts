@@ -1,0 +1,26 @@
+// Debe mantenerse en sincronía con la lista de íconos disponibles en
+// frontend/src/lib/categoryIcons.tsx (los nombres corresponden a componentes de lucide-react).
+export const CATEGORY_ICON_NAMES = [
+  "Beef",
+  "Pizza",
+  "Sandwich",
+  "CupSoda",
+  "Soup",
+  "IceCreamCone",
+  "Salad",
+  "Flame",
+  "UtensilsCrossed",
+  "Coffee",
+  "Cookie",
+  "Fish",
+  "Drumstick",
+  "Utensils",
+  "GlassWater",
+  "Popcorn",
+  "Croissant",
+  "Donut",
+  "Milk",
+  "Wheat",
+  "ChefHat",
+  "Tag",
+] as const;
