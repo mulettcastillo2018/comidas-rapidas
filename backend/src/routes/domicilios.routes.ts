@@ -8,6 +8,9 @@ import { crearPedidoEnTx, anunciarPedidoNuevo, pedidoInclude } from "../services
 import { cobroSchema, METODOS_PAGO, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { avisarAutorizacion, exigirAutorizacion } from "../services/autorizacion";
 import { emitPedidoActualizado } from "../realtime/socket";
+import type { Prisma } from "@prisma/client";
+import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
+import { programarProcesamiento } from "../services/facturacion/servicio";
 
 export const domiciliosRouter = Router();
 domiciliosRouter.use(requireAuth, requireAdmin);
@@ -133,6 +136,8 @@ domiciliosRouter.post(
     });
 
     await anunciarPedidoNuevo(pedidoId);
+    // Las de apps y las ya pagadas se facturan de una vez.
+    programarProcesamiento();
     res.status(201).json(await prisma.pedido.findUnique({ where: { id: pedidoId }, include: incluirDomicilio }));
   })
 );
@@ -222,6 +227,8 @@ domiciliosRouter.put(
     const cobro = cobroSchema.safeParse(req.body?.cobro);
     if (pendiente && !cobro.success) throw new ErrorDeNegocio("Registra cómo pagó el cliente al recibir", 400);
     const pagos = pendiente && cobro.success ? pagosDelCobro(cobro.data, factura!.total) : [];
+    const adquiriente = adquirienteDelCobro(req.body?.cobro);
+    if (adquiriente === "invalido") throw new ErrorDeNegocio(MENSAJE_ADQUIRIENTE, 400);
 
     await prisma.$transaction(async (tx) => {
       const tomado = await tx.domicilio.updateMany({ where: { id: pedido.domicilio!.id, estado: "EN_CAMINO" }, data: { estado: "ENTREGADO", entregadoEn: new Date() } });
@@ -229,13 +236,19 @@ domiciliosRouter.put(
       if (pendiente) {
         const cobrada = await tx.factura.updateMany({
           where: { id: factura!.id, estado: "PENDIENTE" },
-          data: { estado: "PAGADA", pagadaEn: new Date(), cerradaPorId: req.user!.userId },
+          data: {
+            estado: "PAGADA",
+            pagadaEn: new Date(),
+            cerradaPorId: req.user!.userId,
+            ...(adquiriente ? { adquiriente: adquiriente as unknown as Prisma.InputJsonValue } : {}),
+          },
         });
         if (cobrada.count === 0) throw new ErrorDeNegocio("Esta cuenta ya fue resuelta", 409);
         const metodoPago = await registrarPagos(tx, factura!.id, pagos);
         await tx.factura.update({ where: { id: factura!.id }, data: { metodoPago } });
       }
     });
+    if (pendiente) programarProcesamiento();
     await responder(res, pedido.id);
   })
 );

@@ -453,7 +453,8 @@ export type NotificacionTipo =
   | "AUTORIZACION"
   | "STOCK"
   | "LLAMADO_MESA"
-  | "OPINION";
+  | "OPINION"
+  | "FACTURACION";
 
 export interface Notificacion {
   id: string;

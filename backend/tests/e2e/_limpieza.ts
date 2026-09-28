@@ -70,6 +70,9 @@ export async function limpiar(c: Creados) {
   await prisma.solicitudPedidoItem.deleteMany({ where: { solicitudId: { in: solicitudes } } });
   await prisma.solicitudPedido.deleteMany({ where: { id: { in: solicitudes } } });
   const deFacturas = { OR: [{ pedidoId: { in: pedidos } }, { mesaSesionId: { in: sesiones } }] };
+  // Las notas primero: apuntan al documento que anulan.
+  await prisma.documentoFiscal.deleteMany({ where: { factura: deFacturas, anulaId: { not: null } } });
+  await prisma.documentoFiscal.deleteMany({ where: { factura: deFacturas } });
   await prisma.pagoFactura.deleteMany({ where: { factura: deFacturas } });
   await prisma.factura.deleteMany({ where: deFacturas });
   await prisma.pedidoItemStatusLog.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });

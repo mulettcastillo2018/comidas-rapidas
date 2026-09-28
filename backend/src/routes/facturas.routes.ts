@@ -9,6 +9,10 @@ import { requireAuth, requireMesero } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { emitMesaSesionCerrada } from "../realtime/socket";
+import type { Prisma } from "@prisma/client";
+import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
+import { programarProcesamiento } from "../services/facturacion/servicio";
+import type { Adquiriente } from "../services/facturacion/documento";
 
 export const facturasRouter = Router();
 
@@ -119,7 +123,7 @@ facturasRouter.post(
 async function resolverCuentaDeMesa(
   facturaId: string,
   usuario: { userId: string; role: string },
-  resultado: { estado: "PAGADA"; cobro: Cobro } | { estado: "PERDIDA"; autorizadaPorId: string }
+  resultado: { estado: "PAGADA"; cobro: Cobro; adquiriente?: Adquiriente } | { estado: "PERDIDA"; autorizadaPorId: string }
 ) {
   const factura = await prisma.factura.findUnique({ where: { id: facturaId }, include: { mesaSesion: true } });
   if (!factura) throw new ErrorDeNegocio("Factura no encontrada", 404);
@@ -138,6 +142,7 @@ async function resolverCuentaDeMesa(
         pagadaEn: new Date(),
         cerradaPorId: usuario.userId,
         ...(resultado.estado === "PERDIDA" ? { autorizadaPorId: resultado.autorizadaPorId } : {}),
+        ...(resultado.estado === "PAGADA" && resultado.adquiriente ? { adquiriente: resultado.adquiriente as unknown as Prisma.InputJsonValue } : {}),
       },
     });
     if (resuelta.count === 0) throw new ErrorDeNegocio("Esta cuenta ya fue resuelta", 409);
@@ -150,6 +155,7 @@ async function resolverCuentaDeMesa(
   });
 
   emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id });
+  if (resultado.estado === "PAGADA") programarProcesamiento();
   return prisma.factura.findUnique({ where: { id: factura.id } });
 }
 
@@ -163,7 +169,10 @@ facturasRouter.put(
       res.status(400).json({ error: "Indica cómo se pagó: un método, o la lista de pagos con su método y monto" });
       return;
     }
-    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data });
+    // Si el cliente pide la factura electrónica a su nombre.
+    const adquiriente = adquirienteDelCobro(req.body);
+    if (adquiriente === "invalido") throw new ErrorDeNegocio(MENSAJE_ADQUIRIENTE, 400);
+    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data, adquiriente });
     res.json(factura);
   })
 );

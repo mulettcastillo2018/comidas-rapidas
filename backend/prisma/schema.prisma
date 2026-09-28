@@ -573,6 +573,8 @@ enum NotificacionTipo {
   LLAMADO_MESA
   // Al admin: un cliente calificó mal la atención.
   OPINION
+  // Al admin: la DIAN rechazó un documento o se acaba la numeración.
+  FACTURACION
 }
 
 // Notificación entregada a un usuario puntual (mesero dueño de la mesa,
@@ -685,9 +687,122 @@ model Factura {
   // cerrado caja desde que se cobró o se dio por perdida).
   cierreCajaId  String?
   cierreCaja    CierreCaja?   @relation(fields: [cierreCajaId], references: [id])
+  // Datos del cliente que pidió la factura a su nombre (tipo y número de
+  // documento, nombre, correo). null = consumidor final.
+  adquiriente   Json?
+  documentosFiscales DocumentoFiscal[]
 
   @@index([cierreCajaId])
   @@index([estado, pagadaEn])
+}
+
+enum TipoDocumentoFiscal {
+  // Factura electrónica de venta.
+  FACTURA
+  // Documento equivalente electrónico POS (Resolución DIAN 165 de 2023).
+  POS
+  // Anula una factura electrónica.
+  NOTA_CREDITO
+  // Anula un documento POS.
+  NOTA_AJUSTE
+}
+
+enum EstadoDocumentoFiscal {
+  // Todavía no se pudo enviar (sin conexión, Alanube caído o sin configurar):
+  // se reintenta solo.
+  PENDIENTE
+  // Alanube lo recibió; falta la respuesta de la DIAN.
+  ENVIADO
+  ACEPTADO
+  // La DIAN (o Alanube) lo rechazó: hay que corregir y reenviar.
+  RECHAZADO
+}
+
+enum ImpuestoVenta {
+  // Impuesto nacional al consumo (restaurantes): 8%.
+  INC
+  IVA
+  // No responsable de IVA ni de INC.
+  NINGUNO
+}
+
+// Documento electrónico enviado a la DIAN por medio de Alanube, por cada
+// cuenta cobrada (o nota que anula uno anterior).
+model DocumentoFiscal {
+  id                String                @id @default(cuid())
+  facturaId         String
+  factura           Factura               @relation(fields: [facturaId], references: [id])
+  tipo              TipoDocumentoFiscal
+  prefijo           String
+  numero            Int
+  estado            EstadoDocumentoFiscal @default(PENDIENTE)
+  // Lo que se envía; si hay que reintentar por conexión, se reenvía igual.
+  contenido         Json
+  // Evita que un reintento cree el documento dos veces en la DIAN.
+  claveIdempotencia String                @unique
+  alanubeId         String?
+  // CUFE (factura) o CUDE (POS y notas).
+  codigoUnico       String?
+  qr                String?
+  mensaje           String?
+  errores           String[]
+  intentos          Int                   @default(0)
+  proximoIntento    DateTime              @default(now())
+  clienteNombre     String
+  clienteIdentificacion String
+  total             Int
+  // Documento que esta nota anula.
+  anulaId           String?               @unique
+  anula             DocumentoFiscal?      @relation("Anulacion", fields: [anulaId], references: [id])
+  anuladoPor        DocumentoFiscal?      @relation("Anulacion")
+  creadoEn          DateTime              @default(now())
+  actualizadoEn     DateTime              @updatedAt
+
+  @@unique([tipo, prefijo, numero])
+  @@index([estado, proximoIntento])
+  @@index([facturaId])
+}
+
+// Datos para facturar electrónicamente (una sola fila, id "unica"). El token
+// de Alanube puede venir de la variable ALANUBE_TOKEN o guardarse aquí.
+model ConfiguracionFiscal {
+  id                  String              @id @default("unica")
+  activa              Boolean             @default(false)
+  // Desde cuándo: las cuentas cobradas antes no se facturan.
+  activadaEn          DateTime?
+  alanubeUrl          String              @default("https://sandbox-api.alegra.com/e-provider/col/v1")
+  alanubeToken        String?
+  alanubeCompanyId    String?
+  nit                 String?
+  dv                  String?
+  razonSocial         String?
+  // Lo que se emite a un consumidor final (a quien pide factura con sus
+  // datos siempre se le emite factura electrónica).
+  documentoPorDefecto TipoDocumentoFiscal @default(FACTURA)
+  impuesto            ImpuestoVenta       @default(INC)
+  impuestoPct         Int                 @default(8)
+  feResolucion        String?
+  fePrefijo           String?
+  feDesde             Int?
+  feHasta             Int?
+  feFechaInicio       String?
+  feFechaFin          String?
+  feClaveTecnica      String?
+  feSiguiente         Int?
+  posResolucion       String?
+  posPrefijo          String?
+  posDesde            Int?
+  posHasta            Int?
+  posFechaInicio      String?
+  posFechaFin         String?
+  posSiguiente        Int?
+  notaPrefijo         String              @default("NC")
+  notaSiguiente       Int                 @default(1)
+  ajustePrefijo       String              @default("NA")
+  ajusteSiguiente     Int                 @default(1)
+  // Caja registradora (obligatorio en el documento POS).
+  cajaPlaca           String?
+  cajaUbicacion       String?
 }
 
 // Cierre de turno: el sistema suma lo cobrado desde el cierre anterior (por

@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { CampoPesos } from "@/components/CampoPesos";
 import { METODO_PAGO_LABEL, METODOS_PAGO } from "@/lib/estados";
 import { formatoPesos } from "@/lib/formato";
+import { apiFetch } from "@/lib/api";
+import { problemaAdquiriente, type Adquiriente } from "@/lib/facturacion";
+import { useAuthStore } from "@/store/auth.store";
+import { ADQUIRIENTE_VACIO, DatosFacturacion } from "@/components/DatosFacturacion";
 import type { MetodoPago } from "@/lib/types";
 
 export interface PagoRegistrado {
@@ -12,8 +16,21 @@ export interface PagoRegistrado {
   monto: number;
 }
 
-// Lo que se le manda al servidor: un solo método, o la lista de pagos.
-export type Cobro = { metodoPago: MetodoPago } | { pagos: PagoRegistrado[] };
+// Lo que se le manda al servidor: un solo método, o la lista de pagos; y los
+// datos del cliente si pidió la factura electrónica a su nombre.
+export type Cobro = ({ metodoPago: MetodoPago } | { pagos: PagoRegistrado[] }) & { adquiriente?: Adquiriente };
+
+// Una sola consulta por pestaña: si la facturación electrónica está activa.
+let facturacionActiva: Promise<boolean> | null = null;
+function consultarFacturacionActiva(token: string) {
+  facturacionActiva ??= apiFetch<{ activa: boolean }>("/facturacion/activa", { token })
+    .then((r) => r.activa)
+    .catch(() => {
+      facturacionActiva = null;
+      return false;
+    });
+  return facturacionActiva;
+}
 
 interface Fila {
   metodo: MetodoPago;
@@ -42,6 +59,15 @@ export function RegistroPagos({
   const [metodo, setMetodo] = useState<MetodoPago>("EFECTIVO");
   const [filas, setFilas] = useState<Fila[]>([]);
   const [recibido, setRecibido] = useState<number | null>(null);
+  const token = useAuthStore((state) => state.token);
+  const [conFactura, setConFactura] = useState(false);
+  const [pideFactura, setPideFactura] = useState(false);
+  const [adquiriente, setAdquiriente] = useState<Adquiriente>(ADQUIRIENTE_VACIO);
+  const problemaFactura = pideFactura ? problemaAdquiriente(adquiriente) : null;
+
+  useEffect(() => {
+    if (token) consultarFacturacionActiva(token).then(setConFactura);
+  }, [token]);
 
   const asignado = filas.reduce((s, f) => s + (f.monto ?? 0), 0);
   const falta = total - asignado;
@@ -69,11 +95,12 @@ export function RegistroPagos({
   }
 
   function cobrar() {
-    if (!dividido) return onCobrar({ metodoPago: metodo });
+    const factura = pideFactura ? { adquiriente: { ...adquiriente, nombre: adquiriente.nombre.trim(), email: adquiriente.email || null } } : {};
+    if (!dividido) return onCobrar({ metodoPago: metodo, ...factura });
     // Si todo terminó en un mismo método, se registra como un solo pago.
     const metodos = new Set(filasValidas.map((f) => f.metodo));
-    if (metodos.size === 1) return onCobrar({ metodoPago: filasValidas[0].metodo });
-    onCobrar({ pagos: filasValidas.map((f) => ({ metodo: f.metodo, monto: f.monto! })) });
+    if (metodos.size === 1) return onCobrar({ metodoPago: filasValidas[0].metodo, ...factura });
+    onCobrar({ pagos: filasValidas.map((f) => ({ metodo: f.metodo, monto: f.monto! })), ...factura });
   }
 
   return (
@@ -167,9 +194,26 @@ export function RegistroPagos({
         </div>
       ) : null}
 
+      {conFactura ? (
+        <div className="space-y-2 rounded-lg border border-dashed border-border p-2 text-xs">
+          <label className="flex items-center gap-2 font-semibold">
+            <input type="checkbox" checked={pideFactura} onChange={(e) => setPideFactura(e.target.checked)} />
+            El cliente pide la factura electrónica a su nombre
+          </label>
+          {pideFactura ? (
+            <>
+              <DatosFacturacion valor={adquiriente} onCambio={setAdquiriente} />
+              {problemaFactura ? <p className="text-amber-700">{problemaFactura}</p> : null}
+            </>
+          ) : (
+            <p className="text-muted-foreground">Si no, se emite a consumidor final.</p>
+          )}
+        </div>
+      ) : null}
+
       <button
         onClick={cobrar}
-        disabled={enviando || !listo || (vueltas !== null && vueltas < 0)}
+        disabled={enviando || !listo || (vueltas !== null && vueltas < 0) || Boolean(problemaFactura)}
         className="btn-primary w-full rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
       >
         {enviando ? "Guardando…" : textoBoton}

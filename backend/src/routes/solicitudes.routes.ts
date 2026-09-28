@@ -12,6 +12,8 @@ import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
 import { construirLineas } from "../services/lineasPedido";
 import { mejorPromocion, precioConDescuento, promocionesVigentes } from "../services/promociones";
 import { incluirCatalogo } from "../services/catalogo";
+import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
+import { programarProcesamiento } from "../services/facturacion/servicio";
 import { cobroSchema, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
@@ -284,6 +286,8 @@ solicitudesRouter.put(
       res.status(400).json({ error: "Indica cómo pagó el cliente: un método, o la lista de pagos con su método y monto" });
       return;
     }
+    const adquiriente = adquirienteDelCobro(req.body);
+    if (adquiriente === "invalido") throw new ErrorDeNegocio(MENSAJE_ADQUIRIENTE, 400);
 
     const { pedidoId, facturaId } = await prisma.$transaction(async (tx) => {
       const solicitud = await tx.solicitudPedido.findUnique({ where: { id: req.params.id }, include: { items: true } });
@@ -315,6 +319,7 @@ solicitudesRouter.put(
           estado: "PAGADA",
           pagadaEn: new Date(),
           cerradaPorId: req.user!.userId,
+          ...(adquiriente ? { adquiriente: adquiriente as unknown as Prisma.InputJsonValue } : {}),
         },
       });
       const metodoPago = await registrarPagos(tx, factura.id, pagos);
@@ -324,6 +329,7 @@ solicitudesRouter.put(
     });
 
     const pedidoCompleto = await anunciarPedidoNuevo(pedidoId);
+    programarProcesamiento();
     const factura = await prisma.factura.findUnique({ where: { id: facturaId } });
     const solicitudActualizada = await solicitudConDetalle(req.params.id);
     emitSolicitudActualizada(solicitudActualizada);

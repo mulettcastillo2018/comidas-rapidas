@@ -21,6 +21,7 @@ export const enlaces = {
     `/mesero/mesa/${mesaSesionId}${pedidoItemId ? `?item=${pedidoItemId}` : ""}`,
   grillaMesas: (mesaId: string) => `/mesero?mesa=${mesaId}`,
   mostrador: (solicitudId: string) => `/admin/mostrador?solicitud=${solicitudId}`,
+  facturacion: (documentoId?: string) => `/admin/facturacion${documentoId ? `?documento=${documentoId}` : ""}`,
 };
 
 export async function notificarUsuarios(params: NotificarUsuariosParams) {

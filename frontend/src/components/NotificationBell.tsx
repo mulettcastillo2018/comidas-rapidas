@@ -19,6 +19,7 @@ const TIPO_LABEL: Record<string, string> = {
   STOCK: "Inventario",
   LLAMADO_MESA: "Te llaman",
   OPINION: "Opinión de un cliente",
+  FACTURACION: "Facturación electrónica",
 };
 
 // A dónde lleva el clic. Las notificaciones nuevas traen el destino exacto
@@ -38,6 +39,8 @@ function destino(n: Notificacion, rol: UserRole): string {
     case "AUTORIZACION":
     case "OPINION":
       return "/admin/reportes";
+    case "FACTURACION":
+      return "/admin/facturacion";
     default:
       return "/mesero";
   }
