@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma";
-import { notificarPorRol } from "./notificaciones";
+import { enlaces, notificarPorRol } from "./notificaciones";
 
 const INTERVALO_MS = 30_000;
 
@@ -35,6 +35,7 @@ async function revisarItemsRetrasados() {
       mensaje: `${item.producto.nombre} de ${ubicacion} lleva más de ${item.tiempoPreparacionMinutos} min — ¿va atrasado o ya salió y falta marcarlo?`,
       pedidoId: item.pedidoId,
       pedidoItemId: item.id,
+      enlace: enlaces.cocina(item.pedidoId, item.id),
     });
   }
 }

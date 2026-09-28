@@ -5,6 +5,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { reemplazarPedidoActivo } from "@/lib/pedidos";
 import { formatoPesos } from "@/lib/formato";
+import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import { estimarListoEn, formatoHora } from "@/lib/tiempoEstimado";
 import { useAuthStore } from "@/store/auth.store";
 import type { MetodoPago, Pedido, SolicitudPedido } from "@/lib/types";
@@ -24,6 +25,8 @@ export default function AdminMostradorPage() {
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
   const [metodoPago, setMetodoPago] = useState<MetodoPago>("EFECTIVO");
   const [error, setError] = useState<string | null>(null);
+  // Al llegar desde la notificación de un pedido de mostrador.
+  const [resaltado, lectorResaltado] = useResaltado(["solicitud"]);
 
   async function cargarSolicitudes() {
     if (!token) return;
@@ -110,6 +113,7 @@ export default function AdminMostradorPage() {
         Pedidos de clientes sin mesa (QR de mostrador) — se atienden y se cobran aquí, en caja. Se actualiza solo.
       </p>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {lectorResaltado}
 
       <section>
         <h2 className="text-sm font-bold">Esperando confirmación en caja</h2>
@@ -120,7 +124,11 @@ export default function AdminMostradorPage() {
             {solicitudes.map((solicitud) => {
               const total = solicitud.items.reduce((sum, i) => sum + (i.producto?.precio ?? 0) * i.cantidad, 0);
               return (
-                <div key={solicitud.id} className="rounded-xl border-2 border-accent bg-accent/5 p-4">
+                <div
+                  key={solicitud.id}
+                  data-resaltado={resaltado.solicitud === solicitud.id}
+                  className={`rounded-xl border-2 border-accent bg-accent/5 p-4 ${resaltado.solicitud === solicitud.id ? CLASE_RESALTADO : ""}`}
+                >
                   <p className="font-semibold">{solicitud.nombreCliente}</p>
                   <p className="text-xs text-muted-foreground">Tel: {solicitud.telefonoCliente}</p>
                   <ul className="mt-2 space-y-1 text-sm">

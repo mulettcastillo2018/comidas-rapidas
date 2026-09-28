@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
+import { useResaltado } from "@/lib/resaltado";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { SolicitudesCliente } from "@/components/mesa/SolicitudesCliente";
@@ -30,6 +31,8 @@ export default function MesaSesionPage() {
   const [actualizandoItemId, setActualizandoItemId] = useState<string | null>(null);
   const [generandoCuenta, setGenerandoCuenta] = useState(false);
   const [pagando, setPagando] = useState(false);
+  // Al llegar desde "producto listo para entregar": ese producto se resalta.
+  const [resaltado, lectorResaltado] = useResaltado(["item"]);
 
   async function cargarSesion() {
     if (!token) return;
@@ -225,7 +228,9 @@ export default function MesaSesionPage() {
         <NuevoPedido productos={productos} comensales={comensales} enviando={enviando} onEnviar={enviarPedido} />
       ) : null}
 
+      {lectorResaltado}
       <ListaPedidos
+        resaltarItemId={resaltado.item}
         pedidos={pedidos}
         comensales={comensales}
         esPropietario={esPropietario}

@@ -8,16 +8,29 @@ interface NotificarUsuariosParams {
   mensaje: string;
   pedidoId?: string;
   pedidoItemId?: string;
+  // A dónde lleva al hacer clic; ver enlaces.* abajo.
+  enlace?: string;
 }
 
+// Destinos de las notificaciones. Los parámetros de la URL le dicen a esa
+// pantalla qué resaltar (el pedido, el producto, la mesa o la solicitud).
+export const enlaces = {
+  cocina: (pedidoId: string, pedidoItemId?: string) =>
+    `/cocina?pedido=${pedidoId}${pedidoItemId ? `&item=${pedidoItemId}` : ""}`,
+  mesaAbierta: (mesaSesionId: string, pedidoItemId?: string) =>
+    `/mesero/mesa/${mesaSesionId}${pedidoItemId ? `?item=${pedidoItemId}` : ""}`,
+  grillaMesas: (mesaId: string) => `/mesero?mesa=${mesaId}`,
+  mostrador: (solicitudId: string) => `/admin/mostrador?solicitud=${solicitudId}`,
+};
+
 export async function notificarUsuarios(params: NotificarUsuariosParams) {
-  const { userIds, tipo, mensaje, pedidoId, pedidoItemId } = params;
+  const { userIds, tipo, mensaje, pedidoId, pedidoItemId, enlace } = params;
   if (userIds.length === 0) return;
 
   const creadas = await prisma.$transaction(
     userIds.map((userId) =>
       prisma.notificacion.create({
-        data: { userId, tipo, mensaje, pedidoId, pedidoItemId },
+        data: { userId, tipo, mensaje, pedidoId, pedidoItemId, enlace },
       })
     )
   );
@@ -32,6 +45,7 @@ interface NotificarPorRolParams {
   mensaje: string;
   pedidoId?: string;
   pedidoItemId?: string;
+  enlace?: string;
 }
 
 // Difunde a todo el personal activo de un rol (p. ej. toda la cocina cuando

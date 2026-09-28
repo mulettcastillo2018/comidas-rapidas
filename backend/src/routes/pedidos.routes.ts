@@ -7,7 +7,7 @@ import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { emitPedidoActualizado } from "../realtime/socket";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
-import { notificarUsuarios, notificarPorRol } from "../services/notificaciones";
+import { enlaces, notificarUsuarios, notificarPorRol } from "../services/notificaciones";
 import { crearPedido, pedidoInclude } from "../services/pedidos";
 
 export const pedidosRouter = Router();
@@ -169,6 +169,7 @@ pedidosRouter.put(
         tipo: "ITEM_CANCELADO",
         mensaje: `Se canceló el pedido completo de ${ubicacion} (ya había productos en cocina)`,
         pedidoId: pedidoActualizado.id,
+        enlace: enlaces.cocina(pedidoActualizado.id),
       });
     }
     res.json(pedidoActualizado);
@@ -276,6 +277,7 @@ pedidosRouter.put(
           mensaje: `${itemActualizado?.producto?.nombre ?? "Producto"} para ${ubicacion} está listo para entregar`,
           pedidoId: pedidoActualizado.id,
           pedidoItemId: item.id,
+          enlace: enlaces.mesaAbierta(pedidoActualizado.mesaSesion.id, item.id),
         });
       }
     }
@@ -287,6 +289,7 @@ pedidosRouter.put(
         mensaje: `Se canceló ${itemActualizado?.producto?.nombre ?? "un producto"} de ${ubicacion} (ya estaba en cocina)`,
         pedidoId: pedidoActualizado.id,
         pedidoItemId: item.id,
+        enlace: enlaces.cocina(pedidoActualizado.id),
       });
     }
     res.json(pedidoActualizado);

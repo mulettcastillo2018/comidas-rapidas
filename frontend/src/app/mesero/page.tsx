@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
+import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import { useAuthStore } from "@/store/auth.store";
 import type { Mesa, MesaSesion, Pedido, SolicitudPedido } from "@/lib/types";
 
@@ -22,6 +23,8 @@ export default function MeseroPage() {
   const [confirmaSillaExtra, setConfirmaSillaExtra] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Al llegar desde la notificación de un pedido QR en una mesa sin abrir.
+  const [resaltado, lectorResaltado] = useResaltado(["mesa"]);
 
   async function loadData() {
     if (!token) return;
@@ -149,6 +152,7 @@ export default function MeseroPage() {
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <h1 className="text-2xl font-bold">Mesas</h1>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {lectorResaltado}
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {mesas.map((mesa) => {
@@ -237,11 +241,12 @@ export default function MeseroPage() {
           ) : (
             <button
               key={mesa.id}
+              data-resaltado={resaltado.mesa === mesa.id}
               disabled={mesa.estado === "LIBRE" && asignadaAOtroMesero(mesa)}
               onClick={() => (mesa.estado === "LIBRE" ? startOpening(mesa) : sesion && router.push(`/mesero/mesa/${sesion.id}`))}
               className={`flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${
                 mesa.estado === "LIBRE" ? "border-border hover:border-accent" : "border-accent bg-accent/5"
-              }`}
+              } ${resaltado.mesa === mesa.id ? CLASE_RESALTADO : ""}`}
             >
               <p className="text-lg font-bold">Mesa {mesa.numero}</p>
               <p className="text-xs text-muted-foreground">{mesa.capacidad} puestos</p>

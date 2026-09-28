@@ -289,6 +289,8 @@ export interface Notificacion {
   mensaje: string;
   pedidoId: string | null;
   pedidoItemId: string | null;
+  // Pantalla a la que lleva al hacer clic (null en notificaciones viejas).
+  enlace: string | null;
   leida: boolean;
   creadaEn: string;
 }

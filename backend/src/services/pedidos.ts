@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma";
 import { ErrorDeNegocio } from "../lib/errores";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { emitPedidoNuevo } from "../realtime/socket";
-import { notificarPorRol } from "./notificaciones";
+import { enlaces, notificarPorRol } from "./notificaciones";
 
 export const pedidoInclude = {
   items: { include: { producto: true, comensal: true } },
@@ -110,6 +110,7 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
         tipo: "PEDIDO_NUEVO",
         mensaje: `Nuevo pedido en ${ubicacion} — ${paraCocina} producto(s)`,
         pedidoId: pedidoCompleto.id,
+        enlace: enlaces.cocina(pedidoCompleto.id),
       });
     }
   }

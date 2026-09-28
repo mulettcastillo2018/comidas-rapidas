@@ -243,6 +243,10 @@ model Notificacion {
   mensaje      String
   pedidoId     String?
   pedidoItemId String?
+  // Pantalla a la que lleva al hacer clic (p. ej. la mesa donde está el
+  // producto listo), con lo que hay que resaltar en la URL. Se calcula al
+  // crearla porque después la mesa puede haberse cerrado o cambiado.
+  enlace       String?
   leida        Boolean          @default(false)
   creadaEn     DateTime         @default(now())
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ITEM_ESTADO_LABEL, PEDIDO_ESTADO_LABEL } from "@/lib/estados";
+import { CLASE_RESALTADO } from "@/lib/resaltado";
 import { formatoHora } from "@/lib/tiempoEstimado";
 import type { Comensal, Pedido, PedidoItem } from "@/lib/types";
 import { etiquetaDestino } from "./NuevoPedido";
@@ -16,7 +17,10 @@ export function ListaPedidos({
   onCancelarItem,
   onEntregarPedido,
   onCancelarPedido,
+  resaltarItemId,
 }: {
+  // Producto al que apuntaba la notificación con la que se llegó aquí.
+  resaltarItemId?: string;
   pedidos: Pedido[];
   comensales: Comensal[];
   esPropietario: boolean;
@@ -54,7 +58,11 @@ export function ListaPedidos({
               ) : null}
               <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
                 {pedido.items.map((item) => (
-                  <li key={item.id} className="space-y-1">
+                  <li
+                    key={item.id}
+                    data-resaltado={item.id === resaltarItemId}
+                    className={`space-y-1 rounded-md ${item.id === resaltarItemId ? `${CLASE_RESALTADO} p-1` : ""}`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className={item.estado === "CANCELADO" ? "line-through" : ""}>
                         {item.cantidad}× {item.producto?.nombre} — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}

@@ -9,6 +9,7 @@ import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { PanelDisponibilidad } from "@/components/cocina/PanelDisponibilidad";
+import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import type { Pedido, PedidoItem, Producto } from "@/lib/types";
 
 const COLUMNAS = [
@@ -31,6 +32,11 @@ export default function CocinaPage() {
   const [ahora, setAhora] = useState(() => Date.now());
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cambiandoProductoId, setCambiandoProductoId] = useState<string | null>(null);
+  // Al llegar desde una notificación: el pedido (o el producto puntual, si
+  // es un aviso de retraso) se resalta unos segundos.
+  const [resaltado, lectorResaltado] = useResaltado(["pedido", "item"]);
+  const estaResaltado = (item: ItemConContexto) =>
+    resaltado.item ? item.id === resaltado.item : Boolean(resaltado.pedido) && item.pedidoId === resaltado.pedido;
 
   useEffect(() => {
     if (!token) return;
@@ -141,6 +147,7 @@ export default function CocinaPage() {
       </p>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
 
+      {lectorResaltado}
       <PanelDisponibilidad
         productos={productos}
         cambiando={cambiandoProductoId}
@@ -159,9 +166,10 @@ export default function CocinaPage() {
                 return (
                   <div
                     key={item.id}
+                    data-resaltado={estaResaltado(item)}
                     className={`rounded-lg border p-3 text-sm ${
                       atrasado ? "animate-pulse border-2 border-red-600 bg-red-50" : "border-border"
-                    }`}
+                    } ${estaResaltado(item) ? CLASE_RESALTADO : ""}`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">

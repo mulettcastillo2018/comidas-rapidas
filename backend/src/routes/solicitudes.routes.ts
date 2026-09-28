@@ -8,7 +8,7 @@ import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { crearLimitador } from "../lib/limitador";
 import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
-import { notificarPorRol, notificarUsuarios } from "../services/notificaciones";
+import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
 
 export const solicitudesRouter = Router();
@@ -128,14 +128,27 @@ solicitudesRouter.post(
     });
 
     if (mesa) {
-      // Avisa de inmediato al mesero correspondiente (el asignado a la mesa,
-      // o a todos los meseros activos si la mesa está libre) — así no se
-      // queda esperando en silencio hasta que alguien abra la mesa.
-      const mensaje = `Mesa ${mesa.numero}: el cliente ya dejó listo su pedido para cuando llegues.`;
-      if (mesa.meseroAsignadoId) {
-        await notificarUsuarios({ userIds: [mesa.meseroAsignadoId], tipo: "SOLICITUD_PEDIDO_CLIENTE", mensaje });
+      // Avisa de inmediato al mesero correspondiente — así no se queda
+      // esperando en silencio. Si la mesa ya está abierta, solo a quien la
+      // atiende (y el aviso lo lleva directo a esa mesa); si no, al asignado
+      // o a todos los meseros, y el aviso los lleva a la grilla.
+      const sesionAbierta = await prisma.mesaSesion.findFirst({ where: { mesaId: mesa.id, estado: { not: "CERRADA" } } });
+      const tipo = "SOLICITUD_PEDIDO_CLIENTE" as const;
+      if (sesionAbierta) {
+        await notificarUsuarios({
+          userIds: [sesionAbierta.meseroId],
+          tipo,
+          mensaje: `Mesa ${mesa.numero}: el cliente agregó un pedido desde el QR. Revísalo y confírmalo.`,
+          enlace: enlaces.mesaAbierta(sesionAbierta.id),
+        });
       } else {
-        await notificarPorRol({ rol: "MESERO", tipo: "SOLICITUD_PEDIDO_CLIENTE", mensaje });
+        const mensaje = `Mesa ${mesa.numero}: el cliente ya dejó listo su pedido para cuando llegues.`;
+        const enlace = enlaces.grillaMesas(mesa.id);
+        if (mesa.meseroAsignadoId) {
+          await notificarUsuarios({ userIds: [mesa.meseroAsignadoId], tipo, mensaje, enlace });
+        } else {
+          await notificarPorRol({ rol: "MESERO", tipo, mensaje, enlace });
+        }
       }
     } else {
       // Pedido de mostrador: lo atiende el admin en caja.
@@ -143,6 +156,7 @@ solicitudesRouter.post(
         rol: "ADMIN",
         tipo: "SOLICITUD_PEDIDO_CLIENTE",
         mensaje: `Pedido de mostrador de ${nombreCliente} esperando en caja.`,
+        enlace: enlaces.mostrador(solicitud.id),
       });
     }
     emitSolicitudNueva(solicitud);
