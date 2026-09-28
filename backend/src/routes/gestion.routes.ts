@@ -46,6 +46,10 @@ reportesGestionRouter.get(
 const configuracionSchema = z.object({
   propinaPctCocina: z.number().int().min(0).max(100),
   propinaModo: z.enum(["PROPIAS", "POZO"]),
+  puntosActivo: z.boolean().optional(),
+  pesosPorPunto: z.number().int().min(100).max(1_000_000).optional(),
+  valorPunto: z.number().int().min(1).max(100_000).optional(),
+  minimoCanje: z.number().int().min(1).max(1_000_000).optional(),
 });
 
 configuracionRouter.get(
@@ -60,7 +64,7 @@ configuracionRouter.put(
   "/",
   catchAsync(async (req, res) => {
     const parsed = configuracionSchema.safeParse(req.body);
-    if (!parsed.success) throw new ErrorDeNegocio("El porcentaje para cocina va de 0 a 100", 400);
+    if (!parsed.success) throw new ErrorDeNegocio("Revisa los valores: el porcentaje para cocina va de 0 a 100 y los del programa de puntos deben ser positivos", 400);
     const { id: _id, ...config } = await prisma.configuracion.upsert({ where: { id: "unica" }, create: parsed.data, update: parsed.data });
     res.json(config);
   })

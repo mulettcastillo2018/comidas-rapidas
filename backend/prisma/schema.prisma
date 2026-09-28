@@ -38,6 +38,7 @@ model User {
   descuentosAutorizados Factura[]      @relation("DescuentosAutorizados")
   movimientosInventario MovimientoInventario[]
   movimientosInsumo  MovimientoInsumo[]
+  movimientosPuntos  MovimientoPuntos[]
   encuestasAtendidas Encuesta[]        @relation("EncuestasMesero")
   mesasAsignadas     Mesa[]            @relation("MesaAsignada")
   notificaciones     Notificacion[]
@@ -640,6 +641,56 @@ model Configuracion {
   // cocina según sus horas).
   propinaPctCocina Int         @default(0)
   propinaModo      ModoPropina @default(PROPIAS)
+  // Programa de puntos: 1 punto por cada `pesosPorPunto` en productos; cada
+  // punto vale `valorPunto` al canjearlo; se canjea desde `minimoCanje`.
+  puntosActivo     Boolean     @default(false)
+  pesosPorPunto    Int         @default(1000)
+  valorPunto       Int         @default(10)
+  minimoCanje      Int         @default(50)
+}
+
+// Cliente frecuente, identificado por su celular. Se inscribe solo si
+// autoriza el uso de sus datos (Ley 1581) y puede pedir que se borren: queda
+// el historial de compras, sin nada que lo identifique.
+model Cliente {
+  id           String             @id @default(cuid())
+  telefono     String             @unique
+  nombre       String
+  email        String?
+  autorizadoEn DateTime
+  puntos       Int                @default(0)
+  visitas      Int                @default(0)
+  totalGastado Int                @default(0)
+  ultimaVisita DateTime?
+  creadoEn     DateTime           @default(now())
+  eliminadoEn  DateTime?
+  facturas     Factura[]
+  movimientos  MovimientoPuntos[]
+}
+
+enum TipoMovimientoPuntos {
+  ACUMULADO
+  CANJE
+  // Canje devuelto porque la cuenta no se pagó.
+  DEVOLUCION
+  AJUSTE
+}
+
+model MovimientoPuntos {
+  id        String               @id @default(cuid())
+  clienteId String
+  cliente   Cliente              @relation(fields: [clienteId], references: [id])
+  tipo      TipoMovimientoPuntos
+  // Con signo: + suma, − resta.
+  puntos    Int
+  saldo     Int
+  facturaId String?
+  nota      String?
+  userId    String?
+  user      User?                @relation(fields: [userId], references: [id])
+  creadoEn  DateTime             @default(now())
+
+  @@index([clienteId, creadoEn])
 }
 
 enum NotificacionTipo {
@@ -773,6 +824,14 @@ model Factura {
   // Datos del cliente que pidió la factura a su nombre (tipo y número de
   // documento, nombre, correo). null = consumidor final.
   adquiriente   Json?
+  // Cliente frecuente (programa de puntos).
+  clienteId         String?
+  cliente           Cliente?  @relation(fields: [clienteId], references: [id])
+  puntosGanados     Int       @default(0)
+  // Puntos canjeados como descuento en esta cuenta (ya incluidos en
+  // descuentoMonto).
+  puntosCanjeados   Int       @default(0)
+  puntosAcreditados Boolean   @default(false)
   documentosFiscales DocumentoFiscal[]
 
   @@index([cierreCajaId])

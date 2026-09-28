@@ -57,6 +57,8 @@ export interface DatosDocumento {
   nota: string;
   // Solo POS: caja y quién cobró.
   caja?: { placa: string; ubicacion: string; cajero: string; codigoVenta: string };
+  // Solo POS: puntos del cliente frecuente ("beneficios del comprador").
+  beneficios?: { identificacion: string; nombre: string; puntos: number };
   // Solo notas: el documento que se anula.
   referencia?: { alanubeId: string | null; numeroCompleto: string; codigoUnico: string | null; fecha: string; tipo: TipoDocumentoFiscal };
   motivo?: string;
@@ -217,6 +219,7 @@ export function construirDocumento(d: DatosDocumento): Record<string, unknown> {
           saleCode: d.caja?.codigoVenta ?? "",
           subtotal: t.aPagar.toFixed(2),
         },
+        ...(d.beneficios ? { buyerBenefits: { identification: d.beneficios.identificacion, name: d.beneficios.nombre, points: String(d.beneficios.puntos) } } : {}),
       };
     case "NOTA_CREDITO":
       return {

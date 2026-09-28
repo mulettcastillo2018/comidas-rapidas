@@ -10,6 +10,8 @@ import { urlPublica } from "@/lib/urlPublica";
 import { calcularPrecuenta, montoDescuento, PORCENTAJE_PROPINA_SUGERIDA, propinaSugerida, type Precuenta } from "@/lib/precuenta";
 import { conAdiciones } from "@/lib/items";
 import { RegistroPagos, type Cobro } from "@/components/RegistroPagos";
+import { ClienteFrecuente } from "@/components/ClienteFrecuente";
+import type { ClienteDeCuenta } from "@/lib/clientes";
 import type { MesaSesion } from "@/lib/types";
 
 const AVISO_LEGAL = "Precuenta — no es factura electrónica de venta.";
@@ -217,7 +219,7 @@ export function CuentaMesa({
   productosSinEntregar: number;
   generando: boolean;
   pagando: boolean;
-  onGenerar: (propina: number, descuento: DescuentoCuenta | null) => void;
+  onGenerar: (propina: number, descuento: DescuentoCuenta | null, cliente: ClienteDeCuenta | null) => void;
   onPagar: (cobro: Cobro) => void;
   onPerdida: () => void;
 }) {
@@ -225,8 +227,11 @@ export function CuentaMesa({
   const subtotalActual = calcularPrecuenta(sesion, 0).subtotal;
   const [propina, setPropina] = useState(0);
   const [descuento, setDescuento] = useState<DescuentoCuenta | null>(null);
+  const [cliente, setCliente] = useState<ClienteDeCuenta | null>(null);
   const [imprimiendo, setImprimiendo] = useImpresion<{ qrEncuesta: string | null }>();
-  const descuentoActual = descuento ? montoDescuento(subtotalActual, descuento.tipo, descuento.valor) : 0;
+  const descuentoManual = descuento ? montoDescuento(subtotalActual, descuento.tipo, descuento.valor) : 0;
+  // El canje de puntos es un descuento más (sin clave: el cliente los ganó).
+  const descuentoActual = descuentoManual + (cliente?.valorCanje ?? 0);
   // La propina se sugiere sobre lo que de verdad se cobra.
   const sugerida = propinaSugerida(subtotalActual - descuentoActual);
   const precuenta = factura
@@ -309,7 +314,9 @@ export function CuentaMesa({
           <div className="mt-3 space-y-3 text-sm">
             <Fila label="Consumo hasta ahora" valor={subtotalActual} />
             <EditorDescuento subtotal={subtotalActual} descuento={descuento} onCambiar={setDescuento} />
-            {descuentoActual > 0 ? <Fila label="Descuento" valor={-descuentoActual} /> : null}
+            <ClienteFrecuente permitirCanje maximoCanjePesos={subtotalActual - descuentoManual} onCambio={setCliente} />
+            {descuentoManual > 0 ? <Fila label="Descuento" valor={-descuentoManual} /> : null}
+            {cliente?.valorCanje ? <Fila label={`Canje de ${cliente.canjearPuntos} puntos`} valor={-cliente.valorCanje} /> : null}
             <div>
               <p className="text-xs font-semibold text-muted-foreground">Propina — pregúntale al cliente si desea incluirla</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -341,7 +348,7 @@ export function CuentaMesa({
             <Fila label="Total a cobrar" valor={precuenta.total} fuerte />
             <PorPersona precuenta={precuenta} />
             <button
-              onClick={() => onGenerar(propina, descuento ? { ...descuento, motivo: descuento.motivo.trim() } : null)}
+              onClick={() => onGenerar(propina, descuento ? { ...descuento, motivo: descuento.motivo.trim() } : null, cliente)}
               disabled={generando || productosSinEntregar > 0 || descuentoIncompleto}
               className="btn-primary w-full rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >

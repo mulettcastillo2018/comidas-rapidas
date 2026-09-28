@@ -151,6 +151,7 @@ export default function AdminMostradorPage() {
                   </p>
                   <div className="mt-3 space-y-2">
                     <RegistroPagos
+                      conCliente
                       total={total}
                       enviando={confirmandoId === solicitud.id}
                       textoBoton="Confirmar y cobrar"

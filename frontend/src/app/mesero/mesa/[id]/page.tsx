@@ -15,6 +15,7 @@ import { ListaPedidos } from "@/components/mesa/ListaPedidos";
 import { GestionMesa } from "@/components/mesa/GestionMesa";
 import { CuentaMesa, type DescuentoCuenta } from "@/components/mesa/CuentaMesa";
 import type { Cobro } from "@/components/RegistroPagos";
+import { paraEnviar, type ClienteDeCuenta } from "@/lib/clientes";
 import type { Factura, MesaSesion, MetodoPago, Pedido, PedidoItem, Producto, SolicitudPedido } from "@/lib/types";
 
 export default function MesaSesionPage() {
@@ -180,7 +181,7 @@ export default function MesaSesionPage() {
     setResolviendoSolicitudId(null);
   }
 
-  async function generarCuenta(propina: number, descuento: DescuentoCuenta | null) {
+  async function generarCuenta(propina: number, descuento: DescuentoCuenta | null, cliente: ClienteDeCuenta | null) {
     if (!token) return;
     setGenerandoCuenta(true);
     await intentar(async () => {
@@ -189,7 +190,7 @@ export default function MesaSesionPage() {
         apiFetch<Factura>("/facturas", {
           method: "POST",
           token,
-          body: JSON.stringify({ mesaSesionId: id, propinaMonto: propina, ...(descuento ? { descuento, pin } : {}) }),
+          body: JSON.stringify({ mesaSesionId: id, propinaMonto: propina, ...(descuento ? { descuento, pin } : {}), ...(cliente ? { cliente: paraEnviar(cliente) } : {}) }),
         })
       );
       if (!factura) return;

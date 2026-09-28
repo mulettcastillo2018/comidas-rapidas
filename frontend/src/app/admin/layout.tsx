@@ -16,6 +16,7 @@ const TABS = [
   { href: "/admin/domicilios", label: "Domicilios" },
   { href: "/admin/caja", label: "Caja" },
   { href: "/admin/facturacion", label: "Facturación electrónica" },
+  { href: "/admin/clientes", label: "Clientes y puntos" },
   { href: "/admin/gastos", label: "Gastos" },
   { href: "/admin/personal", label: "Turnos y propinas" },
   { href: "/admin/reportes", label: "Reportes" },

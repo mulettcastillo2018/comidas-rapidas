@@ -17,6 +17,7 @@ export interface Creados {
   gastos: string[];
   turnos: string[];
   insumos: string[];
+  clientes: string[];
   // Texto que identifica notificaciones de la prueba (p. ej. el nombre del
   // cliente de mostrador de prueba).
   textos: string[];
@@ -37,6 +38,7 @@ export function registroDeCreados(prefijoMesas: string): Creados {
     gastos: [],
     turnos: [],
     insumos: [],
+    clientes: [],
     textos: [prefijoMesas],
   };
 }
@@ -77,6 +79,9 @@ export async function limpiar(c: Creados) {
   await prisma.documentoFiscal.deleteMany({ where: { factura: deFacturas } });
   await prisma.pagoFactura.deleteMany({ where: { factura: deFacturas } });
   await prisma.factura.deleteMany({ where: deFacturas });
+  await prisma.movimientoPuntos.deleteMany({ where: { clienteId: { in: c.clientes } } });
+  await prisma.factura.updateMany({ where: { clienteId: { in: c.clientes } }, data: { clienteId: null } });
+  await prisma.cliente.deleteMany({ where: { id: { in: c.clientes } } });
   await prisma.pedidoItemStatusLog.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });
   await prisma.pedidoStatusLog.deleteMany({ where: { pedidoId: { in: pedidos } } });
   await prisma.pedidoItemAdicion.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });

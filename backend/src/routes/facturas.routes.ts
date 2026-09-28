@@ -13,6 +13,7 @@ import type { Prisma } from "@prisma/client";
 import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
 import { programarProcesamiento } from "../services/facturacion/servicio";
 import type { Adquiriente } from "../services/facturacion/documento";
+import { acumularPuntos, asignarCliente, canjearPuntos, clienteDelCobro, devolverCanje } from "../services/fidelizacion";
 
 export const facturasRouter = Router();
 
@@ -28,6 +29,8 @@ const generarFacturaSchema = z.object({
     })
     .optional(),
   pin: z.string().optional(),
+  // Cliente frecuente: acumula puntos al pagar y puede canjear.
+  cliente: z.object({ clienteId: z.string().min(1), canjearPuntos: z.number().int().positive().optional() }).optional(),
 });
 
 facturasRouter.post(
@@ -40,7 +43,8 @@ facturasRouter.post(
       res.status(400).json({ error: "Revisa la cuenta: el descuento necesita un valor y un motivo (mínimo 3 letras)" });
       return;
     }
-    const { mesaSesionId, propinaMonto = 0, descuento } = parsed.data;
+    const { mesaSesionId, propinaMonto = 0, descuento, cliente } = parsed.data;
+    if (cliente && !(await prisma.cliente.findFirst({ where: { id: cliente.clienteId, eliminadoEn: null } }))) throw new ErrorDeNegocio("Cliente no encontrado", 404);
     if (descuento?.tipo === "PORCENTAJE" && descuento.valor > 100) throw new ErrorDeNegocio("El descuento no puede pasar del 100%", 400);
 
     const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId } });
@@ -91,7 +95,7 @@ facturasRouter.post(
           ? Math.round((subtotal * descuento.valor) / 100)
           : Math.min(descuento.valor, subtotal);
 
-      return tx.factura.create({
+      const creada = await tx.factura.create({
         data: {
           mesaSesionId,
           subtotal,
@@ -100,6 +104,20 @@ facturasRouter.post(
           descuentoAutorizadoPorId: autorizadoPorId,
           propinaMonto,
           total: subtotal - descuentoMonto + propinaMonto,
+          clienteId: cliente?.clienteId ?? null,
+        },
+      });
+      if (!cliente?.canjearPuntos) return creada;
+      // El canje es un descuento más; no pide clave (el cliente se ganó los puntos).
+      const canje = await canjearPuntos(tx, cliente.clienteId, cliente.canjearPuntos, subtotal - descuentoMonto, creada.id, req.user!.userId);
+      const motivoCanje = `Canje de ${cliente.canjearPuntos} puntos`;
+      return tx.factura.update({
+        where: { id: creada.id },
+        data: {
+          descuentoMonto: descuentoMonto + canje,
+          descuentoMotivo: descuento ? `${descuento.motivo} + ${motivoCanje.toLowerCase()}` : motivoCanje,
+          total: subtotal - descuentoMonto - canje + propinaMonto,
+          puntosCanjeados: cliente.canjearPuntos,
         },
       });
     });
@@ -123,7 +141,7 @@ facturasRouter.post(
 async function resolverCuentaDeMesa(
   facturaId: string,
   usuario: { userId: string; role: string },
-  resultado: { estado: "PAGADA"; cobro: Cobro; adquiriente?: Adquiriente } | { estado: "PERDIDA"; autorizadaPorId: string }
+  resultado: { estado: "PAGADA"; cobro: Cobro; adquiriente?: Adquiriente; clienteId?: string } | { estado: "PERDIDA"; autorizadaPorId: string }
 ) {
   const factura = await prisma.factura.findUnique({ where: { id: facturaId }, include: { mesaSesion: true } });
   if (!factura) throw new ErrorDeNegocio("Factura no encontrada", 404);
@@ -150,12 +168,19 @@ async function resolverCuentaDeMesa(
       const metodoPago = await registrarPagos(tx, factura.id, pagos);
       await tx.factura.update({ where: { id: factura.id }, data: { metodoPago } });
     }
+    if (resultado.estado === "PAGADA") await asignarCliente(tx, factura.id, resultado.clienteId);
     await tx.mesaSesion.update({ where: { id: sesion.id }, data: { estado: "CERRADA", cerradaEn: new Date() } });
     await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
   });
 
   emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id });
-  if (resultado.estado === "PAGADA") programarProcesamiento();
+  if (resultado.estado === "PAGADA") {
+    await acumularPuntos(factura.id);
+    programarProcesamiento();
+  } else {
+    // Los puntos canjeados en una cuenta que no se pagó vuelven al cliente.
+    await devolverCanje(factura.id);
+  }
   return prisma.factura.findUnique({ where: { id: factura.id } });
 }
 
@@ -172,7 +197,7 @@ facturasRouter.put(
     // Si el cliente pide la factura electrónica a su nombre.
     const adquiriente = adquirienteDelCobro(req.body);
     if (adquiriente === "invalido") throw new ErrorDeNegocio(MENSAJE_ADQUIRIENTE, 400);
-    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data, adquiriente });
+    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data, adquiriente, clienteId: clienteDelCobro(req.body) });
     res.json(factura);
   })
 );

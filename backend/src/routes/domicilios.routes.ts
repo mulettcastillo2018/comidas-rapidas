@@ -11,6 +11,7 @@ import { emitPedidoActualizado } from "../realtime/socket";
 import type { Prisma } from "@prisma/client";
 import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
 import { programarProcesamiento } from "../services/facturacion/servicio";
+import { acumularPuntos, clientePorCelular } from "../services/fidelizacion";
 
 export const domiciliosRouter = Router();
 domiciliosRouter.use(requireAuth, requireAdmin);
@@ -78,6 +79,8 @@ domiciliosRouter.post(
     const datos = parsed.data;
     const plataforma = datos.canal === "PLATAFORMA" ? await prisma.plataforma.findUnique({ where: { id: datos.plataformaId } }) : null;
     if (datos.canal === "PLATAFORMA" && (!plataforma || !plataforma.activa)) throw new ErrorDeNegocio("Esa app no está activa", 400);
+    // Si el celular es de un cliente frecuente, el domicilio le suma puntos.
+    const cliente = datos.canal === "DOMICILIO" ? await clientePorCelular(datos.telefonoCliente) : null;
 
     const pedidoId = await prisma.$transaction(async (tx) => {
       const id = await crearPedidoEnTx(tx, {
@@ -113,6 +116,7 @@ domiciliosRouter.post(
             subtotal,
             envioMonto: datos.envio,
             total,
+            clienteId: cliente?.id ?? null,
             ...(datos.metodoPago ? { estado: "PAGADA", pagadaEn: new Date(), cerradaPorId: req.user!.userId, metodoPago: datos.metodoPago } : {}),
           },
         });
@@ -136,6 +140,8 @@ domiciliosRouter.post(
     });
 
     await anunciarPedidoNuevo(pedidoId);
+    const facturaNueva = await prisma.factura.findUnique({ where: { pedidoId }, select: { id: true } });
+    if (facturaNueva) await acumularPuntos(facturaNueva.id);
     // Las de apps y las ya pagadas se facturan de una vez.
     programarProcesamiento();
     res.status(201).json(await prisma.pedido.findUnique({ where: { id: pedidoId }, include: incluirDomicilio }));
@@ -248,7 +254,10 @@ domiciliosRouter.put(
         await tx.factura.update({ where: { id: factura!.id }, data: { metodoPago } });
       }
     });
-    if (pendiente) programarProcesamiento();
+    if (pendiente && factura) {
+      await acumularPuntos(factura.id);
+      programarProcesamiento();
+    }
     await responder(res, pedido.id);
   })
 );

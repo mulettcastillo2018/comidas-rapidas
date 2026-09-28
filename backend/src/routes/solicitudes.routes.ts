@@ -14,6 +14,7 @@ import { mejorPromocion, precioConDescuento, promocionesVigentes } from "../serv
 import { incluirCatalogo } from "../services/catalogo";
 import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
 import { programarProcesamiento } from "../services/facturacion/servicio";
+import { acumularPuntos, asignarCliente, clienteDelCobro } from "../services/fidelizacion";
 import { cobroSchema, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
@@ -288,6 +289,7 @@ solicitudesRouter.put(
     }
     const adquiriente = adquirienteDelCobro(req.body);
     if (adquiriente === "invalido") throw new ErrorDeNegocio(MENSAJE_ADQUIRIENTE, 400);
+    const clienteId = clienteDelCobro(req.body);
 
     const { pedidoId, facturaId } = await prisma.$transaction(async (tx) => {
       const solicitud = await tx.solicitudPedido.findUnique({ where: { id: req.params.id }, include: { items: true } });
@@ -324,11 +326,13 @@ solicitudesRouter.put(
       });
       const metodoPago = await registrarPagos(tx, factura.id, pagos);
       await tx.factura.update({ where: { id: factura.id }, data: { metodoPago } });
+      await asignarCliente(tx, factura.id, clienteId);
       await tx.solicitudPedido.update({ where: { id: solicitud.id }, data: { pedidoId: nuevoPedidoId } });
       return { pedidoId: nuevoPedidoId, facturaId: factura.id };
     });
 
     const pedidoCompleto = await anunciarPedidoNuevo(pedidoId);
+    await acumularPuntos(facturaId);
     programarProcesamiento();
     const factura = await prisma.factura.findUnique({ where: { id: facturaId } });
     const solicitudActualizada = await solicitudConDetalle(req.params.id);

@@ -9,6 +9,8 @@ import { apiFetch } from "@/lib/api";
 import { problemaAdquiriente, type Adquiriente } from "@/lib/facturacion";
 import { useAuthStore } from "@/store/auth.store";
 import { ADQUIRIENTE_VACIO, DatosFacturacion } from "@/components/DatosFacturacion";
+import { ClienteFrecuente } from "@/components/ClienteFrecuente";
+import type { ClienteDeCuenta } from "@/lib/clientes";
 import type { MetodoPago } from "@/lib/types";
 
 export interface PagoRegistrado {
@@ -18,7 +20,7 @@ export interface PagoRegistrado {
 
 // Lo que se le manda al servidor: un solo método, o la lista de pagos; y los
 // datos del cliente si pidió la factura electrónica a su nombre.
-export type Cobro = ({ metodoPago: MetodoPago } | { pagos: PagoRegistrado[] }) & { adquiriente?: Adquiriente };
+export type Cobro = ({ metodoPago: MetodoPago } | { pagos: PagoRegistrado[] }) & { adquiriente?: Adquiriente; clienteId?: string };
 
 // Una sola consulta por pestaña: si la facturación electrónica está activa.
 let facturacionActiva: Promise<boolean> | null = null;
@@ -47,7 +49,10 @@ export function RegistroPagos({
   enviando,
   textoBoton,
   onCobrar,
+  conCliente,
 }: {
+  // Ofrecer identificar al cliente frecuente para que acumule puntos.
+  conCliente?: boolean;
   total: number;
   // Para "cada uno paga lo suyo": nombre y valor de cada comensal.
   sugerenciasPorPersona?: { nombre: string; monto: number }[];
@@ -64,6 +69,7 @@ export function RegistroPagos({
   const [pideFactura, setPideFactura] = useState(false);
   const [adquiriente, setAdquiriente] = useState<Adquiriente>(ADQUIRIENTE_VACIO);
   const problemaFactura = pideFactura ? problemaAdquiriente(adquiriente) : null;
+  const [cliente, setCliente] = useState<ClienteDeCuenta | null>(null);
 
   useEffect(() => {
     if (token) consultarFacturacionActiva(token).then(setConFactura);
@@ -95,7 +101,10 @@ export function RegistroPagos({
   }
 
   function cobrar() {
-    const factura = pideFactura ? { adquiriente: { ...adquiriente, nombre: adquiriente.nombre.trim(), email: adquiriente.email || null } } : {};
+    const factura = {
+      ...(pideFactura ? { adquiriente: { ...adquiriente, nombre: adquiriente.nombre.trim(), email: adquiriente.email || null } } : {}),
+      ...(cliente ? { clienteId: cliente.clienteId } : {}),
+    };
     if (!dividido) return onCobrar({ metodoPago: metodo, ...factura });
     // Si todo terminó en un mismo método, se registra como un solo pago.
     const metodos = new Set(filasValidas.map((f) => f.metodo));
@@ -193,6 +202,8 @@ export function RegistroPagos({
           ) : null}
         </div>
       ) : null}
+
+      {conCliente ? <ClienteFrecuente onCambio={setCliente} /> : null}
 
       {conFactura ? (
         <div className="space-y-2 rounded-lg border border-dashed border-border p-2 text-xs">

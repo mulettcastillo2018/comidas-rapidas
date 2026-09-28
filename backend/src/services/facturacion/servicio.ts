@@ -111,6 +111,7 @@ async function datosDeVenta(facturaId: string) {
     include: {
       pagos: { select: { metodo: true, monto: true } },
       cerradaPor: { select: { nombre: true, apellido: true } },
+      cliente: { select: { telefono: true, nombre: true, puntos: true, eliminadoEn: true } },
       mesaSesion: { include: { mesa: true, pedidos: { include: { items: itemsVendidos } } } },
       pedido: { include: { items: itemsVendidos, plataforma: { select: { nombre: true } } } },
     },
@@ -182,6 +183,9 @@ async function armarContenido(
     pagos: factura.pagos,
     nota,
     caja: { placa: config.cajaPlaca ?? "", ubicacion: config.cajaUbicacion ?? "", cajero, codigoVenta: factura.id.slice(-8) },
+    ...(factura.cliente && !factura.cliente.eliminadoEn
+      ? { beneficios: { identificacion: factura.cliente.telefono, nombre: factura.cliente.nombre, puntos: factura.cliente.puntos } }
+      : {}),
     ...(extra.referencia
       ? {
           referencia: {
