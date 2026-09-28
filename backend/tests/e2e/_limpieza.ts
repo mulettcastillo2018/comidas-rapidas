@@ -16,6 +16,7 @@ export interface Creados {
   plataformas: string[];
   gastos: string[];
   turnos: string[];
+  insumos: string[];
   // Texto que identifica notificaciones de la prueba (p. ej. el nombre del
   // cliente de mostrador de prueba).
   textos: string[];
@@ -35,6 +36,7 @@ export function registroDeCreados(prefijoMesas: string): Creados {
     plataformas: [],
     gastos: [],
     turnos: [],
+    insumos: [],
     textos: [prefijoMesas],
   };
 }
@@ -78,6 +80,10 @@ export async function limpiar(c: Creados) {
   await prisma.pedidoItemStatusLog.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });
   await prisma.pedidoStatusLog.deleteMany({ where: { pedidoId: { in: pedidos } } });
   await prisma.pedidoItemAdicion.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });
+  // Lo que esos pedidos consumieron de insumos reales vuelve a su inventario.
+  const consumos = await prisma.movimientoInsumo.findMany({ where: { pedidoItemId: { in: (await prisma.pedidoItem.findMany({ where: { pedidoId: { in: pedidos } }, select: { id: true } })).map((i) => i.id) }, insumoId: { notIn: c.insumos } } });
+  for (const m of consumos) await prisma.insumo.update({ where: { id: m.insumoId }, data: { stock: { decrement: m.cantidad } } });
+  await prisma.movimientoInsumo.deleteMany({ where: { id: { in: consumos.map((m) => m.id) } } });
   await prisma.pedidoItem.deleteMany({ where: { pedidoId: { in: pedidos } } });
   await prisma.domicilio.deleteMany({ where: { pedidoId: { in: pedidos } } });
   await prisma.pedido.deleteMany({ where: { id: { in: pedidos } } });
@@ -88,6 +94,10 @@ export async function limpiar(c: Creados) {
   await prisma.movimientoInventario.deleteMany({ where: { productoId: { in: c.productos } } });
   await prisma.comboComponente.deleteMany({ where: { OR: [{ comboId: { in: c.productos } }, { productoId: { in: c.productos } }] } });
   await prisma.productoAdicion.deleteMany({ where: { OR: [{ productoId: { in: c.productos } }, { adicionId: { in: c.adiciones } }] } });
+  await prisma.recetaItem.deleteMany({ where: { OR: [{ productoId: { in: c.productos } }, { insumoId: { in: c.insumos } }] } });
+  await prisma.adicionInsumo.deleteMany({ where: { OR: [{ adicionId: { in: c.adiciones } }, { insumoId: { in: c.insumos } }] } });
+  await prisma.movimientoInsumo.deleteMany({ where: { insumoId: { in: c.insumos } } });
+  await prisma.insumo.deleteMany({ where: { id: { in: c.insumos } } });
   await prisma.adicion.deleteMany({ where: { id: { in: c.adiciones } } });
   await prisma.promocion.deleteMany({ where: { id: { in: c.promociones } } });
   await prisma.producto.deleteMany({ where: { id: { in: c.productos } } });

@@ -37,6 +37,7 @@ model User {
   perdidasAutorizadas Factura[]        @relation("PerdidasAutorizadas")
   descuentosAutorizados Factura[]      @relation("DescuentosAutorizados")
   movimientosInventario MovimientoInventario[]
+  movimientosInsumo  MovimientoInsumo[]
   encuestasAtendidas Encuesta[]        @relation("EncuestasMesero")
   mesasAsignadas     Mesa[]            @relation("MesaAsignada")
   notificaciones     Notificacion[]
@@ -96,6 +97,87 @@ model Producto {
   esCombo                Boolean      @default(false)
   componentes            ComboComponente[] @relation("ComboPadre")
   enCombos               ComboComponente[] @relation("ComboHijo")
+  // Receta (insumos por unidad vendida). Si costoDesdeReceta, el costo se
+  // calcula solo con el costo de los insumos.
+  receta                 RecetaItem[]
+  costoDesdeReceta       Boolean      @default(false)
+}
+
+enum UnidadInsumo {
+  GRAMO
+  MILILITRO
+  UNIDAD
+}
+
+enum TipoMovimientoInsumo {
+  // Llegó mercancía.
+  COMPRA
+  // Lo que usó una venta, según la receta.
+  CONSUMO
+  // Volvió porque se canceló antes de prepararse.
+  DEVOLUCION
+  // Conteo físico (o conteo inicial).
+  AJUSTE
+}
+
+// Ingrediente con que se prepara (carne, pan, papa, queso...). El stock y el
+// costo van en la unidad base: gramos, mililitros o unidades.
+model Insumo {
+  id              String             @id @default(cuid())
+  nombre          String             @unique
+  unidad          UnidadInsumo
+  stock           Float              @default(0)
+  stockMinimo     Float              @default(0)
+  // Pesos por unidad base (promedio ponderado de las compras).
+  costoUnitario   Float              @default(0)
+  alertaStockBajo Boolean            @default(false)
+  activo          Boolean            @default(true)
+  creadoEn        DateTime           @default(now())
+  recetas         RecetaItem[]
+  adiciones       AdicionInsumo[]
+  movimientos     MovimientoInsumo[]
+}
+
+model RecetaItem {
+  id         String   @id @default(cuid())
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+  insumoId   String
+  insumo     Insumo   @relation(fields: [insumoId], references: [id])
+  cantidad   Float
+
+  @@unique([productoId, insumoId])
+}
+
+// Lo que gasta una adición (extra queso = 30 g de queso).
+model AdicionInsumo {
+  adicionId String
+  adicion   Adicion @relation(fields: [adicionId], references: [id])
+  insumoId  String
+  insumo    Insumo  @relation(fields: [insumoId], references: [id])
+  cantidad  Float
+
+  @@id([adicionId, insumoId])
+}
+
+model MovimientoInsumo {
+  id              String               @id @default(cuid())
+  insumoId        String
+  insumo          Insumo               @relation(fields: [insumoId], references: [id])
+  tipo            TipoMovimientoInsumo
+  // Con signo: + entra, − sale.
+  cantidad        Float
+  stockResultante Float
+  // Solo compras: lo que se pagó.
+  costoTotal      Int?
+  nota            String?
+  userId          String?
+  user            User?                @relation(fields: [userId], references: [id])
+  pedidoItemId    String?
+  creadoEn        DateTime             @default(now())
+
+  @@index([insumoId, creadoEn])
+  @@index([pedidoItemId])
 }
 
 model ComboComponente {
@@ -119,6 +201,7 @@ model Adicion {
   activa     Boolean           @default(true)
   creadoEn   DateTime          @default(now())
   productos  ProductoAdicion[]
+  insumos    AdicionInsumo[]
 }
 
 model ProductoAdicion {

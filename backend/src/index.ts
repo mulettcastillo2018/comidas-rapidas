@@ -38,6 +38,7 @@ import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
 import { iniciarLimpiezaPeriodica } from "./services/limpieza";
 import { iniciarFacturacionPeriodica } from "./services/facturacion/servicio";
 import { facturacionRouter } from "./routes/facturacion.routes";
+import { insumosRouter } from "./routes/insumos.routes";
 
 const app = express();
 const port = process.env.PORT ?? 4001;
@@ -81,6 +82,7 @@ app.use("/turnos", turnosRouter);
 app.use("/reportes", reportesGestionRouter);
 app.use("/configuracion", configuracionRouter);
 app.use("/facturacion", facturacionRouter);
+app.use("/insumos", insumosRouter);
 
 // Errores de Prisma que son culpa de la petición (dato repetido, registro que
 // ya no existe o que otros registros usan), no fallas del servidor.

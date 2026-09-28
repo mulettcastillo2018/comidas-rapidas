@@ -5,6 +5,7 @@ import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { construirLineas, type ItemPedido } from "./lineasPedido";
 import { OMITIR_ITEM, productoPublico } from "../lib/datosInternos";
 import { descontarStock, revisarStock } from "./inventario";
+import { consumirInsumos, insumosDe, revisarInsumos } from "./insumos";
 import { emitPedidoNuevo } from "../realtime/socket";
 import { enlaces, notificarPorRol } from "./notificaciones";
 
@@ -73,11 +74,22 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
       items: { create: itemsData },
       statusLogs: { create: { aEstado: estadoInicial, cambiadoPorId: meseroId } },
     },
-    include: { items: { select: { id: true, productoId: true, cantidad: true } } },
+    include: { items: { select: { id: true, productoId: true, cantidad: true, adiciones: { select: { adicionId: true } } } } },
   });
   await descontarStock(
     tx,
     created.items.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })),
+    meseroId
+  );
+  // Ingredientes según la receta de cada producto (y de sus adiciones).
+  await consumirInsumos(
+    tx,
+    created.items.map((i) => ({
+      pedidoItemId: i.id,
+      productoId: i.productoId,
+      cantidad: i.cantidad,
+      adicionIds: i.adiciones.flatMap((a) => (a.adicionId ? [a.adicionId] : [])),
+    })),
     meseroId
   );
   return created.id;
@@ -88,6 +100,13 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
   if (pedidoCompleto) {
     emitPedidoNuevo(pedidoCompleto);
     await revisarStock(pedidoCompleto.items.map((i) => i.productoId));
+    const adicionIds = await prisma.pedidoItemAdicion.findMany({ where: { pedidoItem: { pedidoId } }, select: { adicionId: true } });
+    await revisarInsumos(
+      await insumosDe(
+        pedidoCompleto.items.map((i) => i.productoId),
+        adicionIds.flatMap((a) => (a.adicionId ? [a.adicionId] : []))
+      )
+    );
     const ubicacion = ubicacionDe(pedidoCompleto);
     // Si todo es de los que no pasan por cocina (p. ej. solo gaseosas), no
     // hay nada que avisarle a cocina.

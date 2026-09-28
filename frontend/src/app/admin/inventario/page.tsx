@@ -5,6 +5,10 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { formatoFechaHora } from "@/lib/formato";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
+import { useToastStore } from "@/store/toast.store";
+import { Insumos } from "@/components/inventario/Insumos";
+import { EditorRecetas } from "@/components/inventario/EditorRecetas";
+import { ConsumoInsumos } from "@/components/inventario/ConsumoInsumos";
 
 interface ProductoInventario {
   id: string;
@@ -94,7 +98,53 @@ function FormularioAccion({
   );
 }
 
+const VISTAS = [
+  { id: "unidades", label: "Por unidades" },
+  { id: "insumos", label: "Insumos" },
+  { id: "recetas", label: "Recetas" },
+  { id: "consumo", label: "Consumo y merma" },
+] as const;
+type Vista = (typeof VISTAS)[number]["id"];
+
 export default function AdminInventarioPage() {
+  const token = useAuthStore((state) => state.token);
+  const showToast = useToastStore((state) => state.show);
+  const [vista, setVista] = useState<Vista>("unidades");
+
+  // Un aviso de insumo bajo llega con ?vista=insumos.
+  useEffect(() => {
+    const pedida = new URLSearchParams(window.location.search).get("vista");
+    if (VISTAS.some((v) => v.id === pedida)) setVista(pedida as Vista);
+  }, []);
+
+  if (!token) return null;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap gap-1 rounded-full bg-muted p-1 text-sm font-semibold sm:w-fit">
+        {VISTAS.map((v) => (
+          <button
+            key={v.id}
+            onClick={() => setVista(v.id)}
+            className={`flex-1 rounded-full px-4 py-1.5 sm:flex-none ${vista === v.id ? "bg-background shadow-sm" : "text-muted-foreground"}`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+      {vista === "unidades" ? (
+        <InventarioPorUnidades />
+      ) : vista === "insumos" ? (
+        <Insumos token={token} onAviso={showToast} />
+      ) : vista === "recetas" ? (
+        <EditorRecetas token={token} onAviso={showToast} />
+      ) : (
+        <ConsumoInsumos token={token} />
+      )}
+    </div>
+  );
+}
+
+function InventarioPorUnidades() {
   const token = useAuthStore((state) => state.token);
   const [productos, setProductos] = useState<ProductoInventario[]>([]);
   const [accion, setAccion] = useState<Accion | null>(null);

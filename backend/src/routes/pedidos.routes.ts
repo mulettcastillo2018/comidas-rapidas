@@ -11,6 +11,7 @@ import { enlaces, notificarUsuarios, notificarPorRol } from "../services/notific
 import { crearPedido, pedidoInclude } from "../services/pedidos";
 import { avisarAutorizacion, exigirAutorizacion } from "../services/autorizacion";
 import { devolverStock, revisarStock } from "../services/inventario";
+import { devolverInsumos, revisarInsumos } from "../services/insumos";
 import { nombreCompleto } from "../lib/nombre";
 import { ubicacionDe } from "../lib/ubicacion";
 
@@ -161,6 +162,7 @@ pedidosRouter.put(
     const necesitanClave = estado === "CANCELADO" ? enCurso.filter(cancelarNecesitaClave) : [];
     const autorizadoPorId = necesitanClave.length > 0 ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE) : null;
     const devolver = estado === "CANCELADO" ? enCurso.filter(vuelveAlInventario) : [];
+    let insumosDevueltos: string[] = [];
 
     await prisma.$transaction(async (tx) => {
       await bloquearPedido(tx, pedido.id);
@@ -183,6 +185,7 @@ pedidosRouter.put(
         })),
       });
       await devolverStock(tx, devolver.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })), req.user!.userId);
+      insumosDevueltos = await devolverInsumos(tx, devolver.map((i) => i.id), req.user!.userId);
 
       const nuevoEstado = calcularEstadoPedido(pedido.items.map((i) => (enCurso.includes(i) ? { estado } : i)));
       await tx.pedido.update({
@@ -197,6 +200,7 @@ pedidosRouter.put(
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
     if (devolver.length > 0) await revisarStock(devolver.map((i) => i.productoId));
+    await revisarInsumos(insumosDevueltos);
     const ubicacion = pedidoActualizado ? ubicacionDe(pedidoActualizado) : "un pedido";
     if (autorizadoPorId && req.user!.role !== "ADMIN") {
       await avisarAutorizacion(
@@ -272,6 +276,7 @@ pedidosRouter.put(
       estado === "CANCELADO" && cancelarNecesitaClave(item) ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE) : null;
     const devolver = estado === "CANCELADO" && vuelveAlInventario(item);
 
+    let insumosDevueltos: string[] = [];
     const timestamps: Record<string, Date> = {};
     if (estado === "EN_PREPARACION") timestamps.iniciadoEn = new Date();
     if (estado === "LISTO") timestamps.listoEn = new Date();
@@ -285,7 +290,10 @@ pedidosRouter.put(
       await tx.pedidoItemStatusLog.create({
         data: { pedidoItemId: item.id, deEstado: item.estado, aEstado: estado, cambiadoPorId: req.user!.userId, autorizadoPorId },
       });
-      if (devolver) await devolverStock(tx, [{ productoId: item.productoId, cantidad: item.cantidad, pedidoItemId: item.id }], req.user!.userId);
+      if (devolver) {
+        await devolverStock(tx, [{ productoId: item.productoId, cantidad: item.cantidad, pedidoItemId: item.id }], req.user!.userId);
+        insumosDevueltos = await devolverInsumos(tx, [item.id], req.user!.userId);
+      }
 
       // Recalcular el agregado del pedido a partir de sus ítems.
       const todosLosItems = await tx.pedidoItem.findMany({ where: { pedidoId: item.pedidoId } });
@@ -337,6 +345,7 @@ pedidosRouter.put(
       });
     }
     if (devolver) await revisarStock([item.productoId]);
+    await revisarInsumos(insumosDevueltos);
     if (autorizadoPorId && req.user!.role !== "ADMIN") {
       await avisarAutorizacion(
         autorizadoPorId,
