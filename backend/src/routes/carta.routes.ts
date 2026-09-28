@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { catchAsync } from "../lib/catchAsync";
+import { OMITIR_PRODUCTO } from "../lib/datosInternos";
 
 export const cartaRouter = Router();
 
@@ -16,6 +17,7 @@ cartaRouter.get(
         productos: {
           where: { isActive: true, disponible: true },
           orderBy: { nombre: "asc" },
+          omit: OMITIR_PRODUCTO,
         },
       },
     });

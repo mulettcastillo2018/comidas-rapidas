@@ -5,17 +5,20 @@ import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { uploadImagenProducto } from "../lib/upload";
 import { emitProductoActualizado } from "../realtime/socket";
+import { OMITIR_PRODUCTO, sinDatosInternos } from "../lib/datosInternos";
 
 export const productosRouter = Router();
 
 productosRouter.get(
   "/",
   requireAuth,
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const productos = await prisma.producto.findMany({
       where: { isActive: true },
       orderBy: { nombre: "asc" },
       include: { categoria: true },
+      // El costo solo lo ve el admin.
+      ...(req.user!.role === "ADMIN" ? {} : { omit: OMITIR_PRODUCTO }),
     });
     res.json(productos);
   })
@@ -29,6 +32,7 @@ const productoSchema = z.object({
   categoriaId: z.string().min(1),
   imagenUrl: z.string().trim().min(1).nullable().optional(),
   requiereCocina: z.boolean().default(true),
+  costo: z.number().int().min(0).nullable().optional(),
   disponible: z.boolean().default(true),
   isActive: z.boolean().default(true),
 });
@@ -53,7 +57,7 @@ productosRouter.put(
       include: { categoria: true },
     });
     emitProductoActualizado(producto);
-    res.json(producto);
+    res.json(req.user!.role === "ADMIN" ? producto : sinDatosInternos(producto));
   })
 );
 

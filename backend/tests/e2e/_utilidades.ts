@@ -44,6 +44,14 @@ export async function req(method: string, path: string, body?: unknown, token?: 
   return { status: res.status, data: await res.json().catch(() => null) };
 }
 
+// Para pasos de preparación que tienen que salir bien: si fallan, la prueba
+// se detiene con el código y el mensaje de la API en vez de seguir y
+// terminar en un "undefined" difícil de rastrear.
+export function exigir(r: Respuesta, paso: string): Respuesta["data"] {
+  if (r.status < 200 || r.status >= 300) throw new Error(`${paso} falló con ${r.status}: ${JSON.stringify(r.data)}`);
+  return r.data;
+}
+
 export async function login(email: string): Promise<string> {
   const r = await req("POST", "/auth/login", { email, password: process.env.E2E_PASSWORD });
   if (r.status !== 200) throw new Error(`No se pudo iniciar sesión como ${email}: ${JSON.stringify(r.data)}`);

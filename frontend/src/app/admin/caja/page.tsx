@@ -3,36 +3,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, Printer } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { efectivoEsperado, totalCobrado, totalesPorMetodo } from "@/lib/caja";
+import { METODO_PAGO_LABEL } from "@/lib/estados";
 import { formatoFechaHora, formatoPesos } from "@/lib/formato";
 import { useImpresion, ZonaImpresion } from "@/lib/impresion";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
+import { CampoPesos } from "@/components/CampoPesos";
+import { MovimientosCaja } from "@/components/caja/MovimientosCaja";
+import { CuadreMeseros } from "@/components/caja/CuadreMeseros";
 import type { CajaActual, CierreCaja } from "@/lib/types";
-
-const miles = new Intl.NumberFormat("es-CO");
-
-// Solo dígitos: "150.000", "150000" y "$150.000" valen lo mismo.
-function CampoPesos({ label, valor, onChange, ayuda }: { label: string; valor: number | null; onChange: (v: number | null) => void; ayuda?: string }) {
-  return (
-    <label className="block text-sm">
-      <span className="font-semibold">{label}</span>
-      {ayuda ? <span className="block text-xs text-muted-foreground">{ayuda}</span> : null}
-      <div className="mt-1 flex items-center rounded-lg border border-border px-2">
-        <span className="text-muted-foreground">$</span>
-        <input
-          inputMode="numeric"
-          value={valor === null ? "" : miles.format(valor)}
-          onChange={(e) => {
-            const digitos = e.target.value.replace(/\D/g, "");
-            onChange(digitos === "" ? null : Number(digitos));
-          }}
-          placeholder="0"
-          className="w-full bg-transparent px-1 py-2 outline-none"
-        />
-      </div>
-    </label>
-  );
-}
 
 function Diferencia({ valor, grande }: { valor: number; grande?: boolean }) {
   const clase = grande ? "text-lg font-extrabold" : "font-semibold";
@@ -56,14 +36,18 @@ function Comprobante({ cierre }: { cierre: CierreCaja }) {
       </p>
       <p className="mb-3 text-center text-xs">Cerró: {nombreCompleto(cierre.cerradoPor)}</p>
       {fila("Cuentas cobradas", String(cierre.cuentasPagadas))}
-      {fila("Efectivo", formatoPesos(cierre.totalEfectivo))}
-      {fila("Tarjeta", formatoPesos(cierre.totalTarjeta))}
-      {fila("Otro", formatoPesos(cierre.totalOtro))}
-      {fila("Total cobrado", formatoPesos(cierre.totalEfectivo + cierre.totalTarjeta + cierre.totalOtro))}
+      {totalesPorMetodo(cierre)
+        .filter(([metodo, valor]) => valor > 0 || metodo === "EFECTIVO")
+        .map(([metodo, valor]) => (
+          <div key={metodo}>{fila(METODO_PAGO_LABEL[metodo], formatoPesos(valor))}</div>
+        ))}
+      {fila("Total cobrado", formatoPesos(totalCobrado(cierre)))}
       {fila("Propinas (incluidas)", formatoPesos(cierre.propinas))}
       {fila("Se fueron sin pagar", `${cierre.cuentasPerdidas} · ${formatoPesos(cierre.totalPerdidas)}`)}
       {fila("Base inicial", formatoPesos(cierre.baseInicial))}
-      {fila("Efectivo esperado", formatoPesos(cierre.baseInicial + cierre.totalEfectivo))}
+      {cierre.totalEntradas > 0 ? fila("Entradas de efectivo", formatoPesos(cierre.totalEntradas)) : null}
+      {cierre.totalSalidas > 0 ? fila("Salidas de efectivo", `− ${formatoPesos(cierre.totalSalidas)}`) : null}
+      {fila("Efectivo esperado", formatoPesos(efectivoEsperado(cierre.baseInicial, cierre)))}
       {fila("Efectivo contado", formatoPesos(cierre.efectivoContado))}
       <div className="flex justify-between py-2">
         <span>Diferencia</span>
@@ -102,8 +86,9 @@ export default function AdminCajaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const hayMovimientos = Boolean(actual && actual.cuentasPagadas + actual.cuentasPerdidas > 0);
-  const esperado = actual ? (baseInicial ?? 0) + actual.totalEfectivo : 0;
+  const hayMovimientos = Boolean(actual && actual.cuentasPagadas + actual.cuentasPerdidas + actual.movimientos.length > 0);
+  const esperado = actual ? efectivoEsperado(baseInicial ?? 0, actual) : 0;
+  const pendientesMeseros = actual?.porMesero.filter((m) => m.pendiente > 0) ?? [];
 
   async function handleCerrar(event: FormEvent) {
     event.preventDefault();
@@ -115,7 +100,11 @@ export default function AdminCajaPage() {
         : diferencia < 0
           ? `Faltan ${formatoPesos(-diferencia)} en caja.`
           : `Sobran ${formatoPesos(diferencia)} en caja.`;
-    if (!confirm(`¿Cerrar caja?\n\n${aviso}\n\nUna vez cerrada no se puede editar.`)) return;
+    const avisoMeseros =
+      pendientesMeseros.length > 0
+        ? `\n\nOjo: ${pendientesMeseros.map((m) => `${m.nombre} (${formatoPesos(m.pendiente)})`).join(", ")} aún no ha(n) entregado su efectivo.`
+        : "";
+    if (!confirm(`¿Cerrar caja?\n\n${aviso}${avisoMeseros}\n\nUna vez cerrada no se puede editar.`)) return;
 
     setGuardando(true);
     setError(null);
@@ -138,7 +127,7 @@ export default function AdminCajaPage() {
     }
   }
 
-  if (!actual) return <p className="text-sm text-muted-foreground">Cargando…</p>;
+  if (!actual || !token) return <p className="text-sm text-muted-foreground">Cargando…</p>;
 
   return (
     <>
@@ -151,7 +140,7 @@ export default function AdminCajaPage() {
       <div className="space-y-8">
         <p className="text-sm text-muted-foreground">
           Al terminar el turno, cuenta el efectivo que hay en la caja y escríbelo aquí: el sistema lo compara con lo
-          cobrado en efectivo desde el último cierre y te dice si cuadra.
+          cobrado en efectivo desde el último cierre (más entradas, menos salidas) y te dice si cuadra.
         </p>
 
         {recienCerrado ? (
@@ -182,17 +171,18 @@ export default function AdminCajaPage() {
           ) : null}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              ["Efectivo", actual.totalEfectivo],
-              ["Tarjeta", actual.totalTarjeta],
-              ["Otro", actual.totalOtro],
-              ["Total cobrado", actual.totalEfectivo + actual.totalTarjeta + actual.totalOtro],
-            ].map(([label, valor]) => (
-              <div key={label} className="rounded-xl border border-border p-3">
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <p className="mt-1 text-lg font-extrabold">{formatoPesos(valor as number)}</p>
-              </div>
-            ))}
+            {totalesPorMetodo(actual)
+              .filter(([metodo, valor]) => valor > 0 || metodo === "EFECTIVO")
+              .map(([metodo, valor]) => (
+                <div key={metodo} className="rounded-xl border border-border p-3">
+                  <p className="text-xs text-muted-foreground">{METODO_PAGO_LABEL[metodo]}</p>
+                  <p className="mt-1 text-lg font-extrabold">{formatoPesos(valor)}</p>
+                </div>
+              ))}
+            <div className="rounded-xl border border-accent p-3">
+              <p className="text-xs text-muted-foreground">Total cobrado</p>
+              <p className="mt-1 text-lg font-extrabold">{formatoPesos(totalCobrado(actual))}</p>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             {actual.cuentasPagadas} cuenta(s) cobrada(s) · propinas incluidas: {formatoPesos(actual.propinas)}
@@ -203,7 +193,13 @@ export default function AdminCajaPage() {
               </span>
             ) : null}
           </p>
+        </section>
 
+        <CuadreMeseros token={token} cuadre={actual.porMesero} onCambio={cargar} />
+        <MovimientosCaja token={token} movimientos={actual.movimientos} onCambio={cargar} />
+
+        <section className="space-y-4">
+          <h2 className="text-sm font-bold">Cerrar caja</h2>
           {hayMovimientos ? (
             <form onSubmit={handleCerrar} className="space-y-4 rounded-xl border border-border p-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -213,9 +209,20 @@ export default function AdminCajaPage() {
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3 text-sm">
                 <span>
                   Efectivo esperado: <strong>{formatoPesos(esperado)}</strong>
+                  <span className="block text-[11px] text-muted-foreground">
+                    base + efectivo cobrado {formatoPesos(actual.totalEfectivo)}
+                    {actual.totalEntradas > 0 ? ` + entradas ${formatoPesos(actual.totalEntradas)}` : ""}
+                    {actual.totalSalidas > 0 ? ` − salidas ${formatoPesos(actual.totalSalidas)}` : ""}
+                  </span>
                 </span>
                 {efectivoContado !== null ? <Diferencia valor={efectivoContado - esperado} grande /> : null}
               </div>
+              {pendientesMeseros.length > 0 ? (
+                <p className="flex gap-2 text-xs text-amber-700">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  Hay meseros que no han entregado todo su efectivo: si la plata no está en la caja, el cierre mostrará un faltante.
+                </p>
+              ) : null}
               <label className="block text-sm">
                 <span className="font-semibold">Notas</span>
                 <span className="block text-xs text-muted-foreground">Opcional — útil para explicar un descuadre</span>
@@ -233,7 +240,7 @@ export default function AdminCajaPage() {
               </button>
             </form>
           ) : (
-            <p className="rounded-xl border border-border p-4 text-sm text-muted-foreground">No hay cuentas cobradas desde el último cierre.</p>
+            <p className="rounded-xl border border-border p-4 text-sm text-muted-foreground">No hay cuentas cobradas ni movimientos desde el último cierre.</p>
           )}
         </section>
 
@@ -261,8 +268,8 @@ export default function AdminCajaPage() {
                         {c.notas ? <p className="mt-0.5 max-w-48 text-muted-foreground">{c.notas}</p> : null}
                       </td>
                       <td className="py-1.5 pr-4">{nombreCompleto(c.cerradoPor)}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(c.totalEfectivo + c.totalTarjeta + c.totalOtro)}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(c.baseInicial + c.totalEfectivo)}</td>
+                      <td className="py-1.5 pr-4 text-right">{formatoPesos(totalCobrado(c))}</td>
+                      <td className="py-1.5 pr-4 text-right">{formatoPesos(efectivoEsperado(c.baseInicial, c))}</td>
                       <td className="py-1.5 pr-4 text-right">{formatoPesos(c.efectivoContado)}</td>
                       <td className="py-1.5 pr-4">
                         <Diferencia valor={c.diferencia} />

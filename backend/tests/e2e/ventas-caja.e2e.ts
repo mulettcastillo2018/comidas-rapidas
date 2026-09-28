@@ -1,5 +1,5 @@
 import { prisma } from "../../src/lib/prisma";
-import { despachar, estados, req, sesiones, verificar } from "./_utilidades";
+import { despachar, estados, exigir, req, sesiones, verificar } from "./_utilidades";
 import { limpiar, registroDeCreados } from "./_limpieza";
 
 const hora = (iso: string) => new Date(iso);
@@ -62,7 +62,7 @@ export async function probarVentasYCaja() {
       items: [{ productoId: B.id, cantidad: 3 }],
     })).data;
     creados.solicitudes.push(sol.id);
-    const cobro = (await req("PUT", `/solicitudes/${sol.id}/confirmar-recogida`, { metodoPago: "TARJETA" }, t.admin)).data;
+    const cobro = exigir(await req("PUT", `/solicitudes/${sol.id}/confirmar-recogida`, { metodoPago: "TARJETA" }, t.admin), "Cobrar en caja");
     creados.pedidos.push(cobro.pedido.id);
     await despachar(cobro.pedido.id, { cocina: t.cocina, entrega: t.admin });
     const [F1, F2, F3] = await Promise.all([f1.id, f2.id, cobro.factura.id].map((id) => prisma.factura.findUniqueOrThrow({ where: { id } })));

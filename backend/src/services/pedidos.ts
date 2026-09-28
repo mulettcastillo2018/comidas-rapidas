@@ -2,11 +2,13 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ErrorDeNegocio } from "../lib/errores";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
+import { OMITIR_ITEM, productoPublico } from "../lib/datosInternos";
 import { emitPedidoNuevo } from "../realtime/socket";
 import { enlaces, notificarPorRol } from "./notificaciones";
 
 export const pedidoInclude = {
-  items: { include: { producto: true, comensal: true } },
+  // Viaja a meseros, cocina y pantalla: sin costos.
+  items: { omit: OMITIR_ITEM, include: { producto: productoPublico, comensal: true } },
   mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
   statusLogs: {
     include: { cambiadoPor: { select: { id: true, nombre: true, apellido: true, role: true } } },
@@ -71,6 +73,7 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
       cantidad: item.cantidad,
       notas: item.notas ?? null,
       precioUnitario: producto.precio,
+      costoUnitario: producto.costo,
       tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
       ...(producto.requiereCocina ? {} : { estado: "LISTO" as const, listoEn: ahora }),
     };

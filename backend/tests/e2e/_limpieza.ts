@@ -10,19 +10,22 @@ export interface Creados {
   productos: string[];
   usuarios: string[];
   cierres: string[];
+  movimientosCaja: string[];
   // Texto que identifica notificaciones de la prueba (p. ej. el nombre del
   // cliente de mostrador de prueba).
   textos: string[];
 }
 
 export function registroDeCreados(prefijoMesas: string): Creados {
-  return { prefijoMesas, pedidos: [], solicitudes: [], productos: [], usuarios: [], cierres: [], textos: [prefijoMesas] };
+  return { prefijoMesas, pedidos: [], solicitudes: [], productos: [], usuarios: [], cierres: [], movimientosCaja: [], textos: [prefijoMesas] };
 }
 
 export async function limpiar(c: Creados) {
-  // Un cierre de caja de prueba se deshace: las cuentas reales que tomó
-  // vuelven a quedar pendientes de cerrar.
+  // Un cierre de caja de prueba se deshace: las cuentas y movimientos reales
+  // que tomó vuelven a quedar pendientes de cerrar.
   await prisma.factura.updateMany({ where: { cierreCajaId: { in: c.cierres } }, data: { cierreCajaId: null } });
+  await prisma.movimientoCaja.updateMany({ where: { cierreCajaId: { in: c.cierres } }, data: { cierreCajaId: null } });
+  await prisma.movimientoCaja.deleteMany({ where: { id: { in: c.movimientosCaja } } });
   await prisma.cierreCaja.deleteMany({ where: { id: { in: c.cierres } } });
 
   const deMesasDePrueba = { mesa: { numero: { startsWith: c.prefijoMesas } } };
@@ -41,7 +44,9 @@ export async function limpiar(c: Creados) {
   });
   await prisma.solicitudPedidoItem.deleteMany({ where: { solicitudId: { in: solicitudes } } });
   await prisma.solicitudPedido.deleteMany({ where: { id: { in: solicitudes } } });
-  await prisma.factura.deleteMany({ where: { OR: [{ pedidoId: { in: pedidos } }, { mesaSesionId: { in: sesiones } }] } });
+  const deFacturas = { OR: [{ pedidoId: { in: pedidos } }, { mesaSesionId: { in: sesiones } }] };
+  await prisma.pagoFactura.deleteMany({ where: { factura: deFacturas } });
+  await prisma.factura.deleteMany({ where: deFacturas });
   await prisma.pedidoItemStatusLog.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });
   await prisma.pedidoStatusLog.deleteMany({ where: { pedidoId: { in: pedidos } } });
   await prisma.pedidoItem.deleteMany({ where: { pedidoId: { in: pedidos } } });

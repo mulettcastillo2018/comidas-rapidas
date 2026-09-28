@@ -15,6 +15,29 @@ const rangoSchema = z
   .refine((r) => r.desde <= r.hasta, { message: "La fecha inicial debe ser anterior a la final" });
 
 const personaSelect = { select: { id: true, nombre: true, apellido: true } };
+
+// Ingeniería de menú: cruza qué tanto se vende un producto con cuánto deja
+// por unidad, comparado con el resto de la carta.
+//   ESTRELLA:     se vende mucho y deja buen margen → cuidarlo.
+//   CABALLO:      se vende mucho pero deja poco → subir precio o bajar costo.
+//   ROMPECABEZAS: deja buen margen pero se vende poco → promocionarlo.
+//   PERRO:        ni se vende ni deja → pensar en sacarlo de la carta.
+type ClasificacionMenu = "ESTRELLA" | "CABALLO" | "ROMPECABEZAS" | "PERRO";
+
+function clasificarMenu(productos: { unidadesConCosto: number; ventasConCosto: number; costo: number; clasificacion: ClasificacionMenu | null }[]) {
+  const conCosto = productos.filter((p) => p.unidadesConCosto > 0);
+  if (conCosto.length < 2) return;
+  const unidades = conCosto.reduce((s, p) => s + p.unidadesConCosto, 0);
+  // Umbral clásico: 70% de la participación que tendría cada producto si
+  // todos se vendieran igual.
+  const umbralPopularidad = (unidades / conCosto.length) * 0.7;
+  const margenPromedio = conCosto.reduce((s, p) => s + (p.ventasConCosto - p.costo), 0) / unidades;
+  for (const p of conCosto) {
+    const popular = p.unidadesConCosto >= umbralPopularidad;
+    const rentable = (p.ventasConCosto - p.costo) / p.unidadesConCosto >= margenPromedio;
+    p.clasificacion = popular ? (rentable ? "ESTRELLA" : "CABALLO") : rentable ? "ROMPECABEZAS" : "PERRO";
+  }
+}
 const itemsConProducto = { include: { producto: { select: { id: true, nombre: true, categoria: { select: { nombre: true } } } } } };
 
 // Ventas de un rango de días (hora de Colombia). Cuenta como venta lo que se
@@ -43,6 +66,7 @@ reportesRouter.get(
         where: { estado: { in: ["PAGADA", "PERDIDA"] }, pagadaEn: { gte: inicio, lt: fin } },
         include: {
           cerradaPor: personaSelect,
+          pagos: { select: { metodo: true, monto: true } },
           mesaSesion: { include: { mesa: true, mesero: personaSelect, pedidos: { include: { items: itemsConProducto } } } },
           pedido: { include: { mesero: personaSelect, items: itemsConProducto } },
         },
@@ -69,6 +93,7 @@ reportesRouter.get(
         atendidoPor: esMesa ? f.mesaSesion!.mesero : (f.pedido?.mesero ?? f.cerradaPor),
         estado: f.estado as "PAGADA" | "PERDIDA",
         metodoPago: f.metodoPago,
+        pagos: f.pagos,
         subtotal: f.subtotal,
         propina: f.propinaMonto,
         total: f.total,
@@ -89,17 +114,24 @@ reportesRouter.get(
     const porMetodo = new Map<string, { metodo: string; ventas: number; cuentas: number }>();
     const porCanal = { MESA: { ventas: 0, cuentas: 0 }, MOSTRADOR: { ventas: 0, cuentas: 0 } };
     const porMesero = new Map<string, { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }>();
-    const porProducto = new Map<string, { productoId: string; nombre: string; categoria: string; cantidad: number; ventas: number }>();
+    // La ganancia se calcula solo sobre lo vendido con costo conocido (el
+    // costo se guarda al vender; lo vendido antes de configurarlo no cuenta).
+    const porProducto = new Map<
+      string,
+      { productoId: string; nombre: string; categoria: string; cantidad: number; ventas: number; unidadesConCosto: number; ventasConCosto: number; costo: number }
+    >();
 
     for (const c of pagadas) {
       const dia = porDia.get(c.dia)!;
       dia.ventas += c.total;
       dia.cuentas++;
-      const metodo = c.metodoPago ?? "OTRO";
-      const m = porMetodo.get(metodo) ?? { metodo, ventas: 0, cuentas: 0 };
-      m.ventas += c.total;
-      m.cuentas++;
-      porMetodo.set(metodo, m);
+      // Por los pagos, no por la cuenta: una cuenta dividida suma en cada método.
+      for (const pago of c.pagos) {
+        const m = porMetodo.get(pago.metodo) ?? { metodo: pago.metodo, ventas: 0, cuentas: 0 };
+        m.ventas += pago.monto;
+        porMetodo.set(pago.metodo, m);
+      }
+      for (const metodo of new Set(c.pagos.map((p) => p.metodo))) porMetodo.get(metodo)!.cuentas++;
       porCanal[c.canal].ventas += c.total;
       porCanal[c.canal].cuentas++;
       if (c.canal === "MESA" && c.atendidoPor) {
@@ -116,9 +148,17 @@ reportesRouter.get(
           categoria: item.producto.categoria.nombre,
           cantidad: 0,
           ventas: 0,
+          unidadesConCosto: 0,
+          ventasConCosto: 0,
+          costo: 0,
         };
         p.cantidad += item.cantidad;
         p.ventas += item.cantidad * item.precioUnitario;
+        if (item.costoUnitario !== null) {
+          p.unidadesConCosto += item.cantidad;
+          p.ventasConCosto += item.cantidad * item.precioUnitario;
+          p.costo += item.cantidad * item.costoUnitario;
+        }
         porProducto.set(item.productoId, p);
       }
     }
@@ -135,8 +175,20 @@ reportesRouter.get(
         canceladoPor: nombreCompleto(log.cambiadoPor),
         // Si ya estaba en preparación o listo, se perdieron insumos (merma).
         yaEnCocina: log.deEstado === "EN_PREPARACION" || log.deEstado === "LISTO",
+        costo: item.costoUnitario !== null ? item.cantidad * item.costoUnitario : null,
       };
     });
+
+    const productos = Array.from(porProducto.values()).map((p) => ({
+      ...p,
+      ganancia: p.unidadesConCosto > 0 ? p.ventasConCosto - p.costo : null,
+      margenPct: p.ventasConCosto > 0 ? Math.round(((p.ventasConCosto - p.costo) / p.ventasConCosto) * 1000) / 10 : null,
+      clasificacion: null as ClasificacionMenu | null,
+    }));
+    clasificarMenu(productos);
+    const conCosto = productos.filter((p) => p.unidadesConCosto > 0);
+    const ventasConCosto = suma(conCosto.map((p) => p.ventasConCosto));
+    const costoVentas = suma(conCosto.map((p) => p.costo));
 
     const ventas = suma(pagadas.map((c) => c.total));
     res.json({
@@ -152,13 +204,23 @@ reportesRouter.get(
           productos: suma(cancelaciones.map((c) => c.cantidad)),
           total: suma(cancelaciones.map((c) => c.valor)),
           merma: suma(cancelaciones.filter((c) => c.yaEnCocina).map((c) => c.valor)),
+          // Lo que de verdad se perdió en insumos (al costo, no al precio).
+          costoMerma: suma(cancelaciones.filter((c) => c.yaEnCocina && c.costo !== null).map((c) => c.costo!)),
+        },
+        ganancia: {
+          ventasConCosto,
+          costoVentas,
+          gananciaBruta: ventasConCosto - costoVentas,
+          margenPct: ventasConCosto > 0 ? Math.round(((ventasConCosto - costoVentas) / ventasConCosto) * 1000) / 10 : null,
+          // Productos vendidos cuya ganancia no se puede calcular por falta de costo.
+          productosSinCosto: productos.filter((p) => p.unidadesConCosto < p.cantidad).map((p) => p.nombre),
         },
       },
       porDia: Array.from(porDia.values()),
       porMetodo: Array.from(porMetodo.values()).sort((a, b) => b.ventas - a.ventas),
       porCanal,
       porMesero: Array.from(porMesero.values()).sort((a, b) => b.ventas - a.ventas),
-      porProducto: Array.from(porProducto.values()).sort((a, b) => b.ventas - a.ventas),
+      porProducto: productos.sort((a, b) => b.ventas - a.ventas),
       perdidas: perdidas.map(({ items: _items, ...c }) => ({ ...c, atendidoPor: nombreCompleto(c.atendidoPor) })),
       cancelaciones,
       cuentas: cuentas.map(({ items: _items, ...c }) => ({ ...c, atendidoPor: nombreCompleto(c.atendidoPor) })),

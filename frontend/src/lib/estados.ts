@@ -1,4 +1,4 @@
-import type { PedidoEstado } from "./types";
+import type { MetodoPago, PedidoEstado } from "./types";
 
 // Estado del pedido completo (visto por el mesero).
 export const PEDIDO_ESTADO_LABEL: Record<PedidoEstado, string> = {
@@ -18,4 +18,13 @@ export const ITEM_ESTADO_LABEL: Record<PedidoEstado, string> = {
   CANCELADO: "Cancelado",
 };
 
-export const METODO_PAGO_LABEL = { EFECTIVO: "Efectivo", TARJETA: "Tarjeta", OTRO: "Otro" } as const;
+export const METODO_PAGO_LABEL: Record<MetodoPago, string> = {
+  EFECTIVO: "Efectivo",
+  TARJETA: "Tarjeta",
+  NEQUI: "Nequi",
+  DAVIPLATA: "Daviplata",
+  TRANSFERENCIA: "Transferencia / QR bancario",
+  OTRO: "Otro",
+};
+
+export const METODOS_PAGO = Object.keys(METODO_PAGO_LABEL) as MetodoPago[];

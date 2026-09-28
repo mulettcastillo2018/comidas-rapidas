@@ -8,6 +8,7 @@ import { probarVentasYCaja } from "./ventas-caja.e2e";
 import { probarSeguimiento } from "./seguimiento.e2e";
 import { probarOperacion } from "./operacion.e2e";
 import { probarNotificaciones } from "./notificaciones.e2e";
+import { probarDinero } from "./dinero.e2e";
 
 const PRUEBAS: [string, () => Promise<void>][] = [
   ["Integridad y sesiones", probarIntegridad],
@@ -16,6 +17,7 @@ const PRUEBAS: [string, () => Promise<void>][] = [
   ["Seguimiento y datos personales", probarSeguimiento],
   ["Operación diaria", probarOperacion],
   ["Notificaciones que llevan a su pantalla", probarNotificaciones],
+  ["Dinero: costos, pagos y caja", probarDinero],
 ];
 
 async function main() {

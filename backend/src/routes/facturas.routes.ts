@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { MetodoPago } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { cobroSchema, pagosDelCobro, registrarPagos, type Cobro } from "../services/pagos";
 import { requireAuth, requireMesero } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
@@ -81,7 +81,7 @@ facturasRouter.post(
 async function resolverCuentaDeMesa(
   facturaId: string,
   usuario: { userId: string; role: string },
-  resultado: { estado: "PAGADA"; metodoPago: MetodoPago } | { estado: "PERDIDA" }
+  resultado: { estado: "PAGADA"; cobro: Cobro } | { estado: "PERDIDA" }
 ) {
   const factura = await prisma.factura.findUnique({ where: { id: facturaId }, include: { mesaSesion: true } });
   if (!factura) throw new ErrorDeNegocio("Factura no encontrada", 404);
@@ -90,13 +90,18 @@ async function resolverCuentaDeMesa(
   if (sesion.meseroId !== usuario.userId && usuario.role !== "ADMIN") {
     throw new ErrorDeNegocio("Esta mesa la está atendiendo otro mesero", 403);
   }
+  const pagos = resultado.estado === "PAGADA" ? pagosDelCobro(resultado.cobro, factura.total) : [];
 
   await prisma.$transaction(async (tx) => {
     const resuelta = await tx.factura.updateMany({
       where: { id: factura.id, estado: "PENDIENTE" },
-      data: { ...resultado, pagadaEn: new Date(), cerradaPorId: usuario.userId },
+      data: { estado: resultado.estado, pagadaEn: new Date(), cerradaPorId: usuario.userId },
     });
     if (resuelta.count === 0) throw new ErrorDeNegocio("Esta cuenta ya fue resuelta", 409);
+    if (pagos.length > 0) {
+      const metodoPago = await registrarPagos(tx, factura.id, pagos);
+      await tx.factura.update({ where: { id: factura.id }, data: { metodoPago } });
+    }
     await tx.mesaSesion.update({ where: { id: sesion.id }, data: { estado: "CERRADA", cerradaEn: new Date() } });
     await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
   });
@@ -105,19 +110,17 @@ async function resolverCuentaDeMesa(
   return prisma.factura.findUnique({ where: { id: factura.id } });
 }
 
-const pagarFacturaSchema = z.object({ metodoPago: z.enum(["EFECTIVO", "TARJETA", "OTRO"]) });
-
 facturasRouter.put(
   "/:id/pagar",
   requireAuth,
   requireMesero,
   catchAsync(async (req, res) => {
-    const parsed = pagarFacturaSchema.safeParse(req.body);
+    const parsed = cobroSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.flatten() });
+      res.status(400).json({ error: "Indica cómo se pagó: un método, o la lista de pagos con su método y monto" });
       return;
     }
-    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", metodoPago: parsed.data.metodoPago });
+    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data });
     res.json(factura);
   })
 );

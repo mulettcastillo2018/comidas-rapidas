@@ -1,6 +1,6 @@
 import { prisma } from "../../src/lib/prisma";
 import { ejecutarLimpieza } from "../../src/services/limpieza";
-import { despachar, req, sesiones, verificar } from "./_utilidades";
+import { despachar, exigir, req, sesiones, verificar } from "./_utilidades";
 import { limpiar, registroDeCreados } from "./_limpieza";
 
 const seguir = async (codigo: string) => (await req("GET", `/seguimiento/${codigo}`)).data;
@@ -22,7 +22,7 @@ export async function probarSeguimiento() {
     const base = { mesaId: null, nombreCliente: "Laura E2E Gómez", telefonoCliente: "3001234567", items };
     const sinAutorizar = await req("POST", "/solicitudes", base);
     verificar(sinAutorizar.status === 400 && typeof sinAutorizar.data?.error === "string", `sin autorizar → 400 "${sinAutorizar.data?.error}"`);
-    const sol = (await req("POST", "/solicitudes", { ...base, aceptaDatos: true })).data;
+    const sol = exigir(await req("POST", "/solicitudes", { ...base, aceptaDatos: true }), "Crear pedido de mostrador");
     creados.solicitudes.push(sol.id);
     verificar(Boolean((await prisma.solicitudPedido.findUnique({ where: { id: sol.id } }))?.datosAutorizadosEn), "queda fechada la autorización");
     verificar(/^[A-Za-z0-9_-]{12}$/.test(sol.codigoSeguimiento ?? ""), "código de seguimiento aleatorio");
@@ -32,7 +32,7 @@ export async function probarSeguimiento() {
     verificar(s.etapa === "ESPERANDO_CONFIRMACION" && s.nombre === "Laura G.", `esperando en caja, nombre abreviado ("${s.nombre}")`);
     verificar(!JSON.stringify(s).includes("3001234567"), "el teléfono no aparece en la página pública");
     verificar(s.minutosPreparacion === maxMin, `tiempo aproximado antes de pagar: ${s.minutosPreparacion} min`);
-    const cobro = (await req("PUT", `/solicitudes/${sol.id}/confirmar-recogida`, { metodoPago: "EFECTIVO" }, t.admin)).data;
+    const cobro = exigir(await req("PUT", `/solicitudes/${sol.id}/confirmar-recogida`, { metodoPago: "EFECTIVO" }, t.admin), "Cobrar en caja");
     creados.pedidos.push(cobro.pedido.id);
     s = await seguir(sol.codigoSeguimiento);
     verificar(s.etapa === "EN_COCINA" && cerca(s.listoEstimadoEn, new Date(new Date(cobro.pedido.creadoEn).getTime() + maxMin * 60_000)), "en cocina, con hora estimada");

@@ -6,6 +6,7 @@ import { resolverImagenUrl } from "@/lib/images";
 import { useAuthStore } from "@/store/auth.store";
 import { formatoPesos } from "@/lib/formato";
 import { reducirImagen } from "@/lib/imagen";
+import { CampoPesos } from "@/components/CampoPesos";
 import type { Categoria, Producto } from "@/lib/types";
 
 interface ProductoFormValues {
@@ -16,6 +17,7 @@ interface ProductoFormValues {
   categoriaId: string;
   imagenUrl: string | null;
   requiereCocina: boolean;
+  costo: number | null;
   disponible: boolean;
   isActive: boolean;
 }
@@ -27,6 +29,7 @@ const EMPTY_VALUES: Omit<ProductoFormValues, "categoriaId"> = {
   tiempoPreparacionMinutos: 10,
   imagenUrl: null,
   requiereCocina: true,
+  costo: null,
   disponible: true,
   isActive: true,
 };
@@ -79,26 +82,33 @@ function ProductoForm({
         rows={2}
         className="w-full rounded-lg border border-border px-3 py-2 text-sm"
       />
-      <div className="grid grid-cols-2 gap-3">
-        <input
-          type="number"
-          value={values.precio}
-          onChange={(e) => update("precio", Number(e.target.value))}
-          placeholder="Precio (COP)"
-          required
-          min={1}
-          className="rounded-lg border border-border px-3 py-2 text-sm"
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <CampoPesos label="Precio de venta" valor={values.precio || null} onChange={(v) => update("precio", v ?? 0)} />
+        <CampoPesos
+          label="Costo"
+          ayuda="Opcional: lo que te cuesta una unidad (insumos + empaque)"
+          valor={values.costo}
+          onChange={(v) => update("costo", v)}
         />
-        <input
-          type="number"
-          value={values.tiempoPreparacionMinutos}
-          onChange={(e) => update("tiempoPreparacionMinutos", Number(e.target.value))}
-          placeholder="Tiempo de preparación (min)"
-          required
-          min={1}
-          className="rounded-lg border border-border px-3 py-2 text-sm"
-        />
+        <label className="block text-sm">
+          <span className="font-semibold">Preparación (min)</span>
+          <input
+            type="number"
+            value={values.tiempoPreparacionMinutos}
+            onChange={(e) => update("tiempoPreparacionMinutos", Number(e.target.value))}
+            required
+            min={1}
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
+          />
+        </label>
       </div>
+      {values.costo !== null && values.precio > 0 ? (
+        <p className={`text-xs ${values.costo >= values.precio ? "text-red-600" : "text-muted-foreground"}`}>
+          {values.costo >= values.precio
+            ? "Ojo: el costo es igual o mayor que el precio, este producto no deja ganancia."
+            : `Deja ${formatoPesos(values.precio - values.costo)} por unidad (margen del ${Math.round(((values.precio - values.costo) / values.precio) * 100)}%).`}
+        </p>
+      ) : null}
       <select
         value={values.categoriaId}
         onChange={(e) => update("categoriaId", e.target.value)}
@@ -296,7 +306,17 @@ export default function AdminProductosPage() {
                     {producto.categoria?.nombre} ·{" "}
                     {producto.requiereCocina ? `${producto.tiempoPreparacionMinutos} min de preparación` : "No pasa por cocina"}
                   </p>
-                  <p className="text-sm font-semibold">{formatoPesos(producto.precio)}</p>
+                  <p className="text-sm font-semibold">
+                    {formatoPesos(producto.precio)}
+                    {producto.costo != null ? (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        costo {formatoPesos(producto.costo)} · margen{" "}
+                        {producto.precio > 0 ? Math.round(((producto.precio - producto.costo) / producto.precio) * 100) : 0}%
+                      </span>
+                    ) : (
+                      <span className="ml-2 text-xs font-normal text-amber-600">sin costo</span>
+                    )}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-3">

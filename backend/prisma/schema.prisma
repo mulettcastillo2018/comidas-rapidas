@@ -34,6 +34,8 @@ model User {
   notificaciones     Notificacion[]
   solicitudesResueltas SolicitudPedido[]
   cierresCaja        CierreCaja[]
+  entregasCaja       MovimientoCaja[]  @relation("EntregasMesero")
+  movimientosCaja    MovimientoCaja[]  @relation("MovimientosRegistrados")
 }
 
 model Categoria {
@@ -56,6 +58,9 @@ model Producto {
   // false para lo que no se prepara (gaseosas, agua, productos empacados): el
   // mesero lo toma directo, así que nace "listo" y no ocupa la fila de cocina.
   requiereCocina         Boolean      @default(true)
+  // Lo que le cuesta al negocio una unidad (insumos + empaque), para saber
+  // cuánto deja cada venta. null = todavía no se ha configurado.
+  costo                  Int?
   disponible             Boolean      @default(true)
   isActive               Boolean      @default(true)
   createdAt              DateTime     @default(now())
@@ -173,6 +178,9 @@ model PedidoItem {
   cantidad                 Int
   notas                    String?
   precioUnitario           Int
+  // Costo al momento de venderlo (como el precio): si el costo del producto
+  // cambia después, la ganancia de las ventas pasadas no se altera.
+  costoUnitario            Int?
   tiempoPreparacionMinutos Int
   estado                   PedidoEstado @default(RECIBIDO)
   iniciadoEn               DateTime?
@@ -220,7 +228,51 @@ enum FacturaEstado {
 enum MetodoPago {
   EFECTIVO
   TARJETA
+  NEQUI
+  DAVIPLATA
+  // Transferencia bancaria, QR bancario, Bre-B.
+  TRANSFERENCIA
   OTRO
+}
+
+// Cómo se pagó una cuenta. Una cuenta puede pagarse con varios métodos (parte
+// en efectivo y parte por Nequi, o cada comensal por su lado); la suma de sus
+// pagos es el total de la cuenta.
+model PagoFactura {
+  id        String     @id @default(cuid())
+  facturaId String
+  factura   Factura    @relation(fields: [facturaId], references: [id])
+  metodo    MetodoPago
+  monto     Int
+  creadoEn  DateTime   @default(now())
+
+  @@index([facturaId])
+}
+
+enum TipoMovimientoCaja {
+  // Plata que entra a la caja sin ser una venta (p. ej. más base).
+  ENTRADA
+  // Plata que sale de la caja (pago a un proveedor, retiro del dueño).
+  SALIDA
+  // Un mesero entrega a la caja el efectivo que cobró en las mesas. No cambia
+  // lo que debe haber en caja al cierre: sirve para saber quién entregó qué.
+  ENTREGA_MESERO
+}
+
+model MovimientoCaja {
+  id              String             @id @default(cuid())
+  tipo            TipoMovimientoCaja
+  monto           Int
+  concepto        String
+  meseroId        String?
+  mesero          User?              @relation("EntregasMesero", fields: [meseroId], references: [id])
+  registradoPorId String
+  registradoPor   User               @relation("MovimientosRegistrados", fields: [registradoPorId], references: [id])
+  creadoEn        DateTime           @default(now())
+  cierreCajaId    String?
+  cierreCaja      CierreCaja?        @relation(fields: [cierreCajaId], references: [id])
+
+  @@index([cierreCajaId])
 }
 
 enum NotificacionTipo {
@@ -311,7 +363,10 @@ model Factura {
   propinaMonto  Int           @default(0)
   total         Int
   estado        FacturaEstado @default(PENDIENTE)
+  // El método si se pagó con uno solo; null si se dividió en varios (el
+  // detalle siempre está en pagos).
   metodoPago    MetodoPago?
+  pagos         PagoFactura[]
   generadaEn    DateTime      @default(now())
   pagadaEn      DateTime?
   cerradaPorId  String?
@@ -337,6 +392,9 @@ model CierreCaja {
   cuentasPagadas  Int
   totalEfectivo   Int
   totalTarjeta    Int
+  totalNequi         Int @default(0)
+  totalDaviplata     Int @default(0)
+  totalTransferencia Int @default(0)
   totalOtro       Int
   // Ya incluidas en los totales de arriba; se muestran aparte para repartir.
   propinas        Int
@@ -344,9 +402,14 @@ model CierreCaja {
   totalPerdidas   Int
   // Efectivo con el que arrancó la caja (para dar vueltas).
   baseInicial     Int
+  // Movimientos de efectivo que no son ventas (ver MovimientoCaja).
+  totalEntradas   Int @default(0)
+  totalSalidas    Int @default(0)
   efectivoContado Int
-  // efectivoContado - (baseInicial + totalEfectivo): negativo = falta plata.
+  // efectivoContado - (baseInicial + totalEfectivo + entradas - salidas):
+  // negativo = falta plata.
   diferencia      Int
   notas           String?
   facturas        Factura[]
+  movimientos     MovimientoCaja[]
 }

@@ -5,6 +5,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { reemplazarPedidoActivo } from "@/lib/pedidos";
 import { formatoPesos } from "@/lib/formato";
+import { METODO_PAGO_LABEL, METODOS_PAGO } from "@/lib/estados";
 import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import { estimarListoEn, formatoHora } from "@/lib/tiempoEstimado";
 import { useAuthStore } from "@/store/auth.store";
@@ -152,9 +153,11 @@ export default function AdminMostradorPage() {
                       onChange={(e) => setMetodoPago(e.target.value as MetodoPago)}
                       className="rounded-lg border border-border px-2 py-1.5 text-sm"
                     >
-                      <option value="EFECTIVO">Efectivo</option>
-                      <option value="TARJETA">Tarjeta</option>
-                      <option value="OTRO">Otro</option>
+                      {METODOS_PAGO.map((m) => (
+                        <option key={m} value={m}>
+                          {METODO_PAGO_LABEL[m]}
+                        </option>
+                      ))}
                     </select>
                     <button
                       onClick={() => handleConfirmar(solicitud)}

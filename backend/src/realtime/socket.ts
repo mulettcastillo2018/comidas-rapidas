@@ -3,6 +3,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { verifyToken } from "../lib/jwt";
 import { allowedOrigins } from "../lib/corsOrigins";
 import { motivoTokenInvalido } from "../middleware/auth.middleware";
+import { sinDatosInternos } from "../lib/datosInternos";
 
 let ioInstance: SocketIOServer | null = null;
 
@@ -56,8 +57,9 @@ export function emitPedidoNuevo(pedido: unknown) {
 
 // Cocina marca un producto como agotado (o de nuevo disponible): los meseros
 // lo ven al instante en su lista en vez de ofrecerlo y que luego falle.
-export function emitProductoActualizado(producto: unknown) {
-  ioInstance?.to("meseros").to("cocina").emit("producto:actualizado", producto);
+export function emitProductoActualizado(producto: object) {
+  // Sin datos internos (costo, inventario): solo los ve el admin por la API.
+  ioInstance?.to("meseros").to("cocina").emit("producto:actualizado", sinDatosInternos(producto));
 }
 
 // Emite un cambio de estado de pedido a meseros (para que sepan cuándo

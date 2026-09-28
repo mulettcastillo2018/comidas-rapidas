@@ -7,7 +7,9 @@ import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.mid
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { crearLimitador } from "../lib/limitador";
+import { productoPublico } from "../lib/datosInternos";
 import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
+import { cobroSchema, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
 
@@ -20,7 +22,7 @@ const limitadorPorIp = crearLimitador(30, 10 * 60_000);
 
 const solicitudInclude = {
   mesa: { select: { id: true, numero: true } },
-  items: { include: { producto: true } },
+  items: { include: { producto: productoPublico } },
   resueltaPor: { select: { id: true, nombre: true, apellido: true } },
 };
 
@@ -243,8 +245,6 @@ solicitudesRouter.put(
   })
 );
 
-const confirmarRecogidaSchema = z.object({ metodoPago: z.enum(["EFECTIVO", "TARJETA", "OTRO"]) });
-
 // Pedido de mostrador (sin mesa): lo confirma el admin en caja, y como está
 // físicamente con el cliente en ese momento, cobra ahí mismo en el mismo
 // paso — así el cliente solo tiene que volver una vez, a recoger. Pedido,
@@ -255,9 +255,9 @@ solicitudesRouter.put(
   requireAuth,
   requireAdmin,
   catchAsync(async (req, res) => {
-    const parsed = confirmarRecogidaSchema.safeParse(req.body);
+    const parsed = cobroSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.flatten() });
+      res.status(400).json({ error: "Indica cómo pagó el cliente: un método, o la lista de pagos con su método y monto" });
       return;
     }
 
@@ -281,17 +281,19 @@ solicitudesRouter.put(
 
       const items = await tx.pedidoItem.findMany({ where: { pedidoId: nuevoPedidoId } });
       const subtotal = items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
+      const pagos = pagosDelCobro(parsed.data, subtotal);
       const factura = await tx.factura.create({
         data: {
           pedidoId: nuevoPedidoId,
           subtotal,
           total: subtotal,
           estado: "PAGADA",
-          metodoPago: parsed.data.metodoPago,
           pagadaEn: new Date(),
           cerradaPorId: req.user!.userId,
         },
       });
+      const metodoPago = await registrarPagos(tx, factura.id, pagos);
+      await tx.factura.update({ where: { id: factura.id }, data: { metodoPago } });
       await tx.solicitudPedido.update({ where: { id: solicitud.id }, data: { pedidoId: nuevoPedidoId } });
       return { pedidoId: nuevoPedidoId, facturaId: factura.id };
     });

@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
+import { OMITIR_ITEM, productoPublico } from "../lib/datosInternos";
 import { emitMesaSesionCerrada, emitMesaSesionNueva, emitPedidoActualizado } from "../realtime/socket";
 import { pedidoInclude } from "../services/pedidos";
 
@@ -15,7 +16,7 @@ const sesionInclude = {
   comensales: true,
   pedidos: {
     include: {
-      items: { include: { producto: true, comensal: true } },
+      items: { omit: OMITIR_ITEM, include: { producto: productoPublico, comensal: true } },
       mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
     },
     orderBy: { creadoEn: "asc" as const },

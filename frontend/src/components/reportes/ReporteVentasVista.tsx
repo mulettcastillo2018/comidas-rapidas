@@ -4,10 +4,24 @@ import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatoFechaHora, formatoPesos, hoyLocal } from "@/lib/formato";
-import type { MetodoPago, ReporteVentas } from "@/lib/types";
+import { METODO_PAGO_LABEL } from "@/lib/estados";
+import type { ClasificacionMenu, CuentaReporte, ReporteVentas } from "@/lib/types";
 
-const METODO_LABEL: Record<MetodoPago, string> = { EFECTIVO: "Efectivo", TARJETA: "Tarjeta", OTRO: "Otro" };
 const PRODUCTOS_VISIBLES = 10;
+
+// Ingeniería de menú: qué hacer con cada producto según cuánto se vende y
+// cuánto deja por unidad, comparado con el resto de la carta.
+const CLASIFICACION: Record<ClasificacionMenu, { etiqueta: string; consejo: string; clase: string }> = {
+  ESTRELLA: { etiqueta: "⭐ Estrella", consejo: "Se vende mucho y deja buen margen: cuídalo y destácalo.", clase: "bg-green-100 text-green-800" },
+  CABALLO: { etiqueta: "🐴 Caballo de batalla", consejo: "Se vende mucho pero deja poco: sube un poco el precio o baja su costo.", clase: "bg-amber-100 text-amber-800" },
+  ROMPECABEZAS: { etiqueta: "🧩 Rompecabezas", consejo: "Deja buen margen pero se vende poco: promociónalo, ponlo más visible.", clase: "bg-sky-100 text-sky-800" },
+  PERRO: { etiqueta: "🐶 Perro", consejo: "Ni se vende ni deja: piensa en cambiarlo o sacarlo de la carta.", clase: "bg-red-100 text-red-800" },
+};
+
+function metodoDeCuenta(c: CuentaReporte) {
+  if (c.metodoPago) return METODO_PAGO_LABEL[c.metodoPago];
+  return c.pagos.map((p) => `${METODO_PAGO_LABEL[p.metodo]} ${p.monto}`).join(" + ");
+}
 
 function rangosRapidos() {
   const hoy = hoyLocal();
@@ -35,7 +49,7 @@ function descargarCsv(reporte: ReporteVentas) {
       c.ubicacion,
       c.atendidoPor,
       c.estado === "PAGADA" ? "Pagada" : "Perdida",
-      c.metodoPago ? METODO_LABEL[c.metodoPago] : "",
+      c.estado === "PAGADA" ? metodoDeCuenta(c) : "",
       c.subtotal,
       c.propina,
       c.total,
@@ -149,10 +163,40 @@ export function ReporteVentasVista({ token }: { token: string }) {
             <Tarjeta
               titulo="Merma"
               valor={formatoPesos(reporte.resumen.cancelaciones.merma)}
-              detalle="cancelado cuando ya estaba en cocina"
+              detalle={
+                reporte.resumen.cancelaciones.costoMerma > 0
+                  ? `cancelado ya en cocina · insumos perdidos ${formatoPesos(reporte.resumen.cancelaciones.costoMerma)}`
+                  : "cancelado cuando ya estaba en cocina"
+              }
               alerta={reporte.resumen.cancelaciones.merma > 0}
             />
           </div>
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-bold">Ganancia</h2>
+            {reporte.resumen.ganancia.ventasConCosto > 0 ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Tarjeta
+                  titulo="Ganancia bruta"
+                  valor={formatoPesos(reporte.resumen.ganancia.gananciaBruta)}
+                  detalle="ventas de productos − su costo (sin propinas)"
+                  alerta={reporte.resumen.ganancia.gananciaBruta < 0}
+                />
+                <Tarjeta titulo="Margen" valor={`${reporte.resumen.ganancia.margenPct ?? 0}%`} detalle="de cada peso vendido" />
+                <Tarjeta titulo="Costo de lo vendido" valor={formatoPesos(reporte.resumen.ganancia.costoVentas)} detalle="insumos y empaques" />
+              </div>
+            ) : (
+              <p className="rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground">
+                Para ver cuánto ganas, configura el <strong>costo</strong> de tus productos en Admin → Productos. Se aplica a
+                lo que se venda desde ese momento.
+              </p>
+            )}
+            {reporte.resumen.ganancia.productosSinCosto.length > 0 && reporte.resumen.ganancia.ventasConCosto > 0 ? (
+              <p className="text-xs text-amber-700">
+                Sin costo (su ganancia no se cuenta): {reporte.resumen.ganancia.productosSinCosto.join(", ")}.
+              </p>
+            ) : null}
+          </section>
 
           {reporte.porDia.length > 1 ? (
             <section>
@@ -183,7 +227,7 @@ export function ReporteVentasVista({ token }: { token: string }) {
                   ) : (
                     reporte.porMetodo.map((m) => (
                       <tr key={m.metodo} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">{METODO_LABEL[m.metodo]}</td>
+                        <td className="py-1.5 pr-4">{METODO_PAGO_LABEL[m.metodo]}</td>
                         <td className="py-1.5 pr-4 text-muted-foreground">{m.cuentas} cuenta(s)</td>
                         <td className="py-1.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
                       </tr>
@@ -244,23 +288,54 @@ export function ReporteVentasVista({ token }: { token: string }) {
                   <thead>
                     <tr className="border-b border-border text-xs text-muted-foreground">
                       <th className="py-1.5 pr-4">Producto</th>
-                      <th className="py-1.5 pr-4">Categoría</th>
                       <th className="py-1.5 pr-4">Unidades</th>
-                      <th className="py-1.5 text-right">Ventas</th>
+                      <th className="py-1.5 pr-4 text-right">Ventas</th>
+                      <th className="py-1.5 pr-4 text-right">Ganancia</th>
+                      <th className="py-1.5 pr-4 text-right">Margen</th>
+                      <th className="py-1.5">En la carta</th>
                     </tr>
                   </thead>
                   <tbody>
                     {productos.map((p) => (
                       <tr key={p.productoId} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">{p.nombre}</td>
-                        <td className="py-1.5 pr-4 text-muted-foreground">{p.categoria}</td>
+                        <td className="py-1.5 pr-4">
+                          {p.nombre}
+                          <span className="block text-[11px] text-muted-foreground">{p.categoria}</span>
+                        </td>
                         <td className="py-1.5 pr-4">{p.cantidad}</td>
-                        <td className="py-1.5 text-right font-semibold">{formatoPesos(p.ventas)}</td>
+                        <td className="py-1.5 pr-4 text-right font-semibold">{formatoPesos(p.ventas)}</td>
+                        <td className={`py-1.5 pr-4 text-right ${p.ganancia !== null && p.ganancia < 0 ? "text-red-600" : ""}`}>
+                          {p.ganancia !== null ? formatoPesos(p.ganancia) : <span className="text-xs text-muted-foreground">sin costo</span>}
+                        </td>
+                        <td className="py-1.5 pr-4 text-right">{p.margenPct !== null ? `${p.margenPct}%` : "—"}</td>
+                        <td className="py-1.5">
+                          {p.clasificacion ? (
+                            <span
+                              title={CLASIFICACION[p.clasificacion].consejo}
+                              className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${CLASIFICACION[p.clasificacion].clase}`}
+                            >
+                              {CLASIFICACION[p.clasificacion].etiqueta}
+                            </span>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {reporte.porProducto.some((p) => p.clasificacion) ? (
+                <details className="mt-2 rounded-lg bg-muted/60 p-2 text-xs">
+                  <summary className="cursor-pointer font-semibold">¿Qué significa &quot;En la carta&quot;?</summary>
+                  <ul className="mt-2 space-y-1">
+                    {(Object.keys(CLASIFICACION) as ClasificacionMenu[]).map((c) => (
+                      <li key={c}>
+                        <strong>{CLASIFICACION[c].etiqueta}:</strong> {CLASIFICACION[c].consejo}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-muted-foreground">Se compara cada producto con el resto de la carta en el rango elegido; solo cuenta lo vendido con costo configurado.</p>
+                </details>
+              ) : null}
               {reporte.porProducto.length > PRODUCTOS_VISIBLES ? (
                 <button onClick={() => setVerTodosProductos((v) => !v)} className="mt-2 text-xs font-semibold text-accent">
                   {verTodosProductos ? "Ver menos" : `Ver los ${reporte.porProducto.length} productos`}

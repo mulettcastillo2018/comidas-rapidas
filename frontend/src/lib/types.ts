@@ -34,6 +34,8 @@ export interface Producto {
   imagenUrl: string | null;
   // false = no pasa por cocina (bebidas, empacados): nace listo para llevar.
   requiereCocina: boolean;
+  // Costo por unidad; solo llega al admin (null = sin configurar).
+  costo?: number | null;
   disponible: boolean;
   isActive: boolean;
 }
@@ -130,7 +132,12 @@ export interface Pedido {
 }
 
 export type FacturaEstado = "PENDIENTE" | "PAGADA" | "PERDIDA";
-export type MetodoPago = "EFECTIVO" | "TARJETA" | "OTRO";
+export type MetodoPago = "EFECTIVO" | "TARJETA" | "NEQUI" | "DAVIPLATA" | "TRANSFERENCIA" | "OTRO";
+
+export interface Pago {
+  metodo: MetodoPago;
+  monto: number;
+}
 
 export interface Factura {
   id: string;
@@ -183,10 +190,28 @@ export interface CuentaReporte {
   ubicacion: string;
   atendidoPor: string;
   estado: "PAGADA" | "PERDIDA";
+  // null si se pagó con varios métodos (ver pagos).
   metodoPago: MetodoPago | null;
+  pagos: Pago[];
   subtotal: number;
   propina: number;
   total: number;
+}
+
+export type ClasificacionMenu = "ESTRELLA" | "CABALLO" | "ROMPECABEZAS" | "PERRO";
+
+export interface ProductoReporte {
+  productoId: string;
+  nombre: string;
+  categoria: string;
+  cantidad: number;
+  ventas: number;
+  unidadesConCosto: number;
+  ventasConCosto: number;
+  costo: number;
+  ganancia: number | null;
+  margenPct: number | null;
+  clasificacion: ClasificacionMenu | null;
 }
 
 export interface ReporteVentas {
@@ -198,13 +223,20 @@ export interface ReporteVentas {
     ticketPromedio: number;
     propinas: number;
     perdidas: { cuentas: number; total: number };
-    cancelaciones: { productos: number; total: number; merma: number };
+    cancelaciones: { productos: number; total: number; merma: number; costoMerma: number };
+    ganancia: {
+      ventasConCosto: number;
+      costoVentas: number;
+      gananciaBruta: number;
+      margenPct: number | null;
+      productosSinCosto: string[];
+    };
   };
   porDia: { dia: string; ventas: number; cuentas: number }[];
   porMetodo: { metodo: MetodoPago; ventas: number; cuentas: number }[];
   porCanal: Record<"MESA" | "MOSTRADOR", { ventas: number; cuentas: number }>;
   porMesero: { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }[];
-  porProducto: { productoId: string; nombre: string; categoria: string; cantidad: number; ventas: number }[];
+  porProducto: ProductoReporte[];
   perdidas: CuentaReporte[];
   cancelaciones: {
     id: string;
@@ -219,18 +251,45 @@ export interface ReporteVentas {
   cuentas: CuentaReporte[];
 }
 
-interface TotalesCaja {
+export interface TotalesCaja {
   desde: string;
   cuentasPagadas: number;
   totalEfectivo: number;
   totalTarjeta: number;
+  totalNequi: number;
+  totalDaviplata: number;
+  totalTransferencia: number;
   totalOtro: number;
   propinas: number;
   cuentasPerdidas: number;
   totalPerdidas: number;
+  totalEntradas: number;
+  totalSalidas: number;
+}
+
+export type TipoMovimientoCaja = "ENTRADA" | "SALIDA" | "ENTREGA_MESERO";
+
+export interface MovimientoCaja {
+  id: string;
+  tipo: TipoMovimientoCaja;
+  monto: number;
+  concepto: string;
+  mesero: PersonaBasica | null;
+  registradoPor: PersonaBasica;
+  creadoEn: string;
+}
+
+export interface CuadreMesero {
+  userId: string;
+  nombre: string;
+  cobrado: number;
+  entregado: number;
+  pendiente: number;
 }
 
 export interface CajaActual extends TotalesCaja {
+  movimientos: MovimientoCaja[];
+  porMesero: CuadreMesero[];
   mesasAbiertas: number;
   cuentasPorCobrar: number;
 }
