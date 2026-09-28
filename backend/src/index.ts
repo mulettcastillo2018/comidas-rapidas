@@ -20,6 +20,7 @@ import { reportesRouter } from "./routes/reportes.routes";
 import { cartaRouter } from "./routes/carta.routes";
 import { notificacionesRouter } from "./routes/notificaciones.routes";
 import { solicitudesRouter } from "./routes/solicitudes.routes";
+import { cajaRouter } from "./routes/caja.routes";
 import { allowedOrigins } from "./lib/corsOrigins";
 import { ErrorDeNegocio } from "./lib/errores";
 import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
@@ -53,6 +54,7 @@ app.use("/reportes", reportesRouter);
 app.use("/carta", cartaRouter);
 app.use("/notificaciones", notificacionesRouter);
 app.use("/solicitudes", solicitudesRouter);
+app.use("/caja", cajaRouter);
 
 // Errores de Prisma que son culpa de la petición (dato repetido, registro que
 // ya no existe o que otros registros usan), no fallas del servidor.

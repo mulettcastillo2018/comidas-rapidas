@@ -173,6 +173,76 @@ export interface ReporteTiempos {
   porProducto: ReporteProductoFila[];
 }
 
+export interface CuentaReporte {
+  id: string;
+  fecha: string;
+  dia: string;
+  canal: "MESA" | "MOSTRADOR";
+  ubicacion: string;
+  atendidoPor: string;
+  estado: "PAGADA" | "PERDIDA";
+  metodoPago: MetodoPago | null;
+  subtotal: number;
+  propina: number;
+  total: number;
+}
+
+export interface ReporteVentas {
+  desde: string;
+  hasta: string;
+  resumen: {
+    ventas: number;
+    cuentas: number;
+    ticketPromedio: number;
+    propinas: number;
+    perdidas: { cuentas: number; total: number };
+    cancelaciones: { productos: number; total: number; merma: number };
+  };
+  porDia: { dia: string; ventas: number; cuentas: number }[];
+  porMetodo: { metodo: MetodoPago; ventas: number; cuentas: number }[];
+  porCanal: Record<"MESA" | "MOSTRADOR", { ventas: number; cuentas: number }>;
+  porMesero: { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }[];
+  porProducto: { productoId: string; nombre: string; categoria: string; cantidad: number; ventas: number }[];
+  perdidas: CuentaReporte[];
+  cancelaciones: {
+    id: string;
+    fecha: string;
+    producto: string;
+    cantidad: number;
+    valor: number;
+    ubicacion: string;
+    canceladoPor: string;
+    yaEnCocina: boolean;
+  }[];
+  cuentas: CuentaReporte[];
+}
+
+interface TotalesCaja {
+  desde: string;
+  cuentasPagadas: number;
+  totalEfectivo: number;
+  totalTarjeta: number;
+  totalOtro: number;
+  propinas: number;
+  cuentasPerdidas: number;
+  totalPerdidas: number;
+}
+
+export interface CajaActual extends TotalesCaja {
+  mesasAbiertas: number;
+  cuentasPorCobrar: number;
+}
+
+export interface CierreCaja extends TotalesCaja {
+  id: string;
+  hasta: string;
+  cerradoPor: PersonaBasica;
+  baseInicial: number;
+  efectivoContado: number;
+  diferencia: number;
+  notas: string | null;
+}
+
 export interface CategoriaConCarta extends Categoria {
   productos: Producto[];
 }

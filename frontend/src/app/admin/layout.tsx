@@ -12,6 +12,7 @@ const TABS = [
   { href: "/admin/pedidos", label: "Pedidos en vivo" },
   { href: "/admin/mostrador", label: "Mostrador" },
   { href: "/admin/domicilios", label: "Domicilios" },
+  { href: "/admin/caja", label: "Caja" },
   { href: "/admin/reportes", label: "Reportes" },
   { href: "/admin/carta-qr", label: "Carta QR" },
 ];
@@ -30,9 +31,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-bold">Administración</h1>
+      <h1 className="text-2xl font-bold print:hidden">Administración</h1>
 
-      <nav className="mt-4 flex flex-wrap gap-2 border-b border-border pb-3">
+      <nav className="mt-4 flex flex-wrap gap-2 border-b border-border pb-3 print:hidden">
         {TABS.map((tab) => (
           <Link
             key={tab.href}

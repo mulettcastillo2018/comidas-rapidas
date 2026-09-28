@@ -33,6 +33,7 @@ model User {
   mesasAsignadas     Mesa[]            @relation("MesaAsignada")
   notificaciones     Notificacion[]
   solicitudesResueltas SolicitudPedido[]
+  cierresCaja        CierreCaja[]
 }
 
 model Categoria {
@@ -301,4 +302,37 @@ model Factura {
   pagadaEn      DateTime?
   cerradaPorId  String?
   cerradaPor    User?         @relation(fields: [cerradaPorId], references: [id])
+  // Cierre de caja en el que se contabilizó (null = todavía no se ha
+  // cerrado caja desde que se cobró o se dio por perdida).
+  cierreCajaId  String?
+  cierreCaja    CierreCaja?   @relation(fields: [cierreCajaId], references: [id])
+
+  @@index([cierreCajaId])
+  @@index([estado, pagadaEn])
+}
+
+// Cierre de turno: el sistema suma lo cobrado desde el cierre anterior (por
+// método de pago) y el admin registra cuánto efectivo contó físicamente en
+// caja. Queda guardado y no se edita, para poder revisar descuadres después.
+model CierreCaja {
+  id              String    @id @default(cuid())
+  desde           DateTime
+  hasta           DateTime  @default(now())
+  cerradoPorId    String
+  cerradoPor      User      @relation(fields: [cerradoPorId], references: [id])
+  cuentasPagadas  Int
+  totalEfectivo   Int
+  totalTarjeta    Int
+  totalOtro       Int
+  // Ya incluidas en los totales de arriba; se muestran aparte para repartir.
+  propinas        Int
+  cuentasPerdidas Int
+  totalPerdidas   Int
+  // Efectivo con el que arrancó la caja (para dar vueltas).
+  baseInicial     Int
+  efectivoContado Int
+  // efectivoContado - (baseInicial + totalEfectivo): negativo = falta plata.
+  diferencia      Int
+  notas           String?
+  facturas        Factura[]
 }

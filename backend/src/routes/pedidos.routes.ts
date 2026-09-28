@@ -1,14 +1,24 @@
 import { Router } from "express";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { ErrorDeNegocio } from "../lib/errores";
 import { emitPedidoActualizado } from "../realtime/socket";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { notificarUsuarios, notificarPorRol } from "../services/notificaciones";
 import { crearPedido, pedidoInclude } from "../services/pedidos";
 
 export const pedidosRouter = Router();
+
+// El estado del pedido se recalcula a partir de todos sus productos; si dos
+// productos del mismo pedido cambian a la vez, cada transacción vería al otro
+// sin cambiar y el agregado quedaría viejo. Bloquear la fila del pedido hace
+// que esos cambios se apliquen uno tras otro.
+async function bloquearPedido(tx: Prisma.TransactionClient, pedidoId: string) {
+  await tx.$queryRaw`SELECT id FROM "Pedido" WHERE id = ${pedidoId} FOR UPDATE`;
+}
 
 const pedidoItemSchema = z.object({
   comensalId: z.string().min(1).nullable().optional(),
@@ -115,29 +125,52 @@ pedidosRouter.put(
       return;
     }
 
+    // Solo se tocan los productos que siguen en curso: los ya entregados se
+    // consumieron (y se cobran) aunque se cancele el resto del pedido. Este
+    // endpoint es el atajo para entregar/cancelar todo de una vez; producto
+    // por producto va por PUT /:id/items/:itemId/estado, y ambos caminos
+    // dejan el mismo rastro por producto (lo usa el reporte de cancelaciones).
+    const enCurso = pedido.items.filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO");
+    const yaEnCocina = estado === "CANCELADO" && enCurso.some((i) => i.estado === "EN_PREPARACION" || i.estado === "LISTO");
+
     await prisma.$transaction(async (tx) => {
-      if (estado === "CANCELADO") {
-        await tx.pedidoItem.updateMany({ where: { pedidoId: pedido.id }, data: { estado: "CANCELADO" } });
+      await bloquearPedido(tx, pedido.id);
+      // Condicionado a que sigan en curso: si mientras tanto alguien entregó
+      // uno de estos productos, se rechaza en vez de cancelar algo ya servido.
+      const tomados = await tx.pedidoItem.updateMany({
+        where: { id: { in: enCurso.map((i) => i.id) }, estado: { notIn: ["ENTREGADO", "CANCELADO"] } },
+        data: { estado },
+      });
+      if (tomados.count !== enCurso.length) {
+        throw new ErrorDeNegocio("El pedido cambió mientras tanto (alguien entregó o canceló un producto). Revisa y vuelve a intentarlo.", 409);
       }
-      // Este endpoint entrega el pedido completo de una vez (atajo útil cuando
-      // todos sus productos ya están listos a la vez); también se puede
-      // entregar producto por producto vía PUT /:id/items/:itemId/estado.
-      // Aquí igualamos el estado de los ítems para que ambos caminos queden
-      // consistentes entre sí.
-      if (estado === "ENTREGADO") {
-        await tx.pedidoItem.updateMany({ where: { pedidoId: pedido.id, estado: { not: "CANCELADO" } }, data: { estado: "ENTREGADO" } });
-      }
+      await tx.pedidoItemStatusLog.createMany({
+        data: enCurso.map((i) => ({ pedidoItemId: i.id, deEstado: i.estado, aEstado: estado, cambiadoPorId: req.user!.userId })),
+      });
+
+      const nuevoEstado = calcularEstadoPedido(pedido.items.map((i) => (enCurso.includes(i) ? { estado } : i)));
       await tx.pedido.update({
         where: { id: pedido.id },
-        data: { estado, ...(estado === "ENTREGADO" ? { entregadoEn: new Date() } : {}) },
+        data: { estado: nuevoEstado, ...(nuevoEstado === "ENTREGADO" && !pedido.entregadoEn ? { entregadoEn: new Date() } : {}) },
       });
       await tx.pedidoStatusLog.create({
-        data: { pedidoId: pedido.id, deEstado: pedido.estado, aEstado: estado, cambiadoPorId: req.user!.userId },
+        data: { pedidoId: pedido.id, deEstado: pedido.estado, aEstado: nuevoEstado, cambiadoPorId: req.user!.userId },
       });
     });
 
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
+    if (yaEnCocina && pedidoActualizado) {
+      const ubicacion = pedidoActualizado.mesaSesion
+        ? `Mesa ${pedidoActualizado.mesaSesion.mesa.numero}`
+        : `Mostrador — ${pedidoActualizado.nombreCliente ?? "cliente"}`;
+      await notificarPorRol({
+        rol: "COCINA",
+        tipo: "ITEM_CANCELADO",
+        mensaje: `Se canceló el pedido completo de ${ubicacion} (ya había productos en cocina)`,
+        pedidoId: pedidoActualizado.id,
+      });
+    }
     res.json(pedidoActualizado);
   })
 );
@@ -198,7 +231,11 @@ pedidosRouter.put(
     if (estado === "LISTO") timestamps.listoEn = new Date();
 
     await prisma.$transaction(async (tx) => {
-      await tx.pedidoItem.update({ where: { id: item.id }, data: { estado, ...timestamps } });
+      await bloquearPedido(tx, item.pedidoId);
+      // Solo si sigue en el estado que se leyó: si cocina y el mesero lo
+      // cambian a la vez (p. ej. "listo" y "cancelado"), el segundo se rechaza.
+      const cambiado = await tx.pedidoItem.updateMany({ where: { id: item.id, estado: item.estado }, data: { estado, ...timestamps } });
+      if (cambiado.count === 0) throw new ErrorDeNegocio("Este producto cambió de estado mientras tanto. Actualiza e intenta de nuevo.", 409);
       await tx.pedidoItemStatusLog.create({
         data: { pedidoItemId: item.id, deEstado: item.estado, aEstado: estado, cambiadoPorId: req.user!.userId },
       });
