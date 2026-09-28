@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
-import { crearPedido, CrearPedidoError } from "../services/pedidos";
+import { ErrorDeNegocio } from "../lib/errores";
+import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
 import { notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
 
@@ -129,40 +131,43 @@ solicitudesRouter.get(
   })
 );
 
+// Marca la solicitud como resuelta SOLO si sigue pendiente, en la misma
+// operación que la lee: si dos personas confirman (o una confirma y otra
+// descarta) al mismo tiempo, la base de datos deja pasar solo a la primera y
+// la segunda recibe un 409 — antes ambas pasaban y quedaban pedidos duplicados.
+async function tomarSolicitudPendiente(
+  tx: Prisma.TransactionClient,
+  solicitudId: string,
+  estado: "CONFIRMADA" | "DESCARTADA",
+  resueltaPorId: string
+) {
+  const tomada = await tx.solicitudPedido.updateMany({
+    where: { id: solicitudId, estado: "PENDIENTE" },
+    data: { estado, resueltaEn: new Date(), resueltaPorId },
+  });
+  if (tomada.count === 0) throw new ErrorDeNegocio("Esta solicitud ya fue resuelta", 409);
+}
+
 solicitudesRouter.put(
   "/:id/confirmar",
   requireAuth,
   requireMesero,
   catchAsync(async (req, res) => {
-    const solicitud = await prisma.solicitudPedido.findUnique({
-      where: { id: req.params.id },
-      include: { items: true },
-    });
-    if (!solicitud) {
-      res.status(404).json({ error: "Solicitud no encontrada" });
-      return;
-    }
-    if (solicitud.estado !== "PENDIENTE") {
-      res.status(409).json({ error: "Esta solicitud ya fue resuelta" });
-      return;
-    }
-    if (!solicitud.mesaId) {
-      res.status(400).json({ error: "Esta es una solicitud de mostrador — usa PUT /:id/confirmar-recogida" });
-      return;
-    }
+    const pedidoId = await prisma.$transaction(async (tx) => {
+      const solicitud = await tx.solicitudPedido.findUnique({ where: { id: req.params.id }, include: { items: true } });
+      if (!solicitud) throw new ErrorDeNegocio("Solicitud no encontrada", 404);
+      if (!solicitud.mesaId) {
+        throw new ErrorDeNegocio("Esta es una solicitud de mostrador — usa PUT /:id/confirmar-recogida", 400);
+      }
 
-    const sesion = await prisma.mesaSesion.findFirst({ where: { mesaId: solicitud.mesaId, estado: "ABIERTA" } });
-    if (!sesion) {
-      res.status(409).json({ error: "Primero debes abrir la mesa antes de confirmar el pedido del cliente" });
-      return;
-    }
-    if (sesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
-      res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
-      return;
-    }
+      const sesion = await tx.mesaSesion.findFirst({ where: { mesaId: solicitud.mesaId, estado: "ABIERTA" } });
+      if (!sesion) throw new ErrorDeNegocio("Primero debes abrir la mesa antes de confirmar el pedido del cliente", 409);
+      if (sesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
+        throw new ErrorDeNegocio("Esta mesa la está atendiendo otro mesero", 403);
+      }
 
-    try {
-      const pedidoCompleto = await crearPedido({
+      await tomarSolicitudPendiente(tx, solicitud.id, "CONFIRMADA", req.user!.userId);
+      const nuevoPedidoId = await crearPedidoEnTx(tx, {
         mesaSesionId: sesion.id,
         meseroId: req.user!.userId,
         items: solicitud.items.map((item) => ({
@@ -173,21 +178,14 @@ solicitudesRouter.put(
         })),
         origenCliente: true,
       });
+      await tx.solicitudPedido.update({ where: { id: solicitud.id }, data: { pedidoId: nuevoPedidoId } });
+      return nuevoPedidoId;
+    });
 
-      const solicitudActualizada = await prisma.solicitudPedido.update({
-        where: { id: solicitud.id },
-        data: { estado: "CONFIRMADA", resueltaEn: new Date(), resueltaPorId: req.user!.userId, pedidoId: pedidoCompleto!.id },
-        include: solicitudInclude,
-      });
-      emitSolicitudActualizada(solicitudActualizada);
-      res.json({ solicitud: solicitudActualizada, pedido: pedidoCompleto });
-    } catch (err) {
-      if (err instanceof CrearPedidoError) {
-        res.status(err.status).json({ error: err.message });
-        return;
-      }
-      throw err;
-    }
+    const pedidoCompleto = await anunciarPedidoNuevo(pedidoId);
+    const solicitudActualizada = await prisma.solicitudPedido.findUnique({ where: { id: req.params.id }, include: solicitudInclude });
+    emitSolicitudActualizada(solicitudActualizada);
+    res.json({ solicitud: solicitudActualizada, pedido: pedidoCompleto });
   })
 );
 
@@ -195,7 +193,9 @@ const confirmarRecogidaSchema = z.object({ metodoPago: z.enum(["EFECTIVO", "TARJ
 
 // Pedido de mostrador (sin mesa): lo confirma el admin en caja, y como está
 // físicamente con el cliente en ese momento, cobra ahí mismo en el mismo
-// paso — así el cliente solo tiene que volver una vez, a recoger.
+// paso — así el cliente solo tiene que volver una vez, a recoger. Pedido,
+// factura y solicitud se guardan juntos o no se guarda nada: nunca queda un
+// pedido en cocina sin su pago registrado.
 solicitudesRouter.put(
   "/:id/confirmar-recogida",
   requireAuth,
@@ -207,25 +207,13 @@ solicitudesRouter.put(
       return;
     }
 
-    const solicitud = await prisma.solicitudPedido.findUnique({
-      where: { id: req.params.id },
-      include: { items: true },
-    });
-    if (!solicitud) {
-      res.status(404).json({ error: "Solicitud no encontrada" });
-      return;
-    }
-    if (solicitud.estado !== "PENDIENTE") {
-      res.status(409).json({ error: "Esta solicitud ya fue resuelta" });
-      return;
-    }
-    if (solicitud.mesaId) {
-      res.status(400).json({ error: "Esta solicitud es de una mesa — usa PUT /:id/confirmar" });
-      return;
-    }
+    const { pedidoId, facturaId } = await prisma.$transaction(async (tx) => {
+      const solicitud = await tx.solicitudPedido.findUnique({ where: { id: req.params.id }, include: { items: true } });
+      if (!solicitud) throw new ErrorDeNegocio("Solicitud no encontrada", 404);
+      if (solicitud.mesaId) throw new ErrorDeNegocio("Esta solicitud es de una mesa — usa PUT /:id/confirmar", 400);
 
-    try {
-      const pedidoCompleto = await crearPedido({
+      await tomarSolicitudPendiente(tx, solicitud.id, "CONFIRMADA", req.user!.userId);
+      const nuevoPedidoId = await crearPedidoEnTx(tx, {
         meseroId: req.user!.userId,
         nombreCliente: solicitud.nombreCliente,
         telefonoCliente: solicitud.telefonoCliente,
@@ -236,12 +224,12 @@ solicitudesRouter.put(
         })),
         origenCliente: true,
       });
-      if (!pedidoCompleto) throw new Error("No se pudo crear el pedido de mostrador");
 
-      const subtotal = pedidoCompleto.items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
-      const factura = await prisma.factura.create({
+      const items = await tx.pedidoItem.findMany({ where: { pedidoId: nuevoPedidoId } });
+      const subtotal = items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
+      const factura = await tx.factura.create({
         data: {
-          pedidoId: pedidoCompleto.id,
+          pedidoId: nuevoPedidoId,
           subtotal,
           total: subtotal,
           estado: "PAGADA",
@@ -250,21 +238,15 @@ solicitudesRouter.put(
           cerradaPorId: req.user!.userId,
         },
       });
+      await tx.solicitudPedido.update({ where: { id: solicitud.id }, data: { pedidoId: nuevoPedidoId } });
+      return { pedidoId: nuevoPedidoId, facturaId: factura.id };
+    });
 
-      const solicitudActualizada = await prisma.solicitudPedido.update({
-        where: { id: solicitud.id },
-        data: { estado: "CONFIRMADA", resueltaEn: new Date(), resueltaPorId: req.user!.userId, pedidoId: pedidoCompleto.id },
-        include: solicitudInclude,
-      });
-      emitSolicitudActualizada(solicitudActualizada);
-      res.json({ solicitud: solicitudActualizada, pedido: pedidoCompleto, factura });
-    } catch (err) {
-      if (err instanceof CrearPedidoError) {
-        res.status(err.status).json({ error: err.message });
-        return;
-      }
-      throw err;
-    }
+    const pedidoCompleto = await anunciarPedidoNuevo(pedidoId);
+    const factura = await prisma.factura.findUnique({ where: { id: facturaId } });
+    const solicitudActualizada = await prisma.solicitudPedido.findUnique({ where: { id: req.params.id }, include: solicitudInclude });
+    emitSolicitudActualizada(solicitudActualizada);
+    res.json({ solicitud: solicitudActualizada, pedido: pedidoCompleto, factura });
   })
 );
 
@@ -278,15 +260,8 @@ solicitudesRouter.put(
       res.status(404).json({ error: "Solicitud no encontrada" });
       return;
     }
-    if (solicitud.estado !== "PENDIENTE") {
-      res.status(409).json({ error: "Esta solicitud ya fue resuelta" });
-      return;
-    }
-    const actualizada = await prisma.solicitudPedido.update({
-      where: { id: solicitud.id },
-      data: { estado: "DESCARTADA", resueltaEn: new Date(), resueltaPorId: req.user!.userId },
-      include: solicitudInclude,
-    });
+    await prisma.$transaction((tx) => tomarSolicitudPendiente(tx, solicitud.id, "DESCARTADA", req.user!.userId));
+    const actualizada = await prisma.solicitudPedido.findUnique({ where: { id: solicitud.id }, include: solicitudInclude });
     emitSolicitudActualizada(actualizada);
     res.json(actualizada);
   })

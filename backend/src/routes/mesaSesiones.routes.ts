@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { ErrorDeNegocio } from "../lib/errores";
 import { emitMesaSesionNueva } from "../realtime/socket";
 
 export const mesaSesionesRouter = Router();
@@ -97,7 +98,13 @@ mesaSesionesRouter.post(
     }
 
     const sesion = await prisma.$transaction(async (tx) => {
-      const created = await tx.mesaSesion.create({
+      // La revisión de arriba no basta si dos meseros abren la misma mesa en
+      // el mismo instante: ambos la verían libre. Ocuparla solo si sigue
+      // LIBRE, en una sola operación, deja pasar únicamente al primero.
+      const ocupada = await tx.mesa.updateMany({ where: { id: mesaId, estado: "LIBRE" }, data: { estado: "OCUPADA" } });
+      if (ocupada.count === 0) throw new ErrorDeNegocio("La mesa ya está ocupada", 409);
+
+      return tx.mesaSesion.create({
         data: {
           mesaId,
           meseroId: req.user!.userId,
@@ -106,8 +113,6 @@ mesaSesionesRouter.post(
           comensales: { create: comensales.map((nombre) => ({ nombre })) },
         },
       });
-      await tx.mesa.update({ where: { id: mesaId }, data: { estado: "OCUPADA" } });
-      return created;
     });
 
     const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: sesion.id }, include: sesionInclude });

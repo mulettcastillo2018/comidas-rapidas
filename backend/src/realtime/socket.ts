@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
 import { verifyToken } from "../lib/jwt";
 import { allowedOrigins } from "../lib/corsOrigins";
+import { motivoTokenInvalido } from "../middleware/auth.middleware";
 
 let ioInstance: SocketIOServer | null = null;
 
@@ -16,12 +17,23 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
       next(new Error("No autenticado"));
       return;
     }
+    let payload;
     try {
-      socket.data.user = verifyToken(token);
-      next();
+      payload = verifyToken(token);
     } catch {
       next(new Error("Token inválido o expirado"));
+      return;
     }
+    motivoTokenInvalido(payload)
+      .then((motivo) => {
+        if (motivo) {
+          next(new Error(motivo));
+          return;
+        }
+        socket.data.user = payload;
+        next();
+      })
+      .catch(() => next(new Error("No se pudo verificar la sesión")));
   });
 
   io.on("connection", (socket) => {
@@ -52,6 +64,12 @@ export function emitPedidoActualizado(pedido: unknown) {
 // la recibe en vivo sin tener que refrescar.
 export function emitNotificacion(userId: string, notificacion: unknown) {
   ioInstance?.to(`user:${userId}`).emit("notificacion:nueva", notificacion);
+}
+
+// Corta en vivo las conexiones de un usuario (al desactivarlo o cambiarle el
+// rol): sin esto seguiría recibiendo eventos hasta recargar la página.
+export function desconectarUsuario(userId: string) {
+  ioInstance?.in(`user:${userId}`).disconnectSockets(true);
 }
 
 // Los siguientes eventos mantienen la grilla de mesas de /mesero en tiempo

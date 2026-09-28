@@ -341,6 +341,9 @@ export default function MesaSesionPage() {
 
   const esPropietario = sesion.meseroId === user?.id || user?.role === "ADMIN";
   const solicitudesDeEstaMesa = solicitudes.filter((s) => s.mesaId === sesion.mesaId);
+  const productosSinEntregar = (sesion.pedidos ?? [])
+    .flatMap((p) => p.items)
+    .filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO").length;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -648,11 +651,16 @@ export default function MesaSesionPage() {
             </div>
             <button
               onClick={handleSolicitarCuenta}
-              disabled={solicitandoCuenta}
+              disabled={solicitandoCuenta || productosSinEntregar > 0}
               className="btn-primary rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               {solicitandoCuenta ? "Generando…" : "Solicitar cuenta"}
             </button>
+            {productosSinEntregar > 0 ? (
+              <p className="w-full text-xs text-muted-foreground">
+                Hay {productosSinEntregar} producto(s) sin entregar. Entrégalos o cancélalos para poder generar la cuenta.
+              </p>
+            ) : null}
           </div>
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">Envía al menos un pedido antes de poder generar la cuenta.</p>

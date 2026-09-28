@@ -19,6 +19,7 @@ import { cartaRouter } from "./routes/carta.routes";
 import { notificacionesRouter } from "./routes/notificaciones.routes";
 import { solicitudesRouter } from "./routes/solicitudes.routes";
 import { allowedOrigins } from "./lib/corsOrigins";
+import { ErrorDeNegocio } from "./lib/errores";
 import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
 
 const app = express();
@@ -48,8 +49,12 @@ app.use("/solicitudes", solicitudesRouter);
 // Manejador de errores global: cualquier error no atrapado en las rutas termina
 // aquí en vez de tumbar el proceso completo.
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(err);
   if (res.headersSent) return;
+  if (err instanceof ErrorDeNegocio) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  console.error(err);
   res.status(500).json({ error: "Error interno del servidor." });
 });
 

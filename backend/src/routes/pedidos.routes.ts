@@ -6,7 +6,7 @@ import { catchAsync } from "../lib/catchAsync";
 import { emitPedidoActualizado } from "../realtime/socket";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { notificarUsuarios, notificarPorRol } from "../services/notificaciones";
-import { crearPedido, pedidoInclude, CrearPedidoError } from "../services/pedidos";
+import { crearPedido, pedidoInclude } from "../services/pedidos";
 
 export const pedidosRouter = Router();
 
@@ -68,16 +68,8 @@ pedidosRouter.post(
       return;
     }
 
-    try {
-      const pedidoCompleto = await crearPedido({ mesaSesionId, meseroId: req.user!.userId, notasGenerales, items });
-      res.status(201).json(pedidoCompleto);
-    } catch (err) {
-      if (err instanceof CrearPedidoError) {
-        res.status(err.status).json({ error: err.message });
-        return;
-      }
-      throw err;
-    }
+    const pedidoCompleto = await crearPedido({ mesaSesionId, meseroId: req.user!.userId, notasGenerales, items });
+    res.status(201).json(pedidoCompleto);
   })
 );
 

@@ -1,4 +1,6 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { ErrorDeNegocio } from "../lib/errores";
 import { emitPedidoNuevo } from "../realtime/socket";
 import { notificarPorRol } from "./notificaciones";
 
@@ -10,15 +12,6 @@ export const pedidoInclude = {
     orderBy: { cambiadoEn: "asc" as const },
   },
 };
-
-export class CrearPedidoError extends Error {
-  constructor(
-    message: string,
-    public status: number
-  ) {
-    super(message);
-  }
-}
 
 interface CrearPedidoItem {
   comensalId?: string | null;
@@ -43,52 +36,53 @@ interface CrearPedidoParams {
   origenCliente?: boolean;
 }
 
-// Centraliza la creación de un Pedido real (validación de productos, snapshot
-// de precio/tiempo, notificación a cocina y push por socket) para que tanto
-// el flujo normal del mesero (POST /pedidos) como la confirmación de una
-// SolicitudPedido del cliente usen exactamente la misma lógica.
-export async function crearPedido(params: CrearPedidoParams) {
+// Crea el Pedido (validación de productos + snapshot de precio/tiempo) dentro
+// de una transacción que maneja quien llama, para que pueda combinarse
+// atómicamente con otros pasos (confirmar la solicitud, crear la factura...).
+// No avisa a nadie: eso lo hace anunciarPedidoNuevo() una vez confirmada la
+// transacción, para no anunciar un pedido que al final se revirtió.
+export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: CrearPedidoParams): Promise<string> {
   const { mesaSesionId = null, nombreCliente = null, telefonoCliente = null, meseroId, notasGenerales, items, origenCliente = false } = params;
 
-  const productos = await prisma.producto.findMany({ where: { id: { in: items.map((i) => i.productoId) } } });
+  const productos = await tx.producto.findMany({ where: { id: { in: items.map((i) => i.productoId) } } });
   const productosPorId = new Map(productos.map((p) => [p.id, p]));
   for (const item of items) {
     const producto = productosPorId.get(item.productoId);
     if (!producto || !producto.isActive) {
-      throw new CrearPedidoError("Uno de los productos seleccionados ya no está disponible", 400);
+      throw new ErrorDeNegocio("Uno de los productos seleccionados ya no está disponible", 400);
     }
   }
 
-  const pedido = await prisma.$transaction(async (tx) => {
-    const created = await tx.pedido.create({
-      data: {
-        mesaSesionId,
-        nombreCliente,
-        telefonoCliente,
-        meseroId,
-        notasGenerales: notasGenerales ?? null,
-        origenCliente,
-        items: {
-          create: items.map((item) => {
-            const producto = productosPorId.get(item.productoId)!;
-            return {
-              comensalId: item.comensalId ?? null,
-              paraLlevar: item.paraLlevar ?? false,
-              productoId: item.productoId,
-              cantidad: item.cantidad,
-              notas: item.notas ?? null,
-              precioUnitario: producto.precio,
-              tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
-            };
-          }),
-        },
-        statusLogs: { create: { aEstado: "RECIBIDO", cambiadoPorId: meseroId } },
+  const created = await tx.pedido.create({
+    data: {
+      mesaSesionId,
+      nombreCliente,
+      telefonoCliente,
+      meseroId,
+      notasGenerales: notasGenerales ?? null,
+      origenCliente,
+      items: {
+        create: items.map((item) => {
+          const producto = productosPorId.get(item.productoId)!;
+          return {
+            comensalId: item.comensalId ?? null,
+            paraLlevar: item.paraLlevar ?? false,
+            productoId: item.productoId,
+            cantidad: item.cantidad,
+            notas: item.notas ?? null,
+            precioUnitario: producto.precio,
+            tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
+          };
+        }),
       },
-    });
-    return created;
+      statusLogs: { create: { aEstado: "RECIBIDO", cambiadoPorId: meseroId } },
+    },
   });
+  return created.id;
+}
 
-  const pedidoCompleto = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
+export async function anunciarPedidoNuevo(pedidoId: string) {
+  const pedidoCompleto = await prisma.pedido.findUnique({ where: { id: pedidoId }, include: pedidoInclude });
   if (pedidoCompleto) {
     emitPedidoNuevo(pedidoCompleto);
     const ubicacion = pedidoCompleto.mesaSesion
@@ -102,4 +96,9 @@ export async function crearPedido(params: CrearPedidoParams) {
     });
   }
   return pedidoCompleto;
+}
+
+export async function crearPedido(params: CrearPedidoParams) {
+  const pedidoId = await prisma.$transaction((tx) => crearPedidoEnTx(tx, params));
+  return anunciarPedidoNuevo(pedidoId);
 }

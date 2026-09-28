@@ -17,9 +17,21 @@ const dynamicStorage: StateStorage = {
   // primero su propio sessionStorage; si no hay nada ahí, recién entonces
   // caemos a localStorage por si hay una sesión "recordada" de antes. Esto
   // es intencional: es justamente lo que "recordarme" debe hacer.
+  // Al leer se recuerda de dónde vino la sesión, para que las escrituras
+  // siguientes (incluido cerrar sesión) vayan al mismo lugar. Sin esto, tras
+  // recargar la página una sesión sin "recordarme" se escribía en
+  // localStorage al cerrar sesión y el token seguía vivo en sessionStorage:
+  // al volver a cargar, el usuario aparecía logueado otra vez.
   getItem: (name) => {
     if (typeof window === "undefined") return null;
-    return window.sessionStorage.getItem(name) ?? window.localStorage.getItem(name) ?? null;
+    const deEstaVentana = window.sessionStorage.getItem(name);
+    if (deEstaVentana !== null) {
+      rememberEnMemoria = false;
+      return deEstaVentana;
+    }
+    const recordada = window.localStorage.getItem(name);
+    if (recordada !== null) rememberEnMemoria = true;
+    return recordada;
   },
   setItem: (name, value) => {
     if (typeof window === "undefined") return;
@@ -48,7 +60,10 @@ export const useAuthStore = create<AuthState>()(
         rememberEnMemoria = remember;
         set({ token, user });
       },
-      logout: () => set({ token: null, user: null }),
+      logout: () => {
+        set({ token: null, user: null });
+        dynamicStorage.removeItem("comidas-auth");
+      },
     }),
     { name: "comidas-auth", storage: createJSONStorage(() => dynamicStorage) }
   )

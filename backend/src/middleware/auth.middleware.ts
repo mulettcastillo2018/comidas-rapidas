@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { verifyToken, type JwtPayload } from "../lib/jwt";
+import { obtenerEstadoUsuario } from "../lib/estadoUsuario";
 
 declare global {
   namespace Express {
@@ -9,7 +10,18 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+// Motivo por el que un token válido ya no sirve, o null si sigue vigente. El
+// token dura 7 días, así que además de su firma se revisa el estado actual del
+// usuario: desactivarlo o cambiarle el rol debe surtir efecto de inmediato, no
+// cuando el token expire.
+export async function motivoTokenInvalido(payload: JwtPayload): Promise<string | null> {
+  const estado = await obtenerEstadoUsuario(payload.userId);
+  if (!estado || !estado.isActive) return "Tu cuenta está desactivada. Habla con el administrador.";
+  if (estado.role !== payload.role) return "Tu rol cambió. Inicia sesión de nuevo.";
+  return null;
+}
+
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
 
@@ -18,12 +30,27 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return;
   }
 
+  let payload: JwtPayload;
   try {
-    req.user = verifyToken(token);
-    next();
+    payload = verifyToken(token);
   } catch {
     res.status(401).json({ error: "Token inválido o expirado" });
+    return;
   }
+
+  try {
+    const motivo = await motivoTokenInvalido(payload);
+    if (motivo) {
+      res.status(401).json({ error: motivo });
+      return;
+    }
+  } catch (err) {
+    next(err);
+    return;
+  }
+
+  req.user = payload;
+  next();
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {

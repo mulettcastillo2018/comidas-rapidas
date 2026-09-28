@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/store/auth.store";
@@ -8,7 +8,14 @@ import type { AuthUser } from "@/lib/types";
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Motivo por el que el sistema cerró la sesión (cuenta desactivada, rol
+  // cambiado...), enviado por cerrarSesionForzada().
+  useEffect(() => {
+    setAviso(new URLSearchParams(window.location.search).get("aviso"));
+  }, []);
   const [remember, setRemember] = useState(false);
   const setAuth = useAuthStore((state) => state.setAuth);
   const router = useRouter();
@@ -43,6 +50,7 @@ export default function LoginPage() {
     <div className="mx-auto max-w-sm px-4 py-16 sm:px-6">
       <h1 className="brand-gradient-text text-center text-2xl font-extrabold tracking-tight">Comidas Rápidas</h1>
       <p className="mt-1 text-center text-sm text-muted-foreground">Acceso de personal</p>
+      {aviso ? <p className="mt-4 rounded-lg bg-accent/10 p-3 text-center text-sm text-accent">{aviso}</p> : null}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <div>

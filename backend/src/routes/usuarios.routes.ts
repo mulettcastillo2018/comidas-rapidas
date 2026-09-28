@@ -4,6 +4,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { olvidarEstadoUsuario } from "../lib/estadoUsuario";
+import { desconectarUsuario } from "../realtime/socket";
 
 export const usuariosRouter = Router();
 
@@ -97,6 +99,8 @@ usuariosRouter.put(
       data: { role: parsed.data.role },
       select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
     });
+    olvidarEstadoUsuario(user.id);
+    desconectarUsuario(user.id);
     res.json(user);
   })
 );
@@ -118,6 +122,8 @@ usuariosRouter.put(
       data: { isActive: parsed.data.isActive },
       select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
     });
+    olvidarEstadoUsuario(user.id);
+    if (!user.isActive) desconectarUsuario(user.id);
     res.json(user);
   })
 );

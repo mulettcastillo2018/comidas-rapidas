@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
+import type { MetodoPago } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { ErrorDeNegocio } from "../lib/errores";
 import { emitMesaSesionCerrada } from "../realtime/socket";
 
 export const facturasRouter = Router();
@@ -24,50 +26,84 @@ facturasRouter.post(
     }
     const { mesaSesionId, propinaMonto = 0 } = parsed.data;
 
-    const sesion = await prisma.mesaSesion.findUnique({
-      where: { id: mesaSesionId },
-      include: { pedidos: { include: { items: true } }, factura: true },
-    });
+    const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId } });
     if (!sesion) {
       res.status(404).json({ error: "Sesión de mesa no encontrada" });
-      return;
-    }
-    if (sesion.estado === "CERRADA") {
-      res.status(409).json({ error: "Esta mesa ya fue cerrada" });
       return;
     }
     if (sesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
       res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
       return;
     }
-    if (sesion.factura) {
-      res.status(409).json({ error: "Esta mesa ya tiene una factura generada" });
-      return;
-    }
-
-    // Filtramos por ítem, no por pedido: un pedido puede tener una
-    // cancelación parcial (ej. se canceló una pizza porque alguien de la mesa
-    // se fue) sin que el ticket completo quede CANCELADO, y esos productos
-    // cancelados no se deben cobrar.
-    const items = sesion.pedidos.flatMap((p) => p.items).filter((item) => item.estado !== "CANCELADO");
-    if (items.length === 0) {
-      res.status(400).json({ error: "No hay pedidos para facturar en esta mesa" });
-      return;
-    }
-    const subtotal = items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
-    const total = subtotal + propinaMonto;
 
     const factura = await prisma.$transaction(async (tx) => {
-      const created = await tx.factura.create({
-        data: { mesaSesionId, subtotal, propinaMonto, total },
+      // Pasar la mesa a "cuenta solicitada" solo si sigue abierta, en una
+      // sola operación: si llegan dos solicitudes de cuenta a la vez, solo
+      // la primera pasa (antes la segunda terminaba en un error 500).
+      const tomada = await tx.mesaSesion.updateMany({
+        where: { id: mesaSesionId, estado: "ABIERTA" },
+        data: { estado: "CUENTA_SOLICITADA" },
       });
-      await tx.mesaSesion.update({ where: { id: mesaSesionId }, data: { estado: "CUENTA_SOLICITADA" } });
-      return created;
+      if (tomada.count === 0) throw new ErrorDeNegocio("Esta mesa ya tiene la cuenta generada o ya fue cerrada", 409);
+
+      const items = await tx.pedidoItem.findMany({ where: { pedido: { mesaSesionId } }, include: { producto: true } });
+
+      // No se cobra mientras haya algo sin entregar: si no, la mesa se libera
+      // y cocina se queda con pedidos de clientes que ya se fueron. Como
+      // entregados y cancelados son estados finales, esto también garantiza
+      // que la cuenta ya no pueda cambiar después de generada.
+      const pendientes = items.filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO");
+      if (pendientes.length > 0) {
+        const detalle = pendientes.map((i) => `${i.cantidad}× ${i.producto.nombre}`).join(", ");
+        throw new ErrorDeNegocio(
+          `No se puede generar la cuenta: hay ${pendientes.length} producto(s) sin entregar (${detalle}). Entrégalos o cancélalos primero.`,
+          409
+        );
+      }
+
+      // Por ítem, no por pedido: un pedido puede tener una cancelación parcial
+      // sin quedar CANCELADO completo, y esos productos no se cobran.
+      const cobrables = items.filter((i) => i.estado !== "CANCELADO");
+      if (cobrables.length === 0) throw new ErrorDeNegocio("No hay pedidos para facturar en esta mesa", 400);
+      const subtotal = cobrables.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
+
+      return tx.factura.create({ data: { mesaSesionId, subtotal, propinaMonto, total: subtotal + propinaMonto } });
     });
 
     res.status(201).json(factura);
   })
 );
+
+// Cierra la cuenta de una mesa (pagada, o perdida si el cliente se fue sin
+// pagar) y libera la mesa. Solo procede si la cuenta sigue pendiente, en la
+// misma operación que la actualiza, para que "pagar" y "se fue sin pagar"
+// no puedan aplicarse los dos a la vez sobre la misma cuenta.
+async function resolverCuentaDeMesa(
+  facturaId: string,
+  usuario: { userId: string; role: string },
+  resultado: { estado: "PAGADA"; metodoPago: MetodoPago } | { estado: "PERDIDA" }
+) {
+  const factura = await prisma.factura.findUnique({ where: { id: facturaId }, include: { mesaSesion: true } });
+  if (!factura) throw new ErrorDeNegocio("Factura no encontrada", 404);
+  const sesion = factura.mesaSesion;
+  if (!sesion) throw new ErrorDeNegocio("Esta factura es de un pedido de mostrador, no de una mesa", 400);
+  if (sesion.meseroId !== usuario.userId && usuario.role !== "ADMIN") {
+    throw new ErrorDeNegocio("Esta mesa la está atendiendo otro mesero", 403);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const resuelta = await tx.factura.updateMany({
+      where: { id: factura.id, estado: "PENDIENTE" },
+      data: { ...resultado, pagadaEn: new Date(), cerradaPorId: usuario.userId },
+    });
+    if (resuelta.count === 0) throw new ErrorDeNegocio("Esta cuenta ya fue resuelta", 409);
+    await tx.mesaSesion.update({ where: { id: sesion.id }, data: { estado: "CERRADA", cerradaEn: new Date() } });
+    await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
+  });
+
+  emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id });
+  return prisma.factura.findUnique({ where: { id: factura.id } });
+}
 
 const pagarFacturaSchema = z.object({ metodoPago: z.enum(["EFECTIVO", "TARJETA", "OTRO"]) });
 
@@ -81,40 +117,8 @@ facturasRouter.put(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-
-    const factura = await prisma.factura.findUnique({ where: { id: req.params.id }, include: { mesaSesion: true } });
-    if (!factura) {
-      res.status(404).json({ error: "Factura no encontrada" });
-      return;
-    }
-    if (!factura.mesaSesion) {
-      res.status(400).json({ error: "Esta factura es de un pedido de mostrador, no de una mesa" });
-      return;
-    }
-    if (factura.mesaSesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
-      res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
-      return;
-    }
-    if (factura.estado === "PAGADA") {
-      res.status(409).json({ error: "Esta factura ya está pagada" });
-      return;
-    }
-
-    const actualizada = await prisma.$transaction(async (tx) => {
-      const updated = await tx.factura.update({
-        where: { id: factura.id },
-        data: { estado: "PAGADA", metodoPago: parsed.data.metodoPago, pagadaEn: new Date(), cerradaPorId: req.user!.userId },
-      });
-      const sesion = await tx.mesaSesion.update({
-        where: { id: factura.mesaSesion!.id },
-        data: { estado: "CERRADA", cerradaEn: new Date() },
-      });
-      await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
-      return updated;
-    });
-
-    emitMesaSesionCerrada({ mesaId: factura.mesaSesion.mesaId, sesionId: factura.mesaSesion.id });
-    res.json(actualizada);
+    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", metodoPago: parsed.data.metodoPago });
+    res.json(factura);
   })
 );
 
@@ -126,38 +130,7 @@ facturasRouter.put(
   requireAuth,
   requireMesero,
   catchAsync(async (req, res) => {
-    const factura = await prisma.factura.findUnique({ where: { id: req.params.id }, include: { mesaSesion: true } });
-    if (!factura) {
-      res.status(404).json({ error: "Factura no encontrada" });
-      return;
-    }
-    if (!factura.mesaSesion) {
-      res.status(400).json({ error: "Esta factura es de un pedido de mostrador, no de una mesa" });
-      return;
-    }
-    if (factura.mesaSesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
-      res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
-      return;
-    }
-    if (factura.estado !== "PENDIENTE") {
-      res.status(409).json({ error: "Esta factura ya fue resuelta" });
-      return;
-    }
-
-    const actualizada = await prisma.$transaction(async (tx) => {
-      const updated = await tx.factura.update({
-        where: { id: factura.id },
-        data: { estado: "PERDIDA", pagadaEn: new Date(), cerradaPorId: req.user!.userId },
-      });
-      const sesion = await tx.mesaSesion.update({
-        where: { id: factura.mesaSesion!.id },
-        data: { estado: "CERRADA", cerradaEn: new Date() },
-      });
-      await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
-      return updated;
-    });
-
-    emitMesaSesionCerrada({ mesaId: factura.mesaSesion.mesaId, sesionId: factura.mesaSesion.id });
-    res.json(actualizada);
+    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PERDIDA" });
+    res.json(factura);
   })
 );
