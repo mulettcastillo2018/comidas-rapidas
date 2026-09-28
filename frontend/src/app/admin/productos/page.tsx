@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { apiFetch, ApiError, uploadFile } from "@/lib/api";
+import { resolverImagenUrl } from "@/lib/images";
 import { useAuthStore } from "@/store/auth.store";
 import type { Categoria, Producto } from "@/lib/types";
 
@@ -150,6 +151,9 @@ export default function AdminProductosPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [productoParaImagen, setProductoParaImagen] = useState<string | null>(null);
 
   async function loadData() {
     if (!token) return;
@@ -196,6 +200,28 @@ export default function AdminProductosPage() {
     }
   }
 
+  function pedirImagen(productoId: string) {
+    setProductoParaImagen(productoId);
+    fileInputRef.current?.click();
+  }
+
+  async function handleArchivoSeleccionado(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !token || !productoParaImagen) return;
+    setError(null);
+    setUploadingId(productoParaImagen);
+    try {
+      await uploadFile(`/productos/${productoParaImagen}/imagen`, file, "imagen", token);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo subir la imagen.");
+    } finally {
+      setUploadingId(null);
+      setProductoParaImagen(null);
+    }
+  }
+
   async function handleToggleActive(producto: Producto) {
     if (!token) return;
     setError(null);
@@ -213,6 +239,7 @@ export default function AdminProductosPage() {
 
   return (
     <div className="space-y-6">
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleArchivoSeleccionado} />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       <div className="space-y-2">
@@ -233,17 +260,38 @@ export default function AdminProductosPage() {
               key={producto.id}
               className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3"
             >
-              <div>
-                <p className="font-semibold">
-                  {producto.nombre} {!producto.isActive ? <span className="text-muted-foreground">(inactivo)</span> : null}
-                  {!producto.disponible ? <span className="ml-2 text-xs text-red-600">Agotado hoy</span> : null}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {producto.categoria?.nombre} · {producto.tiempoPreparacionMinutos} min de preparación
-                </p>
-                <p className="text-sm font-semibold">{formatCOP(producto.precio)}</p>
+              <div className="flex items-center gap-3">
+                {resolverImagenUrl(producto.imagenUrl) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={resolverImagenUrl(producto.imagenUrl)!}
+                    alt={producto.nombre}
+                    className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted text-[10px] text-muted-foreground">
+                    Sin foto
+                  </div>
+                )}
+                <div>
+                  <p className="font-semibold">
+                    {producto.nombre} {!producto.isActive ? <span className="text-muted-foreground">(inactivo)</span> : null}
+                    {!producto.disponible ? <span className="ml-2 text-xs text-red-600">Agotado hoy</span> : null}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {producto.categoria?.nombre} · {producto.tiempoPreparacionMinutos} min de preparación
+                  </p>
+                  <p className="text-sm font-semibold">{formatCOP(producto.precio)}</p>
+                </div>
               </div>
               <div className="flex gap-3">
+                <button
+                  onClick={() => pedirImagen(producto.id)}
+                  disabled={uploadingId === producto.id}
+                  className="text-sm font-semibold text-accent disabled:opacity-50"
+                >
+                  {uploadingId === producto.id ? "Subiendo…" : "Subir imagen"}
+                </button>
                 <button onClick={() => setEditingId(producto.id)} className="text-sm font-semibold text-accent">
                   Editar
                 </button>

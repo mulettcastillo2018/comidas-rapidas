@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { uploadImagenProducto } from "../lib/upload";
 
 export const productosRouter = Router();
 
@@ -56,6 +57,22 @@ productosRouter.put(
       return;
     }
     const producto = await prisma.producto.update({ where: { id: req.params.id }, data: parsed.data });
+    res.json(producto);
+  })
+);
+
+productosRouter.post(
+  "/:id/imagen",
+  requireAuth,
+  requireAdmin,
+  uploadImagenProducto.single("imagen"),
+  catchAsync(async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: "No se recibió ninguna imagen" });
+      return;
+    }
+    const imagenUrl = `/uploads/productos/${req.file.filename}`;
+    const producto = await prisma.producto.update({ where: { id: req.params.id }, data: { imagenUrl } });
     res.json(producto);
   })
 );

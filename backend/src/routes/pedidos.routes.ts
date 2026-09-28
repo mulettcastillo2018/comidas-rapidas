@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
-import { emitPedidoNuevo, emitPedidoActualizado } from "../realtime/socket";
+import { emitPedidoActualizado } from "../realtime/socket";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
-import { notificarPorRol, notificarUsuarios } from "../services/notificaciones";
+import { notificarUsuarios, notificarPorRol } from "../services/notificaciones";
+import { crearPedido, pedidoInclude, CrearPedidoError } from "../services/pedidos";
 
 export const pedidosRouter = Router();
 
@@ -14,6 +15,7 @@ const pedidoItemSchema = z.object({
   productoId: z.string().min(1),
   cantidad: z.number().int().positive(),
   notas: z.string().trim().min(1).nullable().optional(),
+  paraLlevar: z.boolean().optional(),
 });
 
 const crearPedidoSchema = z.object({
@@ -21,12 +23,6 @@ const crearPedidoSchema = z.object({
   notasGenerales: z.string().trim().min(1).nullable().optional(),
   items: z.array(pedidoItemSchema).min(1),
 });
-
-const pedidoInclude = {
-  items: { include: { producto: true, comensal: true } },
-  mesaSesion: { include: { mesa: true, mesero: { select: { id: true, name: true } } } },
-  statusLogs: { include: { cambiadoPor: { select: { id: true, name: true, role: true } } }, orderBy: { cambiadoEn: "asc" as const } },
-};
 
 // Pedidos con al menos un ítem que la cocina todavía debe atender o que el
 // mesero todavía debe entregar — alimenta la carga inicial del tablero de
@@ -72,54 +68,16 @@ pedidosRouter.post(
       return;
     }
 
-    const productos = await prisma.producto.findMany({ where: { id: { in: items.map((i) => i.productoId) } } });
-    const productosPorId = new Map(productos.map((p) => [p.id, p]));
-    for (const item of items) {
-      const producto = productosPorId.get(item.productoId);
-      if (!producto || !producto.isActive) {
-        res.status(400).json({ error: "Uno de los productos seleccionados ya no está disponible" });
+    try {
+      const pedidoCompleto = await crearPedido({ mesaSesionId, meseroId: req.user!.userId, notasGenerales, items });
+      res.status(201).json(pedidoCompleto);
+    } catch (err) {
+      if (err instanceof CrearPedidoError) {
+        res.status(err.status).json({ error: err.message });
         return;
       }
+      throw err;
     }
-
-    const pedido = await prisma.$transaction(async (tx) => {
-      const created = await tx.pedido.create({
-        data: {
-          mesaSesionId,
-          meseroId: req.user!.userId,
-          notasGenerales,
-          items: {
-            create: items.map((item) => {
-              const producto = productosPorId.get(item.productoId)!;
-              return {
-                comensalId: item.comensalId ?? null,
-                productoId: item.productoId,
-                cantidad: item.cantidad,
-                notas: item.notas ?? null,
-                precioUnitario: producto.precio,
-                tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
-              };
-            }),
-          },
-          statusLogs: {
-            create: { aEstado: "RECIBIDO", cambiadoPorId: req.user!.userId },
-          },
-        },
-      });
-      return created;
-    });
-
-    const pedidoCompleto = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
-    emitPedidoNuevo(pedidoCompleto);
-    if (pedidoCompleto) {
-      await notificarPorRol({
-        rol: "COCINA",
-        tipo: "PEDIDO_NUEVO",
-        mensaje: `Nuevo pedido en Mesa ${pedidoCompleto.mesaSesion.mesa.numero} — ${pedidoCompleto.items.length} producto(s)`,
-        pedidoId: pedidoCompleto.id,
-      });
-    }
-    res.status(201).json(pedidoCompleto);
   })
 );
 
@@ -151,7 +109,10 @@ pedidosRouter.put(
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
-    if (pedido.mesaSesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
+    // Con mesa, el dueño es quien abrió la sesión; sin mesa (pedido de
+    // mostrador), el dueño es directamente quien lo confirmó (el admin).
+    const duenoPedidoId = pedido.mesaSesion?.meseroId ?? pedido.meseroId;
+    if (duenoPedidoId !== req.user!.userId && req.user!.role !== "ADMIN") {
       res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
       return;
     }
@@ -165,6 +126,14 @@ pedidosRouter.put(
     await prisma.$transaction(async (tx) => {
       if (estado === "CANCELADO") {
         await tx.pedidoItem.updateMany({ where: { pedidoId: pedido.id }, data: { estado: "CANCELADO" } });
+      }
+      // Este endpoint entrega el pedido completo de una vez (atajo útil cuando
+      // todos sus productos ya están listos a la vez); también se puede
+      // entregar producto por producto vía PUT /:id/items/:itemId/estado.
+      // Aquí igualamos el estado de los ítems para que ambos caminos queden
+      // consistentes entre sí.
+      if (estado === "ENTREGADO") {
+        await tx.pedidoItem.updateMany({ where: { pedidoId: pedido.id, estado: { not: "CANCELADO" } }, data: { estado: "ENTREGADO" } });
       }
       await tx.pedido.update({
         where: { id: pedido.id },
@@ -181,14 +150,16 @@ pedidosRouter.put(
   })
 );
 
-// Cocina despacha producto por producto: este es el endpoint que realmente
-// mueve el tablero de cocina.
-const ESTADOS_ITEM_PERMITIDOS = ["EN_PREPARACION", "LISTO", "CANCELADO"] as const;
+// Cocina despacha producto por producto (RECIBIDO->EN_PREPARACION->LISTO) y
+// el mesero entrega producto por producto (LISTO->ENTREGADO) sin tener que
+// esperar a que los demás productos del mismo pedido también estén listos.
+const ESTADOS_ITEM_PERMITIDOS = ["EN_PREPARACION", "LISTO", "ENTREGADO", "CANCELADO"] as const;
 const cambiarEstadoItemSchema = z.object({ estado: z.enum(ESTADOS_ITEM_PERMITIDOS) });
 
 const TRANSICIONES_ITEM_VALIDAS: Record<string, string[]> = {
   RECIBIDO: ["EN_PREPARACION", "CANCELADO"],
   EN_PREPARACION: ["LISTO", "CANCELADO"],
+  LISTO: ["ENTREGADO", "CANCELADO"],
 };
 
 pedidosRouter.put(
@@ -202,9 +173,21 @@ pedidosRouter.put(
     }
     const { estado } = parsed.data;
 
-    const item = await prisma.pedidoItem.findUnique({ where: { id: req.params.itemId } });
+    const item = await prisma.pedidoItem.findUnique({
+      where: { id: req.params.itemId },
+      include: { pedido: { include: { mesaSesion: true } } },
+    });
     if (!item || item.pedidoId !== req.params.id) {
       res.status(404).json({ error: "Producto del pedido no encontrado" });
+      return;
+    }
+    // Entregar y cancelar son acciones del mesero dueño de la mesa (o admin) —
+    // cancelar es él quien decide si el cliente ya no quiere el producto.
+    // Avanzar de recibido a en-preparación/listo lo hace cocina y no está
+    // atado a una mesa en particular.
+    const duenoItemId = item.pedido.mesaSesion?.meseroId ?? item.pedido.meseroId;
+    if ((estado === "ENTREGADO" || estado === "CANCELADO") && duenoItemId !== req.user!.userId && req.user!.role !== "ADMIN") {
+      res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
       return;
     }
 
@@ -213,6 +196,10 @@ pedidosRouter.put(
       res.status(409).json({ error: `No se puede pasar de "${item.estado}" a "${estado}"` });
       return;
     }
+    // Si ya estaba en preparación o lista, cocina invirtió tiempo/recursos en
+    // ella — avisamos para que no se queden preparando o esperando algo que
+    // el mesero ya canceló.
+    const yaEstabaEnCocina = estado === "CANCELADO" && (item.estado === "EN_PREPARACION" || item.estado === "LISTO");
 
     const timestamps: Record<string, Date> = {};
     if (estado === "EN_PREPARACION") timestamps.iniciadoEn = new Date();
@@ -235,6 +222,7 @@ pedidosRouter.put(
             estado: nuevoEstadoPedido,
             ...(nuevoEstadoPedido === "EN_PREPARACION" && !pedidoActual.iniciadoEn ? { iniciadoEn: new Date() } : {}),
             ...(nuevoEstadoPedido === "LISTO" ? { listoEn: new Date() } : {}),
+            ...(nuevoEstadoPedido === "ENTREGADO" ? { entregadoEn: new Date() } : {}),
           },
         });
         await tx.pedidoStatusLog.create({
@@ -245,12 +233,29 @@ pedidosRouter.put(
 
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: item.pedidoId }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
+    const ubicacion = pedidoActualizado?.mesaSesion
+      ? `Mesa ${pedidoActualizado.mesaSesion.mesa.numero}`
+      : `Mostrador — ${pedidoActualizado?.nombreCliente ?? "cliente"}`;
     if (estado === "LISTO" && pedidoActualizado) {
       const itemActualizado = pedidoActualizado.items.find((i) => i.id === item.id);
-      await notificarUsuarios({
-        userIds: [pedidoActualizado.mesaSesion.meseroId],
-        tipo: "ITEM_LISTO",
-        mensaje: `${itemActualizado?.producto?.nombre ?? "Producto"} para Mesa ${pedidoActualizado.mesaSesion.mesa.numero} está listo para entregar`,
+      // Sin mesa (pedido de mostrador) el dueño es el admin en caja, que ya
+      // ve todo en su propio módulo — no hace falta notificarle esto aparte.
+      if (pedidoActualizado.mesaSesion) {
+        await notificarUsuarios({
+          userIds: [pedidoActualizado.mesaSesion.meseroId],
+          tipo: "ITEM_LISTO",
+          mensaje: `${itemActualizado?.producto?.nombre ?? "Producto"} para ${ubicacion} está listo para entregar`,
+          pedidoId: pedidoActualizado.id,
+          pedidoItemId: item.id,
+        });
+      }
+    }
+    if (yaEstabaEnCocina && pedidoActualizado) {
+      const itemActualizado = pedidoActualizado.items.find((i) => i.id === item.id);
+      await notificarPorRol({
+        rol: "COCINA",
+        tipo: "ITEM_CANCELADO",
+        mensaje: `Se canceló ${itemActualizado?.producto?.nombre ?? "un producto"} de ${ubicacion} (ya estaba en cocina)`,
         pedidoId: pedidoActualizado.id,
         pedidoItemId: item.id,
       });

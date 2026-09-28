@@ -1,8 +1,17 @@
-export type UserRole = "ADMIN" | "MESERO" | "COCINA";
+export type UserRole = "ADMIN" | "MESERO" | "COCINA" | "PANTALLA";
+
+// Referencia liviana a una persona (mesero, quien resolvió algo, etc.) — el
+// nombre completo se arma con nombreCompleto() de "@/lib/nombre".
+export interface PersonaBasica {
+  id: string;
+  nombre: string;
+  apellido: string;
+}
 
 export interface AuthUser {
   id: string;
-  name: string;
+  nombre: string;
+  apellido: string;
   email: string;
   role: UserRole;
 }
@@ -35,7 +44,7 @@ export interface Mesa {
   capacidad: number;
   estado: MesaEstado;
   meseroAsignadoId: string | null;
-  meseroAsignado?: { id: string; name: string } | null;
+  meseroAsignado?: PersonaBasica | null;
 }
 
 export type MesaSesionEstado = "ABIERTA" | "CUENTA_SOLICITADA" | "CERRADA";
@@ -51,7 +60,7 @@ export interface MesaSesion {
   mesaId: string;
   mesa?: Mesa;
   meseroId: string;
-  mesero?: { id: string; name: string };
+  mesero?: PersonaBasica;
   nombreResponsable: string;
   sillasAdicionales: number;
   estado: MesaSesionEstado;
@@ -69,6 +78,7 @@ export interface PedidoItem {
   pedidoId: string;
   comensalId: string | null;
   comensal?: Comensal | null;
+  paraLlevar: boolean;
   productoId: string;
   producto?: Producto;
   cantidad: number;
@@ -86,16 +96,24 @@ export interface PedidoStatusLog {
   deEstado: PedidoEstado | null;
   aEstado: PedidoEstado;
   cambiadoEn: string;
-  cambiadoPor: { id: string; name: string; role: UserRole };
+  cambiadoPor: PersonaBasica & { role: UserRole };
 }
 
 export interface Pedido {
   id: string;
-  mesaSesionId: string;
-  mesaSesion?: MesaSesion;
+  // Un pedido normal tiene mesaSesionId; un pedido de mostrador (sin mesa,
+  // "para recoger") lo deja en null y usa nombreCliente/telefonoCliente.
+  mesaSesionId: string | null;
+  mesaSesion?: MesaSesion | null;
+  nombreCliente: string | null;
+  telefonoCliente: string | null;
   meseroId: string;
+  mesero?: PersonaBasica;
   estado: PedidoEstado;
   notasGenerales: string | null;
+  // true si nació de una SolicitudPedido que el cliente armó desde el QR
+  // (de su mesa, o del mostrador) — quien lo confirmó solo la validó.
+  origenCliente: boolean;
   creadoEn: string;
   iniciadoEn: string | null;
   listoEn: string | null;
@@ -104,12 +122,13 @@ export interface Pedido {
   statusLogs?: PedidoStatusLog[];
 }
 
-export type FacturaEstado = "PENDIENTE" | "PAGADA";
+export type FacturaEstado = "PENDIENTE" | "PAGADA" | "PERDIDA";
 export type MetodoPago = "EFECTIVO" | "TARJETA" | "OTRO";
 
 export interface Factura {
   id: string;
-  mesaSesionId: string;
+  mesaSesionId: string | null;
+  pedidoId: string | null;
   subtotal: number;
   propinaMonto: number;
   total: number;
@@ -153,7 +172,37 @@ export interface CategoriaConCarta extends Categoria {
   productos: Producto[];
 }
 
-export type NotificacionTipo = "PEDIDO_NUEVO" | "ITEM_RETRASADO" | "ITEM_LISTO";
+export type SolicitudPedidoEstado = "PENDIENTE" | "CONFIRMADA" | "DESCARTADA";
+
+export interface SolicitudPedidoItem {
+  id: string;
+  productoId: string;
+  producto?: Producto;
+  cantidad: number;
+  notas: string | null;
+  paraLlevar: boolean;
+}
+
+export interface SolicitudPedido {
+  id: string;
+  mesaId: string | null;
+  mesa?: { id: string; numero: string } | null;
+  nombreCliente: string | null;
+  telefonoCliente: string | null;
+  estado: SolicitudPedidoEstado;
+  items: SolicitudPedidoItem[];
+  creadaEn: string;
+  resueltaEn: string | null;
+  resueltaPor?: PersonaBasica | null;
+  pedidoId: string | null;
+}
+
+export type NotificacionTipo =
+  | "PEDIDO_NUEVO"
+  | "ITEM_RETRASADO"
+  | "ITEM_LISTO"
+  | "SOLICITUD_PEDIDO_CLIENTE"
+  | "ITEM_CANCELADO";
 
 export interface Notificacion {
   id: string;

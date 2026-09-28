@@ -1,19 +1,20 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireMesero } from "../middleware/auth.middleware";
+import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { emitMesaSesionNueva } from "../realtime/socket";
 
 export const mesaSesionesRouter = Router();
 
 const sesionInclude = {
   mesa: true,
-  mesero: { select: { id: true, name: true } },
+  mesero: { select: { id: true, nombre: true, apellido: true } },
   comensales: true,
   pedidos: {
     include: {
       items: { include: { producto: true, comensal: true } },
-      mesaSesion: { include: { mesa: true, mesero: { select: { id: true, name: true } } } },
+      mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
     },
     orderBy: { creadoEn: "asc" as const },
   },
@@ -110,6 +111,44 @@ mesaSesionesRouter.post(
     });
 
     const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: sesion.id }, include: sesionInclude });
+    emitMesaSesionNueva(sesionCompleta);
     res.status(201).json(sesionCompleta);
+  })
+);
+
+const reasignarSchema = z.object({ meseroId: z.string().min(1) });
+
+// Cubre la ausencia repentina de un mesero (emergencia, incapacidad, etc.):
+// el admin le pasa TODAS las mesas abiertas de ese mesero a otro compañero,
+// que a partir de ahí puede operarlas con normalidad (no solo el admin).
+mesaSesionesRouter.put(
+  "/:id/reasignar",
+  requireAuth,
+  requireAdmin,
+  catchAsync(async (req, res) => {
+    const parsed = reasignarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const sesion = await prisma.mesaSesion.findUnique({ where: { id: req.params.id } });
+    if (!sesion) {
+      res.status(404).json({ error: "Sesión de mesa no encontrada" });
+      return;
+    }
+    if (sesion.estado === "CERRADA") {
+      res.status(409).json({ error: "Esta mesa ya está cerrada" });
+      return;
+    }
+    const nuevoMesero = await prisma.user.findUnique({ where: { id: parsed.data.meseroId } });
+    if (!nuevoMesero || nuevoMesero.role !== "MESERO" || !nuevoMesero.isActive) {
+      res.status(400).json({ error: "El usuario indicado no es un mesero activo" });
+      return;
+    }
+
+    const actualizada = await prisma.mesaSesion.update({ where: { id: sesion.id }, data: { meseroId: nuevoMesero.id } });
+    const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: actualizada.id }, include: sesionInclude });
+    emitMesaSesionNueva(sesionCompleta);
+    res.json(sesionCompleta);
   })
 );

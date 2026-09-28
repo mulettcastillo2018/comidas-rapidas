@@ -2,12 +2,15 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { createSocket } from "@/lib/socket";
+import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
-import type { Mesa, UserRole } from "@/lib/types";
+import type { Mesa, MesaSesion, UserRole } from "@/lib/types";
 
 interface UsuarioBasico {
   id: string;
-  name: string;
+  nombre: string;
+  apellido: string;
   role: UserRole;
   isActive: boolean;
 }
@@ -16,23 +19,67 @@ export default function AdminMesasPage() {
   const token = useAuthStore((state) => state.token);
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [meseros, setMeseros] = useState<UsuarioBasico[]>([]);
+  const [sesionesActivas, setSesionesActivas] = useState<MesaSesion[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [reasignandoId, setReasignandoId] = useState<string | null>(null);
 
   async function loadData() {
     if (!token) return;
-    const [mesasData, usuariosData] = await Promise.all([
+    const [mesasData, usuariosData, sesionesData] = await Promise.all([
       apiFetch<Mesa[]>("/mesas", { token }),
       apiFetch<UsuarioBasico[]>("/usuarios", { token }),
+      apiFetch<MesaSesion[]>("/mesa-sesiones?activas=true", { token }),
     ]);
     setMesas(mesasData);
     setMeseros(usuariosData.filter((u) => u.role === "MESERO" && u.isActive));
+    setSesionesActivas(sesionesData);
+  }
+
+  function sesionDeMesa(mesaId: string) {
+    return sesionesActivas.find((s) => s.mesaId === mesaId);
+  }
+
+  async function handleReasignar(sesionId: string, meseroId: string) {
+    if (!token || !meseroId) return;
+    setError(null);
+    setReasignandoId(sesionId);
+    try {
+      await apiFetch(`/mesa-sesiones/${sesionId}/reasignar`, { method: "PUT", token, body: JSON.stringify({ meseroId }) });
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo reasignar la mesa.");
+    } finally {
+      setReasignandoId(null);
+    }
   }
 
   useEffect(() => {
+    if (!token) return;
     loadData();
+
+    const socket = createSocket(token);
+    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
+    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
+    // contra la API en vez de quedarnos con el estado viejo de las mesas.
+    socket.on("connect", loadData);
+    socket.on("mesa:actualizada", (mesa: Mesa) => {
+      setMesas((prev) => prev.map((m) => (m.id === mesa.id ? mesa : m)));
+    });
+    socket.on("mesaSesion:nueva", (sesion: MesaSesion) => {
+      setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
+      setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);
+    });
+    socket.on("mesaSesion:cerrada", (payload: { mesaId: string; sesionId: string }) => {
+      setMesas((prev) => prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: "LIBRE" } : m)));
+      setSesionesActivas((prev) => prev.filter((s) => s.id !== payload.sesionId));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -138,7 +185,16 @@ export default function AdminMesasPage() {
               </div>
             </form>
           ) : (
-            <div key={mesa.id} className="flex flex-col items-center gap-1 rounded-xl border border-border p-3 text-center">
+            <div key={mesa.id} className="relative flex flex-col items-center gap-1 rounded-xl border border-border p-3 text-center">
+              {mesa.estado === "OCUPADA" ? (
+                <span className="absolute right-2 top-2 flex items-center gap-1" title="Mesa ocupada ahora mismo">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-red-600">En vivo</span>
+                </span>
+              ) : null}
               <p className="text-lg font-bold">Mesa {mesa.numero}</p>
               <p className="text-xs text-muted-foreground">{mesa.capacidad} puestos</p>
               <span
@@ -156,10 +212,34 @@ export default function AdminMesasPage() {
                 <option value="">Sin asignar (libre)</option>
                 {meseros.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
+                    {nombreCompleto(m)}
                   </option>
                 ))}
               </select>
+              {mesa.estado === "OCUPADA" && sesionDeMesa(mesa.id) ? (
+                <div className="mt-1 w-full">
+                  <p className="text-[11px] text-muted-foreground">Atendida por {nombreCompleto(sesionDeMesa(mesa.id)?.mesero)}</p>
+                  <select
+                    defaultValue=""
+                    disabled={reasignandoId === sesionDeMesa(mesa.id)?.id}
+                    onChange={(e) => {
+                      const sesionId = sesionDeMesa(mesa.id)?.id;
+                      if (sesionId && e.target.value) handleReasignar(sesionId, e.target.value);
+                      e.target.value = "";
+                    }}
+                    className="mt-1 w-full rounded-lg border border-border px-2 py-1 text-[11px]"
+                  >
+                    <option value="">Reasignar a otro mesero…</option>
+                    {meseros
+                      .filter((m) => m.id !== sesionDeMesa(mesa.id)?.meseroId)
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {nombreCompleto(m)}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="mt-1 flex gap-3">
                 <button onClick={() => setEditingId(mesa.id)} className="text-xs font-semibold text-accent">
                   Editar

@@ -14,18 +14,22 @@ usuariosRouter.get(
   catchAsync(async (_req, res) => {
     const usuarios = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
     });
     res.json(usuarios);
   })
 );
 
 // No hay registro público: el Admin crea aquí las cuentas de Mesero/Cocina/Admin.
+// Nombre y apellido van por separado (en vez de un solo "name" libre) para que
+// la lista de usuarios muestre a personas reales (ej. "Katherine Díaz") y no
+// se repita el rol dentro del propio nombre.
 const createUserSchema = z.object({
-  name: z.string().trim().min(1),
+  nombre: z.string().trim().min(1),
+  apellido: z.string().trim().optional().default(""),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["ADMIN", "MESERO", "COCINA"]),
+  role: z.enum(["ADMIN", "MESERO", "COCINA", "PANTALLA"]),
 });
 
 usuariosRouter.post(
@@ -38,7 +42,7 @@ usuariosRouter.post(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const { name, email, password, role } = parsed.data;
+    const { nombre, apellido, email, password, role } = parsed.data;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -48,14 +52,35 @@ usuariosRouter.post(
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { name, email, passwordHash, role },
-      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      data: { nombre, apellido, email, passwordHash, role },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
     });
     res.status(201).json(user);
   })
 );
 
-const roleSchema = z.object({ role: z.enum(["ADMIN", "MESERO", "COCINA"]) });
+const nombreSchema = z.object({ nombre: z.string().trim().min(1), apellido: z.string().trim().optional().default("") });
+
+usuariosRouter.put(
+  "/:id/nombre",
+  requireAuth,
+  requireAdmin,
+  catchAsync(async (req, res) => {
+    const parsed = nombreSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { nombre: parsed.data.nombre, apellido: parsed.data.apellido },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
+    });
+    res.json(user);
+  })
+);
+
+const roleSchema = z.object({ role: z.enum(["ADMIN", "MESERO", "COCINA", "PANTALLA"]) });
 
 usuariosRouter.put(
   "/:id/role",
@@ -70,7 +95,7 @@ usuariosRouter.put(
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { role: parsed.data.role },
-      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
     });
     res.json(user);
   })
@@ -91,7 +116,7 @@ usuariosRouter.put(
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: parsed.data.isActive },
-      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
     });
     res.json(user);
   })

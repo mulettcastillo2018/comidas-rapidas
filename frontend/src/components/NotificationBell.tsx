@@ -12,6 +12,8 @@ const TIPO_LABEL: Record<string, string> = {
   PEDIDO_NUEVO: "Pedido nuevo",
   ITEM_RETRASADO: "Retraso",
   ITEM_LISTO: "Listo para entregar",
+  SOLICITUD_PEDIDO_CLIENTE: "Pedido del cliente",
+  ITEM_CANCELADO: "Producto cancelado",
 };
 
 export function NotificationBell() {
@@ -23,9 +25,14 @@ export function NotificationBell() {
 
   useEffect(() => {
     if (!token || !user) return;
-    apiFetch<Notificacion[]>("/notificaciones", { token }).then(setNotificaciones);
+    const cargarNotificaciones = () => apiFetch<Notificacion[]>("/notificaciones", { token }).then(setNotificaciones);
+    cargarNotificaciones();
 
     const socket = createSocket(token);
+    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
+    // perdernos notificaciones mientras tanto; al reconectar sincronizamos
+    // de nuevo contra la API.
+    socket.on("connect", cargarNotificaciones);
     socket.on("notificacion:nueva", (n: Notificacion) => {
       setNotificaciones((prev) => [n, ...prev].slice(0, 50));
       playForTipo(n.tipo);

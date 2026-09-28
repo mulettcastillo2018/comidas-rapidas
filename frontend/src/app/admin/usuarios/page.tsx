@@ -2,13 +2,15 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import type { UserRole } from "@/lib/types";
 
 interface AdminUser {
   id: string;
-  name: string;
+  nombre: string;
+  apellido: string;
   email: string;
   role: UserRole;
   isActive: boolean;
@@ -19,6 +21,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "Admin",
   MESERO: "Mesero",
   COCINA: "Cocina",
+  PANTALLA: "Pantalla",
 };
 
 function formatDate(iso: string) {
@@ -36,6 +39,8 @@ export default function AdminUsuariosPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   async function loadUsuarios() {
     if (!token) return;
@@ -60,7 +65,8 @@ export default function AdminUsuariosPage() {
         method: "POST",
         token,
         body: JSON.stringify({
-          name: field("name"),
+          nombre: field("nombre"),
+          apellido: field("apellido"),
           email: field("email"),
           password: field("password"),
           role: field("role"),
@@ -110,6 +116,29 @@ export default function AdminUsuariosPage() {
     }
   }
 
+  async function handleEditName(userId: string, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    const form = event.currentTarget;
+    const field = (name: string) => (form.elements.namedItem(name) as HTMLInputElement).value;
+
+    setNameError(null);
+    setUpdatingId(userId);
+    try {
+      await apiFetch(`/usuarios/${userId}/nombre`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({ nombre: field("nombre"), apellido: field("apellido") }),
+      });
+      setEditingNameId(null);
+      await loadUsuarios();
+    } catch (err) {
+      setNameError(err instanceof ApiError ? err.message : "No se pudo actualizar el nombre.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   async function handleResetPassword(userId: string, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
@@ -150,13 +179,22 @@ export default function AdminUsuariosPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-semibold">
-                  {user.name} {!user.isActive ? <span className="text-red-600">(desactivado)</span> : null}
+                  {nombreCompleto(user)} {!user.isActive ? <span className="text-red-600">(desactivado)</span> : null}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {user.email} · Desde {formatDate(user.createdAt)}
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setNameError(null);
+                    setEditingNameId(editingNameId === user.id ? null : user.id);
+                  }}
+                  className="text-sm font-semibold text-accent"
+                >
+                  Editar nombre
+                </button>
                 <button
                   onClick={() => {
                     setResetError(null);
@@ -194,6 +232,23 @@ export default function AdminUsuariosPage() {
               </div>
             </div>
 
+            {editingNameId === user.id ? (
+              <form
+                onSubmit={(e) => handleEditName(user.id, e)}
+                className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3"
+              >
+                {nameError ? <p className="w-full text-sm text-red-600">{nameError}</p> : null}
+                <input name="nombre" placeholder="Nombre" defaultValue={user.nombre} required className="rounded-lg border border-border px-2 py-1 text-sm" />
+                <input name="apellido" placeholder="Apellido" defaultValue={user.apellido} className="rounded-lg border border-border px-2 py-1 text-sm" />
+                <button type="submit" disabled={updatingId === user.id} className="btn-primary rounded-full px-4 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+                  Guardar
+                </button>
+                <button type="button" onClick={() => setEditingNameId(null)} className="rounded-full border border-border px-4 py-1 text-sm text-muted-foreground">
+                  Cancelar
+                </button>
+              </form>
+            ) : null}
+
             {resettingId === user.id ? (
               <form
                 onSubmit={(e) => handleResetPassword(user.id, e)}
@@ -217,7 +272,10 @@ export default function AdminUsuariosPage() {
       {creating ? (
         <form onSubmit={handleCreate} className="space-y-3 rounded-xl border border-border p-4">
           <h2 className="text-sm font-bold">Nuevo usuario</h2>
-          <input name="name" placeholder="Nombre" required className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-3">
+            <input name="nombre" placeholder="Nombre" required className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
+            <input name="apellido" placeholder="Apellido" className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
+          </div>
           <input name="email" type="email" placeholder="Correo" required className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
           <input name="password" type="password" placeholder="Contraseña" required minLength={8} className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
           <select name="role" required defaultValue="MESERO" className="w-full rounded-lg border border-border px-3 py-2 text-sm">

@@ -11,11 +11,15 @@ enum Role {
   ADMIN
   MESERO
   COCINA
+  // Cuenta de pantalla/kiosco: solo lectura, muestra al público el estado de
+  // los pedidos activos (p. ej. en un TV del local).
+  PANTALLA
 }
 
 model User {
   id                 String        @id @default(cuid())
-  name               String
+  nombre             String        @default("")
+  apellido           String        @default("")
   email              String        @unique
   passwordHash       String
   role               Role
@@ -28,6 +32,7 @@ model User {
   facturasCerradas   Factura[]
   mesasAsignadas     Mesa[]            @relation("MesaAsignada")
   notificaciones     Notificacion[]
+  solicitudesResueltas SolicitudPedido[]
 }
 
 model Categoria {
@@ -51,6 +56,7 @@ model Producto {
   isActive               Boolean      @default(true)
   createdAt              DateTime     @default(now())
   pedidoItems            PedidoItem[]
+  solicitudItems         SolicitudPedidoItem[]
 }
 
 enum MesaEstado {
@@ -68,6 +74,7 @@ model Mesa {
   meseroAsignadoId String?
   meseroAsignado   User?        @relation("MesaAsignada", fields: [meseroAsignadoId], references: [id])
   sesiones         MesaSesion[]
+  solicitudes      SolicitudPedido[]
 }
 
 enum MesaSesionEstado {
@@ -111,19 +118,32 @@ enum PedidoEstado {
 }
 
 model Pedido {
+  // Un pedido normalmente pertenece a una mesa abierta (mesaSesionId), pero
+  // también puede ser un pedido de mostrador sin ninguna mesa detrás (alguien
+  // que no encontró puesto y decide pedir para recoger) — en ese caso
+  // mesaSesionId queda null y se usan nombreCliente/telefonoCliente en su
+  // lugar para identificar a quién pertenece.
   id             String            @id @default(cuid())
-  mesaSesionId   String
-  mesaSesion     MesaSesion        @relation(fields: [mesaSesionId], references: [id])
+  mesaSesionId   String?
+  mesaSesion     MesaSesion?       @relation(fields: [mesaSesionId], references: [id])
+  nombreCliente    String?
+  telefonoCliente  String?
   meseroId       String
   mesero         User              @relation(fields: [meseroId], references: [id])
   estado         PedidoEstado      @default(RECIBIDO)
   notasGenerales String?
+  // true si este pedido nació de una SolicitudPedido que el cliente armó
+  // desde el QR (de su mesa, o del mostrador) — el mesero/admin (meseroId)
+  // solo la validó, no la armó él mismo. Se usa para mostrar esa aclaración.
+  origenCliente  Boolean           @default(false)
+  solicitudOrigen SolicitudPedido?
   creadoEn       DateTime          @default(now())
   iniciadoEn     DateTime?
   listoEn        DateTime?
   entregadoEn    DateTime?
   items          PedidoItem[]
   statusLogs     PedidoStatusLog[]
+  factura        Factura?
 }
 
 // Cocina despacha producto por producto (no el pedido completo de una sola
@@ -136,6 +156,11 @@ model PedidoItem {
   pedido                   Pedido       @relation(fields: [pedidoId], references: [id])
   comensalId               String?
   comensal                 Comensal?    @relation(fields: [comensalId], references: [id])
+  // Domicilio para llevar dentro de una mesa abierta: el cliente sigue
+  // comiendo en el restaurante pero pide algo aparte para alguien que no está
+  // en la mesa. No va asignado a ningún comensal (comensalId queda null,
+  // igual que "para compartir", pero con un significado distinto).
+  paraLlevar               Boolean      @default(false)
   productoId               String
   producto                 Producto     @relation(fields: [productoId], references: [id])
   cantidad                 Int
@@ -179,6 +204,10 @@ model PedidoStatusLog {
 enum FacturaEstado {
   PENDIENTE
   PAGADA
+  // El cliente se fue sin pagar (o se decidió no cobrar). Se usa para poder
+  // cerrar la mesa igual y dejar registrada la pérdida, en vez de dejarla
+  // atascada en PENDIENTE para siempre.
+  PERDIDA
 }
 
 enum MetodoPago {
@@ -191,6 +220,8 @@ enum NotificacionTipo {
   PEDIDO_NUEVO
   ITEM_RETRASADO
   ITEM_LISTO
+  SOLICITUD_PEDIDO_CLIENTE
+  ITEM_CANCELADO
 }
 
 // Notificación entregada a un usuario puntual (mesero dueño de la mesa,
@@ -209,10 +240,55 @@ model Notificacion {
   creadaEn     DateTime         @default(now())
 }
 
+enum SolicitudPedidoEstado {
+  PENDIENTE
+  CONFIRMADA
+  DESCARTADA
+}
+
+// El cliente arma esto desde la carta pública mientras espera — NO es un
+// Pedido real todavía. Si viene del QR de una mesa (mesaId), se convierte en
+// Pedido cuando el mesero, ya con la mesa abierta, la confirma. Si viene del
+// QR general de mostrador (mesaId null, sin mesa detrás), la confirma
+// directamente el admin en caja (ver PUT /:id/confirmar-recogida), y en ese
+// caso nombreCliente y telefonoCliente son obligatorios para identificar el
+// pedido sin tener mesa ni mesero dueño.
+model SolicitudPedido {
+  id            String                @id @default(cuid())
+  mesaId        String?
+  mesa          Mesa?                 @relation(fields: [mesaId], references: [id])
+  nombreCliente String?
+  telefonoCliente String?
+  estado        SolicitudPedidoEstado @default(PENDIENTE)
+  items         SolicitudPedidoItem[]
+  creadaEn      DateTime              @default(now())
+  resueltaEn    DateTime?
+  resueltaPorId String?
+  resueltaPor   User?                 @relation(fields: [resueltaPorId], references: [id])
+  pedidoId      String?               @unique
+  pedido        Pedido?               @relation(fields: [pedidoId], references: [id])
+}
+
+model SolicitudPedidoItem {
+  id          String          @id @default(cuid())
+  solicitudId String
+  solicitud   SolicitudPedido @relation(fields: [solicitudId], references: [id])
+  productoId  String
+  producto    Producto        @relation(fields: [productoId], references: [id])
+  cantidad    Int
+  notas       String?
+  paraLlevar  Boolean         @default(false)
+}
+
 model Factura {
+  // Igual que Pedido: normalmente ligada a una mesa (mesaSesionId), pero una
+  // cuenta de mostrador se liga directo a su Pedido (pedidoId) porque no hay
+  // ninguna mesa/sesión detrás.
   id            String        @id @default(cuid())
-  mesaSesionId  String        @unique
-  mesaSesion    MesaSesion    @relation(fields: [mesaSesionId], references: [id])
+  mesaSesionId  String?       @unique
+  mesaSesion    MesaSesion?   @relation(fields: [mesaSesionId], references: [id])
+  pedidoId      String?       @unique
+  pedido        Pedido?       @relation(fields: [pedidoId], references: [id])
   subtotal      Int
   propinaMonto  Int           @default(0)
   total         Int

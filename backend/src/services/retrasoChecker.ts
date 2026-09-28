@@ -25,11 +25,14 @@ async function revisarItemsRetrasados() {
     const minutosTranscurridos = (ahora - referencia.getTime()) / 60000;
     if (minutosTranscurridos <= item.tiempoPreparacionMinutos) continue;
 
+    const ubicacion = item.pedido.mesaSesion
+      ? `Mesa ${item.pedido.mesaSesion.mesa.numero}`
+      : `Mostrador — ${item.pedido.nombreCliente ?? "cliente"}`;
     await prisma.pedidoItem.update({ where: { id: item.id }, data: { retrasoNotificado: true } });
     await notificarPorRol({
       rol: "COCINA",
       tipo: "ITEM_RETRASADO",
-      mensaje: `${item.producto.nombre} de Mesa ${item.pedido.mesaSesion.mesa.numero} lleva más de ${item.tiempoPreparacionMinutos} min — ¿va atrasado o ya salió y falta marcarlo?`,
+      mensaje: `${item.producto.nombre} de ${ubicacion} lleva más de ${item.tiempoPreparacionMinutos} min — ¿va atrasado o ya salió y falta marcarlo?`,
       pedidoId: item.pedidoId,
       pedidoItemId: item.id,
     });

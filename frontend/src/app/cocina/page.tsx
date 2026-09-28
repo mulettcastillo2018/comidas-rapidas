@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
+import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import type { Pedido, PedidoItem } from "@/lib/types";
@@ -42,12 +43,19 @@ export default function CocinaPage() {
 
   useEffect(() => {
     if (!token) return;
-    apiFetch<Pedido[]>("/pedidos/activos", { token }).then(setPedidos);
+    const cargarPedidos = () => apiFetch<Pedido[]>("/pedidos/activos", { token }).then(setPedidos);
+    cargarPedidos();
 
     const socket = createSocket(token);
+    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
+    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
+    // contra la API en vez de quedarnos con pedidos viejos en pantalla.
+    socket.on("connect", cargarPedidos);
     socket.on("pedido:nuevo", (pedido: Pedido) => {
       setPedidos((prev) => [...prev, pedido]);
-      showToast(`Nuevo pedido — Mesa ${pedido.mesaSesion?.mesa?.numero ?? "?"}`);
+      showToast(
+        pedido.mesaSesion ? `Nuevo pedido — Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : `Nuevo pedido — Mostrador (${pedido.nombreCliente ?? "cliente"})`
+      );
     });
     socket.on("pedido:actualizado", (pedido: Pedido) => {
       setPedidos((prev) => {
@@ -88,11 +96,18 @@ export default function CocinaPage() {
     setError(null);
     setUpdatingItemId(item.id);
     try {
-      await apiFetch(`/pedidos/${item.pedidoId}/items/${item.id}/estado`, {
+      const pedidoActualizado = await apiFetch<Pedido>(`/pedidos/${item.pedidoId}/items/${item.id}/estado`, {
         method: "PUT",
         token,
         body: JSON.stringify({ estado }),
       });
+      // No esperamos al evento de socket para reflejar el cambio: si se
+      // espera, la pantalla queda unos instantes mostrando el botón viejo
+      // (mismo estado, mismo item) y un doble clic o un refresco lento del
+      // socket puede reenviar la misma transición ya aplicada — eso era lo
+      // que producía el error "no se puede pasar de EN_PREPARACION a
+      // EN_PREPARACION". Aplicamos la respuesta de una vez.
+      setPedidos((prev) => prev.map((p) => (p.id === pedidoActualizado.id ? pedidoActualizado : p)));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo actualizar el producto.");
     } finally {
@@ -134,14 +149,23 @@ export default function CocinaPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold">Mesa {item.pedido.mesaSesion?.mesa?.numero}</span>
+                      <span className="font-semibold">
+                        {item.pedido.mesaSesion ? `Mesa ${item.pedido.mesaSesion.mesa?.numero}` : "🧾 Mostrador"}
+                      </span>
                       <span className="text-xs text-muted-foreground">~{item.tiempoPreparacionMinutos} min</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">Mesero: {item.pedido.mesaSesion?.mesero?.name ?? "—"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.pedido.mesaSesion
+                        ? `Mesero: ${nombreCompleto(item.pedido.mesaSesion.mesero) || "—"}`
+                        : `Cliente: ${item.pedido.nombreCliente ?? "—"}`}
+                    </p>
                     <p className="mt-1 font-semibold">
                       {item.cantidad}× {item.producto?.nombre}
-                      {item.comensal ? ` — ${item.comensal.nombre}` : " — Para compartir"}
+                      {item.paraLlevar ? " — 🥡 Para llevar" : item.comensal ? ` — ${item.comensal.nombre}` : " — Para compartir"}
                     </p>
+                    {item.paraLlevar ? (
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-accent">Empacar para llevar</p>
+                    ) : null}
                     {item.notas ? <p className="text-xs text-muted-foreground">{item.notas}</p> : null}
 
                     {atrasado ? (

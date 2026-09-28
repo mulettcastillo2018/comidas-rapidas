@@ -28,6 +28,7 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
     const user = socket.data.user as { userId: string; role: string };
     if (user.role === "COCINA" || user.role === "ADMIN") socket.join("cocina");
     if (user.role === "MESERO" || user.role === "ADMIN") socket.join("meseros");
+    if (user.role === "PANTALLA" || user.role === "ADMIN") socket.join("pantalla");
     socket.join(`user:${user.userId}`);
   });
 
@@ -35,15 +36,15 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   return io;
 }
 
-// Emite un pedido nuevo a la pantalla de cocina.
+// Emite un pedido nuevo a la pantalla de cocina y a la pantalla pública.
 export function emitPedidoNuevo(pedido: unknown) {
-  ioInstance?.to("cocina").emit("pedido:nuevo", pedido);
+  ioInstance?.to("cocina").to("pantalla").emit("pedido:nuevo", pedido);
 }
 
-// Emite un cambio de estado de pedido tanto a meseros (para que sepan cuándo
-// entregar) como a cocina (por si hay varias estaciones/pantallas).
+// Emite un cambio de estado de pedido a meseros (para que sepan cuándo
+// entregar), cocina (por si hay varias estaciones) y la pantalla pública.
 export function emitPedidoActualizado(pedido: unknown) {
-  ioInstance?.to("meseros").to("cocina").emit("pedido:actualizado", pedido);
+  ioInstance?.to("meseros").to("cocina").to("pantalla").emit("pedido:actualizado", pedido);
 }
 
 // Empuja una notificación puntual al usuario dueño (mesa que atiende, o
@@ -51,4 +52,26 @@ export function emitPedidoActualizado(pedido: unknown) {
 // la recibe en vivo sin tener que refrescar.
 export function emitNotificacion(userId: string, notificacion: unknown) {
   ioInstance?.to(`user:${userId}`).emit("notificacion:nueva", notificacion);
+}
+
+// Los siguientes eventos mantienen la grilla de mesas de /mesero en tiempo
+// real (antes solo se cargaba una vez al entrar a la página).
+export function emitMesaActualizada(mesa: unknown) {
+  ioInstance?.to("meseros").emit("mesa:actualizada", mesa);
+}
+
+export function emitMesaSesionNueva(sesion: unknown) {
+  ioInstance?.to("meseros").emit("mesaSesion:nueva", sesion);
+}
+
+export function emitMesaSesionCerrada(payload: { mesaId: string; sesionId: string }) {
+  ioInstance?.to("meseros").emit("mesaSesion:cerrada", payload);
+}
+
+export function emitSolicitudNueva(solicitud: unknown) {
+  ioInstance?.to("meseros").emit("solicitud:nueva", solicitud);
+}
+
+export function emitSolicitudActualizada(solicitud: unknown) {
+  ioInstance?.to("meseros").emit("solicitud:actualizada", solicitud);
 }

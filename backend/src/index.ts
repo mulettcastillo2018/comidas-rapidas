@@ -1,5 +1,6 @@
 import "dotenv/config";
 import http from "node:http";
+import path from "node:path";
 import cors from "cors";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
@@ -16,6 +17,7 @@ import { facturasRouter } from "./routes/facturas.routes";
 import { reportesRouter } from "./routes/reportes.routes";
 import { cartaRouter } from "./routes/carta.routes";
 import { notificacionesRouter } from "./routes/notificaciones.routes";
+import { solicitudesRouter } from "./routes/solicitudes.routes";
 import { allowedOrigins } from "./lib/corsOrigins";
 import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
 
@@ -24,6 +26,7 @@ const port = process.env.PORT ?? 4001;
 
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
@@ -40,6 +43,7 @@ app.use("/facturas", facturasRouter);
 app.use("/reportes", reportesRouter);
 app.use("/carta", cartaRouter);
 app.use("/notificaciones", notificacionesRouter);
+app.use("/solicitudes", solicitudesRouter);
 
 // Manejador de errores global: cualquier error no atrapado en las rutas termina
 // aquí en vez de tumbar el proceso completo.

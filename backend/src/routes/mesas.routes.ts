@@ -3,10 +3,11 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { emitMesaActualizada } from "../realtime/socket";
 
 export const mesasRouter = Router();
 
-const mesaInclude = { meseroAsignado: { select: { id: true, name: true } } };
+const mesaInclude = { meseroAsignado: { select: { id: true, nombre: true, apellido: true } } };
 
 mesasRouter.get(
   "/",
@@ -49,6 +50,7 @@ mesasRouter.put(
       return;
     }
     const mesa = await prisma.mesa.update({ where: { id: req.params.id }, data: parsed.data, include: mesaInclude });
+    emitMesaActualizada(mesa);
     res.json(mesa);
   })
 );

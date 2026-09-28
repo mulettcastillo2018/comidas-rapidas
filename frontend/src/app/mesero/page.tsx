@@ -4,8 +4,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { createSocket } from "@/lib/socket";
+import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
-import type { Mesa, MesaSesion } from "@/lib/types";
+import type { Mesa, MesaSesion, Pedido, SolicitudPedido } from "@/lib/types";
 
 export default function MeseroPage() {
   const token = useAuthStore((state) => state.token);
@@ -13,6 +15,7 @@ export default function MeseroPage() {
   const router = useRouter();
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [sesionesActivas, setSesionesActivas] = useState<MesaSesion[]>([]);
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState<SolicitudPedido[]>([]);
   const [openingMesa, setOpeningMesa] = useState<Mesa | null>(null);
   const [comensalInputs, setComensalInputs] = useState<string[]>(["", ""]);
   const [confirmaSillaExtra, setConfirmaSillaExtra] = useState(false);
@@ -21,21 +24,76 @@ export default function MeseroPage() {
 
   async function loadData() {
     if (!token) return;
-    const [mesasData, sesionesData] = await Promise.all([
+    const [mesasData, sesionesData, solicitudesData] = await Promise.all([
       apiFetch<Mesa[]>("/mesas", { token }),
       apiFetch<MesaSesion[]>("/mesa-sesiones?activas=true", { token }),
+      apiFetch<SolicitudPedido[]>("/solicitudes?estado=PENDIENTE", { token }),
     ]);
     setMesas(mesasData);
     setSesionesActivas(sesionesData);
+    setSolicitudesPendientes(solicitudesData);
   }
 
   useEffect(() => {
+    if (!token) return;
     loadData();
+
+    const socket = createSocket(token);
+    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
+    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
+    // contra la API en vez de quedarnos con mesas/solicitudes viejas.
+    socket.on("connect", loadData);
+    socket.on("mesa:actualizada", (mesa: Mesa) => {
+      setMesas((prev) => prev.map((m) => (m.id === mesa.id ? mesa : m)));
+    });
+    socket.on("mesaSesion:nueva", (sesion: MesaSesion) => {
+      setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);
+      setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
+    });
+    socket.on("mesaSesion:cerrada", (payload: { mesaId: string; sesionId: string }) => {
+      setSesionesActivas((prev) => prev.filter((s) => s.id !== payload.sesionId));
+      setMesas((prev) => prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: "LIBRE" } : m)));
+    });
+    socket.on("solicitud:nueva", (solicitud: SolicitudPedido) => {
+      setSolicitudesPendientes((prev) => [...prev.filter((s) => s.id !== solicitud.id), solicitud]);
+    });
+    socket.on("solicitud:actualizada", (solicitud: SolicitudPedido) => {
+      setSolicitudesPendientes((prev) => prev.filter((s) => s.id !== solicitud.id));
+    });
+    // Para que la grilla muestre al instante qué mesas tienen algo listo para
+    // entregar, sin que el mesero tenga que entrar mesa por mesa a revisar.
+    const actualizarPedidoEnSesiones = (pedido: Pedido) => {
+      setSesionesActivas((prev) =>
+        prev.map((s) =>
+          s.id === pedido.mesaSesionId
+            ? { ...s, pedidos: [...(s.pedidos?.filter((p) => p.id !== pedido.id) ?? []), pedido] }
+            : s
+        )
+      );
+    };
+    socket.on("pedido:nuevo", actualizarPedidoEnSesiones);
+    socket.on("pedido:actualizado", actualizarPedidoEnSesiones);
+
+    return () => {
+      socket.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   function sesionDeMesa(mesaId: string) {
     return sesionesActivas.find((s) => s.mesaId === mesaId);
+  }
+
+  function solicitudesDeMesa(mesaId: string) {
+    return solicitudesPendientes.filter((s) => s.mesaId === mesaId).length;
+  }
+
+  // Cuenta los productos ya listos en cocina que todavía no se han entregado,
+  // para que la grilla lo muestre sin tener que entrar a cada mesa a revisar.
+  function productosListosEnMesa(mesaId: string) {
+    const sesion = sesionDeMesa(mesaId);
+    if (!sesion?.pedidos) return 0;
+    return sesion.pedidos.reduce((total, pedido) => total + pedido.items.filter((i) => i.estado === "LISTO").length, 0);
   }
 
   function asignadaAOtroMesero(mesa: Mesa) {
@@ -55,14 +113,15 @@ export default function MeseroPage() {
   async function handleAbrirMesa(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !openingMesa) return;
-    const form = event.currentTarget;
-    const nombreResponsable = (form.elements.namedItem("nombreResponsable") as HTMLInputElement).value;
     const comensales = comensalInputs.map((c) => c.trim()).filter(Boolean);
 
     if (comensales.length === 0) {
-      setError("Registra al menos un comensal.");
+      setError("Registra al menos un comensal, empezando por quién queda a cargo de la mesa.");
       return;
     }
+    // El primer comensal es quien queda a cargo de la mesa (para la cuenta) —
+    // así no se escribe dos veces ni se queda por fuera del conteo de aforo.
+    const nombreResponsable = comensales[0];
     if (seSuperaCapacidad && !confirmaSillaExtra) {
       setError("Confirma que traerás una silla adicional para superar la capacidad de la mesa.");
       return;
@@ -109,14 +168,10 @@ export default function MeseroPage() {
               <p className="font-semibold">
                 Abrir Mesa {mesa.numero} <span className="font-normal text-muted-foreground">({mesa.capacidad} puestos)</span>
               </p>
-              <input
-                name="nombreResponsable"
-                placeholder="¿A nombre de quién queda la mesa?"
-                required
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
               <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground">Comensales</p>
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Comensales (el primero queda a cargo de la mesa, para la cuenta)
+                </p>
                 {comensalInputs.map((value, index) => (
                   <div key={index} className="flex gap-2">
                     <input
@@ -124,7 +179,11 @@ export default function MeseroPage() {
                       onChange={(e) =>
                         setComensalInputs((prev) => prev.map((v, i) => (i === index ? e.target.value : v)))
                       }
-                      placeholder={`Nombre comensal ${index + 1}${index >= mesa.capacidad ? " (silla adicional)" : ""}`}
+                      placeholder={
+                        index === 0
+                          ? "Nombre — a cargo de la mesa"
+                          : `Nombre comensal ${index + 1}${index >= mesa.capacidad ? " (silla adicional)" : ""}`
+                      }
                       className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
                         index >= mesa.capacidad ? "border-accent bg-accent/5" : "border-border"
                       }`}
@@ -199,15 +258,25 @@ export default function MeseroPage() {
               >
                 {mesa.estado === "LIBRE"
                   ? asignadaAOtroMesero(mesa)
-                    ? `Asignada a ${mesa.meseroAsignado?.name}`
+                    ? `Asignada a ${nombreCompleto(mesa.meseroAsignado)}`
                     : "Libre — abrir"
                   : sesion?.nombreResponsable ?? "Ocupada"}
               </span>
               {mesa.estado === "OCUPADA" && sesion && sesion.meseroId !== user?.id ? (
-                <span className="text-[11px] text-muted-foreground">Atendida por {sesion.mesero?.name}</span>
+                <span className="text-[11px] text-muted-foreground">Atendida por {nombreCompleto(sesion.mesero)}</span>
               ) : null}
               {mesa.estado === "OCUPADA" && sesion && sesion.sillasAdicionales > 0 ? (
                 <span className="text-[11px] font-semibold text-accent">+{sesion.sillasAdicionales} silla(s) extra</span>
+              ) : null}
+              {productosListosEnMesa(mesa.id) > 0 ? (
+                <span className="animate-pulse rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                  ✅ {productosListosEnMesa(mesa.id)} listo{productosListosEnMesa(mesa.id) > 1 ? "s" : ""} para entregar
+                </span>
+              ) : null}
+              {solicitudesDeMesa(mesa.id) > 0 ? (
+                <span className="animate-pulse rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">
+                  🔔 Pedido del cliente esperando
+                </span>
               ) : null}
             </button>
           );

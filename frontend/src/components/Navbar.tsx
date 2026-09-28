@@ -6,6 +6,14 @@ import { LogOut } from "lucide-react";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { NotificationBell } from "@/components/NotificationBell";
+import { nombreCompleto } from "@/lib/nombre";
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: "Admin",
+  MESERO: "Mesero",
+  COCINA: "Cocina",
+  PANTALLA: "Pantalla",
+};
 
 export function Navbar() {
   const user = useAuthStore((state) => state.user);
@@ -37,6 +45,11 @@ export function Navbar() {
               Cocina
             </Link>
           ) : null}
+          {user?.role === "PANTALLA" || user?.role === "ADMIN" ? (
+            <Link href="/pantalla" className="text-muted-foreground hover:text-foreground">
+              Pantalla
+            </Link>
+          ) : null}
           {user?.role === "ADMIN" ? (
             <Link href="/admin" className="text-muted-foreground hover:text-foreground">
               Admin
@@ -45,7 +58,12 @@ export function Navbar() {
           {user ? (
             <>
               <NotificationBell />
-              <span className="text-muted-foreground">{user.name}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="font-semibold text-foreground">{nombreCompleto(user)}</span>
+                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent">
+                  {ROLE_LABEL[user.role] ?? user.role}
+                </span>
+              </span>
               <button
                 onClick={handleLogout}
                 title="Cerrar sesión"

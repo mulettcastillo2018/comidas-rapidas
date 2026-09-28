@@ -9,7 +9,7 @@ import type { AuthUser } from "@/lib/types";
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const setAuth = useAuthStore((state) => state.setAuth);
   const router = useRouter();
 

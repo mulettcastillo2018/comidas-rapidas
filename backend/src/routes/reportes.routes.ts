@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
+import { nombreCompleto } from "../lib/nombre";
 
 export const reportesRouter = Router();
 
@@ -17,7 +18,12 @@ reportesRouter.get(
       where: { iniciadoEn: { not: null }, listoEn: { not: null } },
       include: {
         producto: true,
-        pedido: { include: { mesaSesion: { include: { mesa: true, mesero: { select: { id: true, name: true } } } } } },
+        pedido: {
+          include: {
+            mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
+            mesero: { select: { id: true, nombre: true, apellido: true } },
+          },
+        },
       },
       orderBy: { listoEn: "desc" },
       take: 300,
@@ -27,8 +33,8 @@ reportesRouter.get(
       const tiempoRealMinutos = Math.round((item.listoEn!.getTime() - item.iniciadoEn!.getTime()) / 60000);
       return {
         pedidoItemId: item.id,
-        mesaNumero: item.pedido.mesaSesion.mesa.numero,
-        meseroNombre: item.pedido.mesaSesion.mesero.name,
+        mesaNumero: item.pedido.mesaSesion?.mesa?.numero ?? `Mostrador (${item.pedido.nombreCliente ?? "cliente"})`,
+        meseroNombre: nombreCompleto(item.pedido.mesaSesion?.mesero ?? item.pedido.mesero),
         productoNombre: item.producto.nombre,
         creadoEn: item.pedido.creadoEn,
         tiempoEstimadoMinutos: item.tiempoPreparacionMinutos,
