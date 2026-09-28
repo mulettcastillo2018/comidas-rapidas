@@ -20,6 +20,8 @@ interface ProductoFormValues {
   costo: number | null;
   disponible: boolean;
   isActive: boolean;
+  esCombo: boolean;
+  componentes: { productoId: string; cantidad: number }[];
 }
 
 const EMPTY_VALUES: Omit<ProductoFormValues, "categoriaId"> = {
@@ -32,10 +34,75 @@ const EMPTY_VALUES: Omit<ProductoFormValues, "categoriaId"> = {
   costo: null,
   disponible: true,
   isActive: true,
+  esCombo: false,
+  componentes: [],
 };
+
+// Qué trae un combo: productos normales y cuántos de cada uno. Muestra cuánto
+// costarían por separado para ver el ahorro que ofrece.
+function EditorCombo({
+  productos,
+  componentes,
+  precioCombo,
+  onChange,
+}: {
+  productos: Producto[];
+  componentes: { productoId: string; cantidad: number }[];
+  precioCombo: number;
+  onChange: (c: { productoId: string; cantidad: number }[]) => void;
+}) {
+  const elegibles = productos.filter((p) => !p.esCombo && p.isActive);
+  const separado = componentes.reduce((s, c) => s + (productos.find((p) => p.id === c.productoId)?.precio ?? 0) * c.cantidad, 0);
+  return (
+    <div className="space-y-2 rounded-lg bg-muted/60 p-3 text-sm">
+      <p className="text-xs font-semibold">Productos que trae el combo</p>
+      {componentes.map((c, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <select
+            value={c.productoId}
+            onChange={(e) => onChange(componentes.map((x, j) => (j === i ? { ...x, productoId: e.target.value } : x)))}
+            className="flex-1 rounded-lg border border-border px-2 py-1.5"
+          >
+            {elegibles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre} — {formatoPesos(p.precio)}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={c.cantidad}
+            onChange={(e) => onChange(componentes.map((x, j) => (j === i ? { ...x, cantidad: Math.min(10, Math.max(1, Number(e.target.value) || 1)) } : x)))}
+            className="w-16 rounded-lg border border-border px-2 py-1.5"
+          />
+          <button type="button" onClick={() => onChange(componentes.filter((_, j) => j !== i))} className="text-xs text-red-600">
+            Quitar
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={elegibles.length === 0}
+        onClick={() => onChange([...componentes, { productoId: elegibles[0].id, cantidad: 1 }])}
+        className="text-xs font-semibold text-accent"
+      >
+        + Agregar producto
+      </button>
+      {separado > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Por separado costaría {formatoPesos(separado)}
+          {precioCombo > 0 && precioCombo < separado ? ` · el combo ahorra ${formatoPesos(separado - precioCombo)}` : ""}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function ProductoForm({
   categorias,
+  productos,
   initialValues,
   onSubmit,
   onCancel,
@@ -43,6 +110,7 @@ function ProductoForm({
   loading,
 }: {
   categorias: Categoria[];
+  productos: Producto[];
   initialValues?: Partial<ProductoFormValues>;
   onSubmit: (values: ProductoFormValues) => Promise<void>;
   onCancel?: () => void;
@@ -134,17 +202,35 @@ function ProductoForm({
       <label className="flex items-start gap-2 text-sm text-muted-foreground">
         <input
           type="checkbox"
-          checked={values.requiereCocina}
-          onChange={(e) => update("requiereCocina", e.target.checked)}
+          checked={values.esCombo}
+          onChange={(e) => update("esCombo", e.target.checked)}
           className="mt-1"
         />
         <span>
-          Pasa por cocina
+          Es un combo
           <span className="block text-xs">
-            Desmárcalo en bebidas o productos listos para servir: el mesero los lleva directo y no ocupan la fila de cocina.
+            Un precio por varios productos (ej. hamburguesa + papas + gaseosa). Al pedirlo, cocina ve cada parte por separado.
           </span>
         </span>
       </label>
+      {values.esCombo ? (
+        <EditorCombo productos={productos} componentes={values.componentes} precioCombo={values.precio} onChange={(c) => update("componentes", c)} />
+      ) : (
+        <label className="flex items-start gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={values.requiereCocina}
+            onChange={(e) => update("requiereCocina", e.target.checked)}
+            className="mt-1"
+          />
+          <span>
+            Pasa por cocina
+            <span className="block text-xs">
+              Desmárcalo en bebidas o productos listos para servir: el mesero los lleva directo y no ocupan la fila de cocina.
+            </span>
+          </span>
+        </label>
+      )}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -272,6 +358,7 @@ export default function AdminProductosPage() {
             <div key={producto.id} className="rounded-xl border border-border p-4">
               <ProductoForm
                 categorias={categorias}
+                productos={productos.filter((p) => p.id !== producto.id)}
                 submitLabel="Guardar cambios"
                 loading={saving}
                 initialValues={producto}
@@ -304,7 +391,11 @@ export default function AdminProductosPage() {
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {producto.categoria?.nombre} ·{" "}
-                    {producto.requiereCocina ? `${producto.tiempoPreparacionMinutos} min de preparación` : "No pasa por cocina"}
+                    {producto.esCombo
+                      ? `Combo: ${producto.componentes?.map((c) => `${c.cantidad > 1 ? `${c.cantidad}× ` : ""}${c.producto.nombre}`).join(" + ")}`
+                      : producto.requiereCocina
+                        ? `${producto.tiempoPreparacionMinutos} min de preparación`
+                        : "No pasa por cocina"}
                   </p>
                   <p className="text-sm font-semibold">
                     {formatoPesos(producto.precio)}
@@ -343,7 +434,7 @@ export default function AdminProductosPage() {
         <div className="rounded-xl border border-border p-4">
           <h2 className="text-sm font-bold">Nuevo producto</h2>
           <div className="mt-3">
-            <ProductoForm categorias={categorias} submitLabel="Crear producto" loading={saving} onSubmit={handleCreate} onCancel={() => setCreating(false)} />
+            <ProductoForm categorias={categorias} productos={productos} submitLabel="Crear producto" loading={saving} onSubmit={handleCreate} onCancel={() => setCreating(false)} />
           </div>
         </div>
       ) : (

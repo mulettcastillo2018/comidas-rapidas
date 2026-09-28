@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { catchAsync } from "../lib/catchAsync";
 import { OMITIR_PRODUCTO_PUBLICO } from "../lib/datosInternos";
+import { conPromociones, incluirCatalogo } from "../services/catalogo";
 
 export const cartaRouter = Router();
 
@@ -18,9 +19,12 @@ cartaRouter.get(
           where: { isActive: true, disponible: true },
           orderBy: { nombre: "asc" },
           omit: OMITIR_PRODUCTO_PUBLICO,
+          include: { adiciones: incluirCatalogo.adiciones, componentes: incluirCatalogo.componentes },
         },
       },
     });
-    res.json(categorias.filter((c) => c.productos.length > 0));
+    // Con la promoción vigente ya aplicada al precio que ve el cliente.
+    const conPromo = await Promise.all(categorias.map(async (c) => ({ ...c, productos: await conPromociones(c.productos) })));
+    res.json(conPromo.filter((c) => c.productos.length > 0));
   })
 );

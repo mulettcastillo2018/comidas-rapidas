@@ -17,7 +17,10 @@ const sesionInclude = {
   comensales: true,
   pedidos: {
     include: {
-      items: { omit: OMITIR_ITEM, include: { producto: productoPublico, comensal: true } },
+      items: {
+        omit: OMITIR_ITEM,
+        include: { producto: productoPublico, comensal: true, adiciones: { select: { nombre: true, precio: true } } },
+      },
       mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
     },
     orderBy: { creadoEn: "asc" as const },

@@ -12,6 +12,7 @@ import { crearPedido, pedidoInclude } from "../services/pedidos";
 import { avisarAutorizacion, exigirAutorizacion } from "../services/autorizacion";
 import { devolverStock, revisarStock } from "../services/inventario";
 import { nombreCompleto } from "../lib/nombre";
+import { ubicacionDe } from "../lib/ubicacion";
 
 export const pedidosRouter = Router();
 
@@ -29,6 +30,7 @@ const pedidoItemSchema = z.object({
   cantidad: z.number().int().positive(),
   notas: z.string().trim().min(1).nullable().optional(),
   paraLlevar: z.boolean().optional(),
+  adicionIds: z.array(z.string().min(1)).max(20).optional(),
 });
 
 const crearPedidoSchema = z.object({
@@ -43,13 +45,14 @@ const crearPedidoSchema = z.object({
 pedidosRouter.get(
   "/activos",
   requireAuth,
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const pedidos = await prisma.pedido.findMany({
       where: { estado: { in: ["RECIBIDO", "EN_PREPARACION", "LISTO"] } },
       include: pedidoInclude,
       orderBy: { creadoEn: "asc" },
     });
-    res.json(pedidos);
+    // La pantalla pública no necesita el teléfono del cliente.
+    res.json(req.user!.role === "PANTALLA" ? pedidos.map(({ telefonoCliente: _t, ...p }) => p) : pedidos);
   })
 );
 
@@ -194,9 +197,7 @@ pedidosRouter.put(
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
     if (devolver.length > 0) await revisarStock(devolver.map((i) => i.productoId));
-    const ubicacion = pedidoActualizado?.mesaSesion
-      ? `Mesa ${pedidoActualizado.mesaSesion.mesa.numero}`
-      : `Mostrador — ${pedidoActualizado?.nombreCliente ?? "cliente"}`;
+    const ubicacion = pedidoActualizado ? ubicacionDe(pedidoActualizado) : "un pedido";
     if (autorizadoPorId && req.user!.role !== "ADMIN") {
       await avisarAutorizacion(
         autorizadoPorId,
@@ -308,9 +309,7 @@ pedidosRouter.put(
 
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: item.pedidoId }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
-    const ubicacion = pedidoActualizado?.mesaSesion
-      ? `Mesa ${pedidoActualizado.mesaSesion.mesa.numero}`
-      : `Mostrador — ${pedidoActualizado?.nombreCliente ?? "cliente"}`;
+    const ubicacion = pedidoActualizado ? ubicacionDe(pedidoActualizado) : "un pedido";
     if (estado === "LISTO" && pedidoActualizado) {
       const itemActualizado = pedidoActualizado.items.find((i) => i.id === item.id);
       // Sin mesa (pedido de mostrador) el dueño es el admin en caja, que ya

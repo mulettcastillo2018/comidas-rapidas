@@ -6,7 +6,8 @@ import { apiFetch } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { ITEM_ESTADO_LABEL } from "@/lib/estados";
-import { estaAtrasado, reemplazarPedidoActivo } from "@/lib/pedidos";
+import { conAdiciones, etiquetaCombo } from "@/lib/items";
+import { estaAtrasado, etiquetaCanal, reemplazarPedidoActivo } from "@/lib/pedidos";
 import { useAuthStore } from "@/store/auth.store";
 import type { Pedido, PedidoItem } from "@/lib/types";
 
@@ -48,7 +49,7 @@ export default function AdminPedidosPage() {
       const clave = pedido.mesaSesion ? `Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : `mostrador-${pedido.id}`;
       const titulo = pedido.mesaSesion
         ? `Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}`
-        : `🧾 Mostrador — ${pedido.nombreCliente ?? "cliente"}`;
+        : `${etiquetaCanal(pedido)} — ${pedido.nombreCliente ?? "cliente"}`;
       for (const item of pedido.items) {
         if (item.estado === "CANCELADO" || item.estado === "ENTREGADO") continue;
         if (!grupos.has(clave)) grupos.set(clave, { titulo, items: [] });
@@ -89,7 +90,8 @@ export default function AdminPedidosPage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span>
-                          {item.cantidad}× {item.producto?.nombre}
+                          {item.cantidad}× {conAdiciones(item, item.producto?.nombre)}
+                          {item.comboNombre ? <span className="ml-1 text-[11px] text-muted-foreground">{etiquetaCombo(item)}</span> : null}
                           {item.pedido.origenCliente ? (
                             <span className="ml-1 text-[10px] italic text-muted-foreground">(pedido por QR)</span>
                           ) : null}

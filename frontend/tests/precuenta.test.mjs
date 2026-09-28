@@ -1,7 +1,7 @@
 // División sugerida de la cuenta por persona. Correr con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calcularPrecuenta, propinaSugerida } from "../src/lib/precuenta.ts";
+import { calcularPrecuenta, montoDescuento, propinaSugerida } from "../src/lib/precuenta.ts";
 
 const item = (id, comensalId, precio, cantidad = 1, extra = {}) => ({
   id,
@@ -50,6 +50,25 @@ test("cada quien paga lo suyo; lo compartido y la propina se reparten sin perder
     p.porPersona.reduce((s, x) => s + x.total, 0),
     p.total
   );
+});
+
+test("el descuento se reparte según lo que consumió cada uno, sin perder pesos", () => {
+  const p = calcularPrecuenta(sesion, 1000, 3000);
+  assert.equal(p.total, 28000);
+  const [ana, beto, caro] = p.porPersona;
+  // Consumos: Ana 13334, Beto 13333, Caro 3333 (de 30000).
+  assert.deepEqual([ana.descuento, beto.descuento, caro.descuento], [1334, 1333, 333]);
+  assert.equal(
+    p.porPersona.reduce((s, x) => s + x.total, 0),
+    p.total
+  );
+});
+
+test("descuento por porcentaje o por valor, nunca más que el consumo", () => {
+  assert.equal(montoDescuento(30000, "PORCENTAJE", 10), 3000);
+  assert.equal(montoDescuento(30000, "PORCENTAJE", 100), 30000);
+  assert.equal(montoDescuento(30000, "VALOR", 50000), 30000);
+  assert.equal(montoDescuento(30000, "VALOR", 0), 0);
 });
 
 test("propina sugerida del 10% redondeada a la centena", () => {

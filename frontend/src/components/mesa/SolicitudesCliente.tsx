@@ -1,5 +1,6 @@
 "use client";
 
+import { conAdiciones } from "@/lib/items";
 import type { SolicitudPedido } from "@/lib/types";
 
 // Pedidos que el cliente armó desde el QR de la mesa y esperan que el mesero
@@ -27,7 +28,8 @@ export function SolicitudesCliente({
           <ul className="mt-1 space-y-1 text-sm">
             {solicitud.items.map((item) => (
               <li key={item.id} className={item.producto && !item.producto.disponible ? "text-red-600" : ""}>
-                {item.cantidad}× {item.producto?.nombre}
+                {item.cantidad}× {conAdiciones(item, item.producto?.nombre)}
+                {item.producto?.esCombo ? ` (trae ${item.producto.componentes?.map((c) => c.producto.nombre).join(" + ")})` : ""}
                 {item.paraLlevar ? " — 🥡 Para llevar" : ""}
                 {item.notas ? ` (${item.notas})` : ""}
                 {item.producto && !item.producto.disponible ? " — agotado" : ""}

@@ -24,6 +24,13 @@ export function horaLocal(fecha: Date): number {
   return Number(formatoHora.format(fecha)) % 24;
 }
 
+const formatoMinuto = new Intl.DateTimeFormat("en-US", { timeZone: ZONA_HORARIA, minute: "numeric" });
+
+// Minuto del día local (0–1439), p. ej. 5:30 p. m. = 1050.
+export function minutoDelDiaLocal(fecha: Date): number {
+  return horaLocal(fecha) * 60 + Number(formatoMinuto.format(fecha));
+}
+
 // Día de la semana local: 0 = domingo … 6 = sábado.
 export function diaSemanaLocal(fecha: Date): number {
   return DIAS.indexOf(formatoDiaSemana.format(fecha));

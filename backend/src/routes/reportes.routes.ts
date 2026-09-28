@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
+import type { CanalPedido } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { ubicacionDe } from "../lib/ubicacion";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { nombreCompleto } from "../lib/nombre";
@@ -40,7 +42,12 @@ function clasificarMenu(productos: { unidadesConCosto: number; ventasConCosto: n
     p.clasificacion = popular ? (rentable ? "ESTRELLA" : "CABALLO") : rentable ? "ROMPECABEZAS" : "PERRO";
   }
 }
-const itemsConProducto = { include: { producto: { select: { id: true, nombre: true, categoria: { select: { nombre: true } } } } } };
+const itemsConProducto = {
+  include: {
+    producto: { select: { id: true, nombre: true, categoria: { select: { nombre: true } } } },
+    adiciones: { select: { nombre: true, precio: true } },
+  },
+};
 
 // Ventas de un rango de días (hora de Colombia). Cuenta como venta lo que se
 // cobró (factura PAGADA) en esas fechas, según cuándo se cobró; las cuentas
@@ -69,9 +76,10 @@ reportesRouter.get(
         include: {
           cerradaPor: personaSelect,
           autorizadaPor: personaSelect,
+          descuentoAutorizadoPor: personaSelect,
           pagos: { select: { metodo: true, monto: true } },
           mesaSesion: { include: { mesa: true, mesero: personaSelect, pedidos: { include: { items: itemsConProducto } } } },
-          pedido: { include: { mesero: personaSelect, items: itemsConProducto } },
+          pedido: { include: { mesero: personaSelect, items: itemsConProducto, plataforma: { select: { nombre: true } } } },
         },
         orderBy: { pagadaEn: "asc" },
       }),
@@ -109,14 +117,19 @@ reportesRouter.get(
         id: f.id,
         fecha: f.pagadaEn!,
         dia: diaLocal(f.pagadaEn!),
-        canal: esMesa ? ("MESA" as const) : ("MOSTRADOR" as const),
-        ubicacion: esMesa ? `Mesa ${f.mesaSesion!.mesa.numero}` : `Mostrador — ${f.pedido?.nombreCliente ?? "cliente"}`,
+        canal: esMesa ? ("MESA" as const) : (f.pedido?.canal ?? "MOSTRADOR"),
+        ubicacion: esMesa ? `Mesa ${f.mesaSesion!.mesa.numero}` : f.pedido ? ubicacionDe(f.pedido) : "Mostrador",
         atendidoPor: esMesa ? f.mesaSesion!.mesero : (f.pedido?.mesero ?? f.cerradaPor),
         estado: f.estado as "PAGADA" | "PERDIDA",
         metodoPago: f.metodoPago,
         pagos: f.pagos,
         subtotal: f.subtotal,
+        descuento: f.descuentoMonto,
+        descuentoMotivo: f.descuentoMotivo,
+        descuentoAutorizadoPor: f.descuentoAutorizadoPor ? nombreCompleto(f.descuentoAutorizadoPor) : null,
         propina: f.propinaMonto,
+        envio: f.envioMonto,
+        comision: f.comisionMonto,
         total: f.total,
         // Quién autorizó con su clave registrarla como perdida.
         autorizadaPor: f.autorizadaPor ? nombreCompleto(f.autorizadaPor) : null,
@@ -135,7 +148,12 @@ reportesRouter.get(
       porDia.set(dia, { dia, ventas: 0, cuentas: 0 });
     }
     const porMetodo = new Map<string, { metodo: string; ventas: number; cuentas: number }>();
-    const porCanal = { MESA: { ventas: 0, cuentas: 0 }, MOSTRADOR: { ventas: 0, cuentas: 0 } };
+    const porCanal: Record<CanalPedido, { ventas: number; cuentas: number }> = {
+      MESA: { ventas: 0, cuentas: 0 },
+      MOSTRADOR: { ventas: 0, cuentas: 0 },
+      DOMICILIO: { ventas: 0, cuentas: 0 },
+      PLATAFORMA: { ventas: 0, cuentas: 0 },
+    };
     const porMesero = new Map<string, { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }>();
     // La ganancia se calcula solo sobre lo vendido con costo conocido (el
     // costo se guarda al vender; lo vendido antes de configurarlo no cuenta).
@@ -213,6 +231,27 @@ reportesRouter.get(
     const conCosto = productos.filter((p) => p.unidadesConCosto > 0);
     const ventasConCosto = suma(conCosto.map((p) => p.ventasConCosto));
     const costoVentas = suma(conCosto.map((p) => p.costo));
+    const descuentos = pagadas.filter((c) => c.descuento > 0);
+    const totalDescuentos = suma(descuentos.map((c) => c.descuento));
+    const totalComisiones = suma(pagadas.map((c) => c.comision));
+
+    // Combos vendidos (cada combo = un grupo de partes) y adiciones más pedidas.
+    const combos = new Map<string, { nombre: string; grupos: Set<string>; ventas: number }>();
+    const adiciones = new Map<string, { nombre: string; cantidad: number; ventas: number }>();
+    for (const item of pagadas.flatMap((c) => c.items)) {
+      if (item.comboGrupo && item.comboNombre) {
+        const combo = combos.get(item.comboNombre) ?? { nombre: item.comboNombre, grupos: new Set<string>(), ventas: 0 };
+        combo.grupos.add(item.comboGrupo);
+        combo.ventas += item.cantidad * item.precioUnitario;
+        combos.set(item.comboNombre, combo);
+      }
+      for (const adicion of item.adiciones) {
+        const a = adiciones.get(adicion.nombre) ?? { nombre: adicion.nombre, cantidad: 0, ventas: 0 };
+        a.cantidad += item.cantidad;
+        a.ventas += item.cantidad * adicion.precio;
+        adiciones.set(adicion.nombre, a);
+      }
+    }
 
     // Por hora del día y día de la semana (hora de Colombia).
     const porHora = Array.from({ length: 24 }, (_, hora) => ({ hora, pedidos: 0, ventas: 0 }));
@@ -270,11 +309,19 @@ reportesRouter.get(
           // Lo que de verdad se perdió en insumos (al costo, no al precio).
           costoMerma: suma(cancelaciones.filter((c) => c.yaEnCocina && c.costo !== null).map((c) => c.costo!)),
         },
+        descuentos: { cuentas: descuentos.length, total: totalDescuentos },
+        envios: suma(pagadas.map((c) => c.envio)),
+        comisiones: totalComisiones,
         ganancia: {
           ventasConCosto,
           costoVentas,
-          gananciaBruta: ventasConCosto - costoVentas,
-          margenPct: ventasConCosto > 0 ? Math.round(((ventasConCosto - costoVentas) / ventasConCosto) * 1000) / 10 : null,
+          // Los descuentos, cortesías y comisiones de apps se restan completos
+          // (salen de la ganancia).
+          descuentos: totalDescuentos,
+          comisiones: totalComisiones,
+          gananciaBruta: ventasConCosto - costoVentas - totalDescuentos - totalComisiones,
+          margenPct:
+            ventasConCosto > 0 ? Math.round(((ventasConCosto - costoVentas - totalDescuentos - totalComisiones) / ventasConCosto) * 1000) / 10 : null,
           // Productos vendidos cuya ganancia no se puede calcular por falta de costo.
           productosSinCosto: productos.filter((p) => p.unidadesConCosto < p.cantidad).map((p) => p.nombre),
         },
@@ -287,6 +334,10 @@ reportesRouter.get(
       porCanal,
       porMesero: Array.from(porMesero.values()).sort((a, b) => b.ventas - a.ventas),
       porProducto: productos.sort((a, b) => b.ventas - a.ventas),
+      porCombo: Array.from(combos.values())
+        .map((c) => ({ nombre: c.nombre, vendidos: c.grupos.size, ventas: c.ventas }))
+        .sort((a, b) => b.ventas - a.ventas),
+      porAdicion: Array.from(adiciones.values()).sort((a, b) => b.cantidad - a.cantidad),
       perdidas: perdidas.map(({ items: _items, ...c }) => ({ ...c, atendidoPor: nombreCompleto(c.atendidoPor) })),
       cancelaciones,
       cuentas: cuentas.map(({ items: _items, ...c }) => ({ ...c, atendidoPor: nombreCompleto(c.atendidoPor) })),
@@ -366,6 +417,7 @@ reportesRouter.get(
           include: {
             mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
             mesero: { select: { id: true, nombre: true, apellido: true } },
+            plataforma: { select: { nombre: true } },
           },
         },
       },
@@ -377,7 +429,8 @@ reportesRouter.get(
       const tiempoRealMinutos = Math.round((item.listoEn!.getTime() - item.iniciadoEn!.getTime()) / 60000);
       return {
         pedidoItemId: item.id,
-        mesaNumero: item.pedido.mesaSesion?.mesa?.numero ?? `Mostrador (${item.pedido.nombreCliente ?? "cliente"})`,
+        // "Mesa 4", "Mostrador — Ana", "Rappi #123 — Luis"...
+        mesaNumero: ubicacionDe(item.pedido),
         meseroNombre: nombreCompleto(item.pedido.mesaSesion?.mesero ?? item.pedido.mesero),
         productoNombre: item.producto.nombre,
         creadoEn: item.pedido.creadoEn,

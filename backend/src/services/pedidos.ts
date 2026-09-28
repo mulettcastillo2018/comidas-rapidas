@@ -1,7 +1,8 @@
-import type { Prisma } from "@prisma/client";
+import type { CanalPedido, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { ErrorDeNegocio } from "../lib/errores";
+import { ubicacionDe } from "../lib/ubicacion";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
+import { construirLineas, type ItemPedido } from "./lineasPedido";
 import { OMITIR_ITEM, productoPublico } from "../lib/datosInternos";
 import { descontarStock, revisarStock } from "./inventario";
 import { emitPedidoNuevo } from "../realtime/socket";
@@ -9,23 +10,23 @@ import { enlaces, notificarPorRol } from "./notificaciones";
 
 export const pedidoInclude = {
   // Viaja a meseros, cocina y pantalla: sin costos.
-  items: { omit: OMITIR_ITEM, include: { producto: productoPublico, comensal: true } },
+  items: {
+    omit: OMITIR_ITEM,
+    include: { producto: productoPublico, comensal: true, adiciones: { select: { nombre: true, precio: true } } },
+  },
   mesaSesion: { include: { mesa: true, mesero: { select: { id: true, nombre: true, apellido: true } } } },
+  plataforma: { select: { nombre: true } },
   statusLogs: {
     include: { cambiadoPor: { select: { id: true, nombre: true, apellido: true, role: true } } },
     orderBy: { cambiadoEn: "asc" as const },
   },
 };
 
-interface CrearPedidoItem {
-  comensalId?: string | null;
-  productoId: string;
-  cantidad: number;
-  notas?: string | null;
-  paraLlevar?: boolean;
-}
-
 interface CrearPedidoParams {
+  // Por defecto: MESA si trae mesa, MOSTRADOR si no.
+  canal?: CanalPedido;
+  plataformaId?: string | null;
+  codigoPlataforma?: string | null;
   // Un pedido normal va atado a una mesa abierta. Un pedido de mostrador (sin
   // mesa, alguien que pide para recoger) deja esto en null y en cambio manda
   // nombreCliente/telefonoCliente para poder identificarlo.
@@ -34,7 +35,7 @@ interface CrearPedidoParams {
   telefonoCliente?: string | null;
   meseroId: string;
   notasGenerales?: string | null;
-  items: CrearPedidoItem[];
+  items: ItemPedido[];
   // true cuando el pedido nace de una SolicitudPedido armada por el cliente
   // desde el QR — el mesero/admin solo la validó, no la escribió él mismo.
   origenCliente?: boolean;
@@ -47,45 +48,23 @@ interface CrearPedidoParams {
 // transacción, para no anunciar un pedido que al final se revirtió.
 export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: CrearPedidoParams): Promise<string> {
   const { mesaSesionId = null, nombreCliente = null, telefonoCliente = null, meseroId, notasGenerales, items, origenCliente = false } = params;
+  const canal = params.canal ?? (mesaSesionId ? "MESA" : "MOSTRADOR");
 
-  const productos = await tx.producto.findMany({ where: { id: { in: items.map((i) => i.productoId) } } });
-  const productosPorId = new Map(productos.map((p) => [p.id, p]));
-  for (const item of items) {
-    const producto = productosPorId.get(item.productoId);
-    if (!producto || !producto.isActive) {
-      throw new ErrorDeNegocio("Uno de los productos seleccionados ya no está en la carta", 400);
-    }
-    // Se revisa aquí (y no solo en la pantalla) porque un pedido del cliente
-    // por QR puede confirmarse un buen rato después de armado.
-    if (!producto.disponible) {
-      throw new ErrorDeNegocio(`${producto.nombre} está agotado en este momento. Quítalo del pedido o cámbialo por otro.`, 409);
-    }
-  }
-
-  // Lo que no requiere cocina (bebidas, empacados) nace listo para llevar a
-  // la mesa; el pedido toma el estado de su producto menos avanzado.
+  // Precios (adiciones, promociones, combos), disponibilidad y costos. Lo que
+  // no requiere cocina (bebidas, empacados) nace listo para llevar a la mesa;
+  // el pedido toma el estado de su producto menos avanzado.
+  const itemsData = await construirLineas(tx, items);
   const ahora = new Date();
-  const itemsData = items.map((item) => {
-    const producto = productosPorId.get(item.productoId)!;
-    return {
-      comensalId: item.comensalId ?? null,
-      paraLlevar: item.paraLlevar ?? false,
-      productoId: item.productoId,
-      cantidad: item.cantidad,
-      notas: item.notas ?? null,
-      precioUnitario: producto.precio,
-      costoUnitario: producto.costo,
-      tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
-      ...(producto.requiereCocina ? {} : { estado: "LISTO" as const, listoEn: ahora }),
-    };
-  });
   const estadoInicial = calcularEstadoPedido(itemsData.map((i) => ({ estado: i.estado ?? "RECIBIDO" })));
 
   const created = await tx.pedido.create({
     data: {
+      canal,
       mesaSesionId,
       nombreCliente,
       telefonoCliente,
+      plataformaId: params.plataformaId ?? null,
+      codigoPlataforma: params.codigoPlataforma ?? null,
       meseroId,
       notasGenerales: notasGenerales ?? null,
       origenCliente,
@@ -109,9 +88,7 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
   if (pedidoCompleto) {
     emitPedidoNuevo(pedidoCompleto);
     await revisarStock(pedidoCompleto.items.map((i) => i.productoId));
-    const ubicacion = pedidoCompleto.mesaSesion
-      ? `Mesa ${pedidoCompleto.mesaSesion.mesa.numero}`
-      : `Mostrador — ${pedidoCompleto.nombreCliente ?? "cliente"}`;
+    const ubicacion = ubicacionDe(pedidoCompleto);
     // Si todo es de los que no pasan por cocina (p. ej. solo gaseosas), no
     // hay nada que avisarle a cocina.
     const paraCocina = pedidoCompleto.items.filter((i) => i.estado === "RECIBIDO").length;

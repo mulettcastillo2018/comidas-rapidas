@@ -5,11 +5,12 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { reemplazarPedidoActivo } from "@/lib/pedidos";
 import { formatoPesos } from "@/lib/formato";
-import { METODO_PAGO_LABEL, METODOS_PAGO } from "@/lib/estados";
+import { RegistroPagos, type Cobro } from "@/components/RegistroPagos";
 import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import { estimarListoEn, formatoHora } from "@/lib/tiempoEstimado";
+import { conAdiciones, etiquetaCombo } from "@/lib/items";
 import { useAuthStore } from "@/store/auth.store";
-import type { MetodoPago, Pedido, SolicitudPedido } from "@/lib/types";
+import type { Pedido, SolicitudPedido } from "@/lib/types";
 
 const ITEM_ESTADO_LABELS: Record<string, string> = {
   RECIBIDO: "En espera",
@@ -24,7 +25,6 @@ export default function AdminMostradorPage() {
   const [solicitudes, setSolicitudes] = useState<SolicitudPedido[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
-  const [metodoPago, setMetodoPago] = useState<MetodoPago>("EFECTIVO");
   const [error, setError] = useState<string | null>(null);
   // Al llegar desde la notificación de un pedido de mostrador.
   const [resaltado, lectorResaltado] = useResaltado(["solicitud"]);
@@ -38,7 +38,7 @@ export default function AdminMostradorPage() {
   async function cargarPedidos() {
     if (!token) return;
     const data = await apiFetch<Pedido[]>("/pedidos/activos", { token });
-    setPedidos(data.filter((p) => !p.mesaSesionId));
+    setPedidos(data.filter((p) => p.canal === "MOSTRADOR"));
   }
 
   useEffect(() => {
@@ -46,9 +46,10 @@ export default function AdminMostradorPage() {
     cargarSolicitudes();
     cargarPedidos();
 
-    // Solo pedidos sin mesa: los de mesa los atiende cada mesero.
+    // Solo para recoger: los de mesa los atiende cada mesero, y domicilios y
+    // apps tienen su propio módulo.
     const aplicarPedido = (p: Pedido) => {
-      if (!p.mesaSesionId) setPedidos((prev) => reemplazarPedidoActivo(prev, p));
+      if (p.canal === "MOSTRADOR") setPedidos((prev) => reemplazarPedidoActivo(prev, p));
     };
     return suscribirEnVivo(token, {
       connect: () => {
@@ -65,7 +66,7 @@ export default function AdminMostradorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  async function handleConfirmar(solicitud: SolicitudPedido) {
+  async function handleConfirmar(solicitud: SolicitudPedido, cobro: Cobro) {
     if (!token) return;
     setError(null);
     setConfirmandoId(solicitud.id);
@@ -73,7 +74,7 @@ export default function AdminMostradorPage() {
       await apiFetch(`/solicitudes/${solicitud.id}/confirmar-recogida`, {
         method: "PUT",
         token,
-        body: JSON.stringify({ metodoPago }),
+        body: JSON.stringify(cobro),
       });
       setSolicitudes((prev) => prev.filter((s) => s.id !== solicitud.id));
     } catch (err) {
@@ -123,7 +124,7 @@ export default function AdminMostradorPage() {
         ) : (
           <div className="mt-3 space-y-3">
             {solicitudes.map((solicitud) => {
-              const total = solicitud.items.reduce((sum, i) => sum + (i.producto?.precio ?? 0) * i.cantidad, 0);
+              const total = solicitud.items.reduce((sum, i) => sum + (i.precioEstimado ?? i.producto?.precio ?? 0) * i.cantidad, 0);
               return (
                 <div
                   key={solicitud.id}
@@ -135,8 +136,9 @@ export default function AdminMostradorPage() {
                   <ul className="mt-2 space-y-1 text-sm">
                     {solicitud.items.map((item) => (
                       <li key={item.id}>
-                        {item.cantidad}× {item.producto?.nombre}
+                        {item.cantidad}× {conAdiciones(item, item.producto?.nombre)}
                         {item.notas ? ` (${item.notas})` : ""}
+                        {item.producto?.esCombo ? ` — trae ${item.producto.componentes?.map((c) => c.producto.nombre).join(" + ")}` : ""}
                       </li>
                     ))}
                   </ul>
@@ -147,29 +149,17 @@ export default function AdminMostradorPage() {
                     Dile al cliente: estará listo en unos {Math.max(0, ...solicitud.items.map((i) => i.producto?.tiempoPreparacionMinutos ?? 0))} min
                     después de pagar. Puede seguirlo desde su celular.
                   </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <select
-                      value={metodoPago}
-                      onChange={(e) => setMetodoPago(e.target.value as MetodoPago)}
-                      className="rounded-lg border border-border px-2 py-1.5 text-sm"
-                    >
-                      {METODOS_PAGO.map((m) => (
-                        <option key={m} value={m}>
-                          {METODO_PAGO_LABEL[m]}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => handleConfirmar(solicitud)}
-                      disabled={confirmandoId === solicitud.id}
-                      className="btn-primary flex-1 rounded-full px-4 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {confirmandoId === solicitud.id ? "Confirmando…" : "Confirmar y cobrar"}
-                    </button>
+                  <div className="mt-3 space-y-2">
+                    <RegistroPagos
+                      total={total}
+                      enviando={confirmandoId === solicitud.id}
+                      textoBoton="Confirmar y cobrar"
+                      onCobrar={(cobro) => handleConfirmar(solicitud, cobro)}
+                    />
                     <button
                       onClick={() => handleDescartar(solicitud)}
                       disabled={confirmandoId === solicitud.id}
-                      className="rounded-full border border-border px-4 py-1.5 text-sm text-muted-foreground"
+                      className="w-full rounded-full border border-border px-4 py-1.5 text-sm text-muted-foreground"
                     >
                       Descartar
                     </button>
@@ -206,7 +196,8 @@ export default function AdminMostradorPage() {
                     .map((item) => (
                       <li key={item.id} className="flex items-center justify-between gap-2">
                         <span>
-                          {item.cantidad}× {item.producto?.nombre}
+                          {item.cantidad}× {conAdiciones(item, item.producto?.nombre)}
+                          {item.comboNombre ? <span className="ml-1 text-[11px] text-muted-foreground">{etiquetaCombo(item)}</span> : null}
                         </span>
                         <span
                           className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${

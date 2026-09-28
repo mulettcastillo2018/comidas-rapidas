@@ -10,7 +10,8 @@ import { resolverImagenUrl } from "@/lib/images";
 import { unlockAudio } from "@/lib/notificationSound";
 import { formatoPesos } from "@/lib/formato";
 import { LlamarMesero } from "@/components/LlamarMesero";
-import type { CategoriaConCarta, SolicitudPedido } from "@/lib/types";
+import { precioConAdiciones } from "@/lib/items";
+import type { CategoriaConCarta, Producto, SolicitudPedido } from "@/lib/types";
 
 // Último pedido enviado desde este celular, para poder volver a su página de
 // seguimiento si el cliente cerró la pestaña. Solo en este dispositivo.
@@ -34,13 +35,17 @@ function guardarPedidoReciente(codigo: string) {
   }
 }
 
+// Una línea por producto + combinación de adiciones: la misma hamburguesa
+// con y sin queso extra son dos líneas distintas.
 interface CartItem {
+  clave: string;
   productoId: string;
   nombre: string;
   precio: number;
   cantidad: number;
   notas: string;
   paraLlevar: boolean;
+  adicionIds: string[];
 }
 
 function CartaContent() {
@@ -51,6 +56,8 @@ function CartaContent() {
   const puedeOrdenar = Boolean(mesaId) || esRecoger;
   const [categorias, setCategorias] = useState<CategoriaConCarta[] | null>(null);
   const [carrito, setCarrito] = useState<CartItem[]>([]);
+  // Adiciones marcadas en cada producto antes de tocar "Agregar".
+  const [adicionesElegidas, setAdicionesElegidas] = useState<Record<string, string[]>>({});
   const [nombreCliente, setNombreCliente] = useState("");
   const [telefonoCliente, setTelefonoCliente] = useState("");
   const [aceptaDatos, setAceptaDatos] = useState(false);
@@ -63,31 +70,48 @@ function CartaContent() {
     setPedidoReciente(leerPedidoReciente());
   }, []);
 
-  function agregarAlCarrito(producto: { id: string; nombre: string; precio: number }) {
-    setCarrito((prev) => {
-      const existente = prev.find((i) => i.productoId === producto.id);
-      if (existente) {
-        return prev.map((i) => (i.productoId === producto.id ? { ...i, cantidad: i.cantidad + 1 } : i));
-      }
-      return [
-        ...prev,
-        { productoId: producto.id, nombre: producto.nombre, precio: producto.precio, cantidad: 1, notas: "", paraLlevar: false },
-      ];
+  function alternarAdicion(productoId: string, adicionId: string) {
+    setAdicionesElegidas((prev) => {
+      const actuales = prev[productoId] ?? [];
+      return { ...prev, [productoId]: actuales.includes(adicionId) ? actuales.filter((x) => x !== adicionId) : [...actuales, adicionId] };
     });
   }
 
-  function cambiarCantidad(productoId: string, delta: number) {
-    setCarrito((prev) =>
-      prev.map((i) => (i.productoId === productoId ? { ...i, cantidad: i.cantidad + delta } : i)).filter((i) => i.cantidad > 0)
-    );
+  function agregarAlCarrito(producto: Producto) {
+    const adicionIds = [...(adicionesElegidas[producto.id] ?? [])].sort();
+    const elegidas = (producto.adiciones ?? []).filter((a) => adicionIds.includes(a.id));
+    const clave = [producto.id, ...adicionIds].join("|");
+    setCarrito((prev) => {
+      if (prev.some((i) => i.clave === clave)) {
+        return prev.map((i) => (i.clave === clave ? { ...i, cantidad: i.cantidad + 1 } : i));
+      }
+      return [
+        ...prev,
+        {
+          clave,
+          productoId: producto.id,
+          nombre: elegidas.length > 0 ? `${producto.nombre} + ${elegidas.map((a) => a.nombre).join(", ")}` : producto.nombre,
+          precio: precioConAdiciones(producto, adicionIds),
+          cantidad: 1,
+          notas: "",
+          paraLlevar: false,
+          adicionIds,
+        },
+      ];
+    });
+    setAdicionesElegidas((prev) => ({ ...prev, [producto.id]: [] }));
   }
 
-  function cambiarNotas(productoId: string, notas: string) {
-    setCarrito((prev) => prev.map((i) => (i.productoId === productoId ? { ...i, notas } : i)));
+  function cambiarCantidad(clave: string, delta: number) {
+    setCarrito((prev) => prev.map((i) => (i.clave === clave ? { ...i, cantidad: i.cantidad + delta } : i)).filter((i) => i.cantidad > 0));
   }
 
-  function cambiarParaLlevar(productoId: string, paraLlevar: boolean) {
-    setCarrito((prev) => prev.map((i) => (i.productoId === productoId ? { ...i, paraLlevar } : i)));
+  function cambiarNotas(clave: string, notas: string) {
+    setCarrito((prev) => prev.map((i) => (i.clave === clave ? { ...i, notas } : i)));
+  }
+
+  function cambiarParaLlevar(clave: string, paraLlevar: boolean) {
+    setCarrito((prev) => prev.map((i) => (i.clave === clave ? { ...i, paraLlevar } : i)));
   }
 
   const total = carrito.reduce((sum, i) => sum + i.precio * i.cantidad, 0);
@@ -120,6 +144,7 @@ function CartaContent() {
             cantidad: i.cantidad,
             notas: i.notas.trim() || null,
             paraLlevar: i.paraLlevar,
+            adicionIds: i.adicionIds,
           })),
         }),
       });
@@ -180,29 +205,71 @@ function CartaContent() {
                 <div className="mt-3 space-y-3">
                   {categoria.productos.map((producto) => {
                     const imagen = resolverImagenUrl(producto.imagenUrl);
+                    const elegidas = adicionesElegidas[producto.id] ?? [];
                     return (
-                      <div key={producto.id} className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          {imagen ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={imagen} alt={producto.nombre} className="h-16 w-16 shrink-0 rounded-lg object-cover" />
-                          ) : null}
-                          <div>
-                            <p className="font-semibold">{producto.nombre}</p>
-                            <p className="text-sm text-muted-foreground">{producto.descripcion}</p>
+                      <div key={producto.id}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            {imagen ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={imagen} alt={producto.nombre} className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+                            ) : null}
+                            <div>
+                              <p className="font-semibold">{producto.nombre}</p>
+                              {producto.promocion ? (
+                                <p className="text-xs font-semibold text-green-700">
+                                  🏷️ {producto.promocion.nombre}: −{producto.promocion.descuentoPct}%
+                                </p>
+                              ) : null}
+                              <p className="text-sm text-muted-foreground">{producto.descripcion}</p>
+                              {producto.esCombo && producto.componentes?.length ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Incluye: {producto.componentes.map((c) => `${c.cantidad > 1 ? `${c.cantidad}× ` : ""}${c.producto.nombre}`).join(" + ")}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <div className="text-right">
+                              {producto.promocion ? (
+                                <p className="text-xs text-muted-foreground line-through">{formatoPesos(producto.precio)}</p>
+                              ) : null}
+                              <p className="font-semibold">{formatoPesos(producto.promocion?.precio ?? producto.precio)}</p>
+                            </div>
+                            {puedeOrdenar ? (
+                              <button
+                                onClick={() => agregarAlCarrito(producto)}
+                                className="rounded-full border border-accent px-2 py-1 text-xs font-semibold text-accent"
+                              >
+                                + Agregar
+                              </button>
+                            ) : null}
                           </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <p className="font-semibold">{formatoPesos(producto.precio)}</p>
-                          {puedeOrdenar ? (
-                            <button
-                              onClick={() => agregarAlCarrito(producto)}
-                              className="rounded-full border border-accent px-2 py-1 text-xs font-semibold text-accent"
-                            >
-                              + Agregar
-                            </button>
-                          ) : null}
-                        </div>
+                        {(producto.adiciones?.length ?? 0) > 0 ? (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5 sm:pl-[76px]">
+                            {producto.adiciones!.map((a) =>
+                              puedeOrdenar ? (
+                                <button
+                                  key={a.id}
+                                  type="button"
+                                  onClick={() => alternarAdicion(producto.id, a.id)}
+                                  className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                                    elegidas.includes(a.id) ? "border-accent bg-accent text-white" : "border-border text-muted-foreground"
+                                  }`}
+                                >
+                                  {a.nombre}
+                                  {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
+                                </button>
+                              ) : (
+                                <span key={a.id} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                                  {a.nombre}
+                                  {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
+                                </span>
+                              )
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -219,22 +286,24 @@ function CartaContent() {
             <h2 className="text-sm font-bold">Tu pedido</h2>
             <div className="mt-2 max-h-40 space-y-2 overflow-y-auto">
               {carrito.map((item) => (
-                <div key={item.productoId} className="space-y-1 border-b border-border pb-2 text-sm last:border-0">
+                <div key={item.clave} className="space-y-1 border-b border-border pb-2 text-sm last:border-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span>{item.nombre}</span>
+                    <span>
+                      {item.nombre} <span className="text-xs text-muted-foreground">{formatoPesos(item.precio)}</span>
+                    </span>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => cambiarCantidad(item.productoId, -1)} className="text-muted-foreground">
+                      <button onClick={() => cambiarCantidad(item.clave, -1)} className="text-muted-foreground">
                         <Minus size={14} />
                       </button>
                       <span className="w-5 text-center">{item.cantidad}</span>
-                      <button onClick={() => cambiarCantidad(item.productoId, 1)} className="text-muted-foreground">
+                      <button onClick={() => cambiarCantidad(item.clave, 1)} className="text-muted-foreground">
                         <Plus size={14} />
                       </button>
                     </div>
                   </div>
                   <input
                     value={item.notas}
-                    onChange={(e) => cambiarNotas(item.productoId, e.target.value)}
+                    onChange={(e) => cambiarNotas(item.clave, e.target.value)}
                     placeholder="Notas (ej. sin cebolla)"
                     className="w-full rounded-lg border border-border px-2 py-1 text-xs"
                   />
@@ -243,7 +312,7 @@ function CartaContent() {
                       <input
                         type="checkbox"
                         checked={item.paraLlevar}
-                        onChange={(e) => cambiarParaLlevar(item.productoId, e.target.checked)}
+                        onChange={(e) => cambiarParaLlevar(item.clave, e.target.checked)}
                       />
                       🥡 Es para llevar (para alguien que no está en la mesa)
                     </label>

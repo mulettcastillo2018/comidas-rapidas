@@ -8,8 +8,20 @@ export function reemplazarPedidoActivo(prev: Pedido[], pedido: Pedido): Pedido[]
   return prev.map((p) => (p.id === pedido.id ? pedido : p));
 }
 
+// Para lo que no es de una mesa: de dónde viene, en corto (cocina, pantalla).
+export function etiquetaCanal(pedido: Pick<Pedido, "canal" | "plataforma" | "codigoPlataforma">): string {
+  if (pedido.canal === "DOMICILIO") return "🛵 Domicilio";
+  if (pedido.canal === "PLATAFORMA") return `📱 ${pedido.plataforma?.nombre ?? "App"}${pedido.codigoPlataforma ? ` #${pedido.codigoPlataforma}` : ""}`;
+  return "🧾 Mostrador";
+}
+
 export function ubicacionPedido(pedido: Pedido): string {
-  return pedido.mesaSesion ? `Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : `Mostrador (${pedido.nombreCliente ?? "cliente"})`;
+  if (pedido.mesaSesion) return `Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}`;
+  if (pedido.canal === "DOMICILIO") return `🛵 Domicilio (${pedido.nombreCliente ?? "cliente"})`;
+  if (pedido.canal === "PLATAFORMA") {
+    return `📱 ${pedido.plataforma?.nombre ?? "App"}${pedido.codigoPlataforma ? ` #${pedido.codigoPlataforma}` : ""} (${pedido.nombreCliente ?? "cliente"})`;
+  }
+  return `🧾 Mostrador (${pedido.nombreCliente ?? "cliente"})`;
 }
 
 // El "reloj" de un producto arranca cuando cocina lo empieza a preparar; si

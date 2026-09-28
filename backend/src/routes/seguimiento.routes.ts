@@ -31,7 +31,7 @@ seguimientoRouter.get(
       include: {
         mesa: { select: { id: true, numero: true } },
         items: { include: { producto: { select: { nombre: true, tiempoPreparacionMinutos: true } } } },
-        pedido: { include: { items: { include: { producto: { select: { nombre: true } } } } } },
+        pedido: { include: { items: { include: { producto: { select: { nombre: true } }, adiciones: { select: { nombre: true } } } } } },
       },
     });
     if (!solicitud) {
@@ -48,9 +48,22 @@ seguimientoRouter.get(
     else if (pedido.estado === "RECIBIDO" || pedido.estado === "EN_PREPARACION") etapa = "EN_COCINA";
     else etapa = pedido.estado;
 
+    const conExtras = (nombre: string, extras: string[]) => (extras.length > 0 ? `${nombre} + ${extras.join(", ")}` : nombre);
+    // Antes de confirmar, la solicitud solo guarda los ids de las adiciones.
+    const adicionIds = pedido ? [] : solicitud.items.flatMap((i) => i.adicionIds);
+    const adiciones = adicionIds.length > 0 ? await prisma.adicion.findMany({ where: { id: { in: adicionIds } }, select: { id: true, nombre: true } }) : [];
+    const nombreAdicion = new Map(adiciones.map((a) => [a.id, a.nombre]));
     const items = pedido
-      ? pedido.items.map((i) => ({ nombre: i.producto.nombre, cantidad: i.cantidad, estado: i.estado }))
-      : solicitud.items.map((i) => ({ nombre: i.producto.nombre, cantidad: i.cantidad, estado: "PENDIENTE" }));
+      ? pedido.items.map((i) => ({
+          nombre: conExtras(i.producto.nombre, i.adiciones.map((a) => a.nombre)),
+          cantidad: i.cantidad,
+          estado: i.estado,
+        }))
+      : solicitud.items.map((i) => ({
+          nombre: conExtras(i.producto.nombre, i.adicionIds.flatMap((id) => nombreAdicion.get(id) ?? [])),
+          cantidad: i.cantidad,
+          estado: "PENDIENTE",
+        }));
 
     res.json({
       canal: solicitud.mesaId ? "MESA" : "MOSTRADOR",

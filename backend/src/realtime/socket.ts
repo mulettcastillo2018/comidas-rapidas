@@ -49,10 +49,24 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   return io;
 }
 
+// La pantalla pública (un TV en el local) no necesita el teléfono del cliente.
+function paraPantalla(pedido: unknown) {
+  if (!pedido || typeof pedido !== "object") return pedido;
+  const { telefonoCliente: _t, ...resto } = pedido as Record<string, unknown>;
+  return resto;
+}
+
+// Personal (cocina, meseros, admin) recibe el pedido completo; la pantalla,
+// sin datos personales. Quien está en ambas salas (el admin) lo recibe una vez.
+function emitirPedido(evento: string, pedido: unknown) {
+  ioInstance?.to("cocina").to("meseros").emit(evento, pedido);
+  ioInstance?.to("pantalla").except(["cocina", "meseros"]).emit(evento, paraPantalla(pedido));
+}
+
 // Emite un pedido nuevo a cocina, a la pantalla pública y a los meseros (lo
 // que no pasa por cocina, como las bebidas, nace listo para llevar a la mesa).
 export function emitPedidoNuevo(pedido: unknown) {
-  ioInstance?.to("cocina").to("pantalla").to("meseros").emit("pedido:nuevo", pedido);
+  emitirPedido("pedido:nuevo", pedido);
 }
 
 // Cocina marca un producto como agotado (o de nuevo disponible): los meseros
@@ -65,7 +79,7 @@ export function emitProductoActualizado(producto: object) {
 // Emite un cambio de estado de pedido a meseros (para que sepan cuándo
 // entregar), cocina (por si hay varias estaciones) y la pantalla pública.
 export function emitPedidoActualizado(pedido: unknown) {
-  ioInstance?.to("meseros").to("cocina").to("pantalla").emit("pedido:actualizado", pedido);
+  emitirPedido("pedido:actualizado", pedido);
 }
 
 // Empuja una notificación puntual al usuario dueño (mesa que atiende, o

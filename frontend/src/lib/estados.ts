@@ -25,6 +25,8 @@ export const METODO_PAGO_LABEL: Record<MetodoPago, string> = {
   DAVIPLATA: "Daviplata",
   TRANSFERENCIA: "Transferencia / QR bancario",
   OTRO: "Otro",
+  PLATAFORMA: "App de domicilios",
 };
 
-export const METODOS_PAGO = Object.keys(METODO_PAGO_LABEL) as MetodoPago[];
+// Los que se pueden elegir al cobrar (lo de las apps se registra solo).
+export const METODOS_PAGO = (Object.keys(METODO_PAGO_LABEL) as MetodoPago[]).filter((m) => m !== "PLATAFORMA");

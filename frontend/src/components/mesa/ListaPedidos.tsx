@@ -2,6 +2,7 @@
 
 import { ITEM_ESTADO_LABEL, PEDIDO_ESTADO_LABEL } from "@/lib/estados";
 import { CLASE_RESALTADO } from "@/lib/resaltado";
+import { conAdiciones, etiquetaCombo } from "@/lib/items";
 import { formatoHora } from "@/lib/tiempoEstimado";
 import type { Comensal, Pedido, PedidoItem } from "@/lib/types";
 import { etiquetaDestino } from "./NuevoPedido";
@@ -65,8 +66,10 @@ export function ListaPedidos({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className={item.estado === "CANCELADO" ? "line-through" : ""}>
-                        {item.cantidad}× {item.producto?.nombre} — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}
+                        {item.cantidad}× {conAdiciones(item, item.producto?.nombre)} — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}
                         {item.notas ? ` (${item.notas})` : ""}
+                        {etiquetaCombo(item) ? <span className="ml-1 text-[11px] text-accent">{etiquetaCombo(item)}</span> : null}
+                        {item.promocionNombre ? <span className="ml-1 text-[11px] text-green-700">🏷️ {item.promocionNombre}</span> : null}
                       </span>
                       <span
                         className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${

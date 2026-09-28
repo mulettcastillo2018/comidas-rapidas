@@ -15,6 +15,15 @@ export const facturasRouter = Router();
 const generarFacturaSchema = z.object({
   mesaSesionId: z.string().min(1),
   propinaMonto: z.number().int().min(0).optional(),
+  // Descuento a toda la cuenta; 100% = cortesía. Siempre con motivo.
+  descuento: z
+    .object({
+      tipo: z.enum(["PORCENTAJE", "VALOR"]),
+      valor: z.number().int().positive(),
+      motivo: z.string().trim().min(3).max(200),
+    })
+    .optional(),
+  pin: z.string().optional(),
 });
 
 facturasRouter.post(
@@ -24,10 +33,11 @@ facturasRouter.post(
   catchAsync(async (req, res) => {
     const parsed = generarFacturaSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.flatten() });
+      res.status(400).json({ error: "Revisa la cuenta: el descuento necesita un valor y un motivo (mínimo 3 letras)" });
       return;
     }
-    const { mesaSesionId, propinaMonto = 0 } = parsed.data;
+    const { mesaSesionId, propinaMonto = 0, descuento } = parsed.data;
+    if (descuento?.tipo === "PORCENTAJE" && descuento.valor > 100) throw new ErrorDeNegocio("El descuento no puede pasar del 100%", 400);
 
     const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId } });
     if (!sesion) {
@@ -38,6 +48,8 @@ facturasRouter.post(
       res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
       return;
     }
+    // Un descuento o cortesía lo autoriza un admin con su clave.
+    const autorizadoPorId = descuento ? await exigirAutorizacion(req.user!, parsed.data.pin, "Aplicar un descuento o una cortesía") : null;
 
     const factura = await prisma.$transaction(async (tx) => {
       // Pasar la mesa a "cuenta solicitada" solo si sigue abierta, en una
@@ -69,10 +81,33 @@ facturasRouter.post(
       const cobrables = items.filter((i) => i.estado !== "CANCELADO");
       if (cobrables.length === 0) throw new ErrorDeNegocio("No hay pedidos para facturar en esta mesa", 400);
       const subtotal = cobrables.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
+      const descuentoMonto = !descuento
+        ? 0
+        : descuento.tipo === "PORCENTAJE"
+          ? Math.round((subtotal * descuento.valor) / 100)
+          : Math.min(descuento.valor, subtotal);
 
-      return tx.factura.create({ data: { mesaSesionId, subtotal, propinaMonto, total: subtotal + propinaMonto } });
+      return tx.factura.create({
+        data: {
+          mesaSesionId,
+          subtotal,
+          descuentoMonto,
+          descuentoMotivo: descuento?.motivo ?? null,
+          descuentoAutorizadoPorId: autorizadoPorId,
+          propinaMonto,
+          total: subtotal - descuentoMonto + propinaMonto,
+        },
+      });
     });
 
+    if (descuento && autorizadoPorId && req.user!.role !== "ADMIN") {
+      const mesa = await prisma.mesa.findUnique({ where: { id: sesion.mesaId }, select: { numero: true } });
+      await avisarAutorizacion(
+        autorizadoPorId,
+        `Descuento de ${factura.descuentoMonto.toLocaleString("es-CO")} en la Mesa ${mesa?.numero} (${descuento.motivo}).`,
+        enlaces.mesaAbierta(sesion.id)
+      );
+    }
     res.status(201).json(factura);
   })
 );

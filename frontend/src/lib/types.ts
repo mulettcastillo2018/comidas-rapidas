@@ -47,14 +47,14 @@ export interface Producto {
   componentes?: { productoId: string; cantidad: number; producto: { id: string; nombre: string } }[];
   // Promoción que aplica en este momento (precio ya con descuento).
   promocion?: { nombre: string; descuentoPct: number; precio: number } | null;
+  disponible: boolean;
+  isActive: boolean;
 }
 
 export interface AdicionBasica {
   id: string;
   nombre: string;
   precio: number;
-  disponible: boolean;
-  isActive: boolean;
 }
 
 export type MesaEstado = "LIBRE" | "OCUPADA";
@@ -134,14 +134,41 @@ export interface PedidoStatusLog {
   cambiadoPor: PersonaBasica & { role: UserRole };
 }
 
+export type CanalPedido = "MESA" | "MOSTRADOR" | "DOMICILIO" | "PLATAFORMA";
+export type EstadoDomicilio = "PENDIENTE" | "EN_CAMINO" | "ENTREGADO" | "FALLIDO";
+
+export interface Domicilio {
+  id: string;
+  pedidoId: string;
+  direccion: string | null;
+  barrio: string | null;
+  indicaciones: string | null;
+  pagaCon: number | null;
+  domiciliario: string | null;
+  estado: EstadoDomicilio;
+  salioEn: string | null;
+  entregadoEn: string | null;
+  motivoFallido: string | null;
+}
+
+export interface Plataforma {
+  id: string;
+  nombre: string;
+  comisionPct: number;
+  activa: boolean;
+}
+
 export interface Pedido {
   id: string;
+  canal: CanalPedido;
   // Un pedido normal tiene mesaSesionId; un pedido de mostrador (sin mesa,
   // "para recoger") lo deja en null y usa nombreCliente/telefonoCliente.
   mesaSesionId: string | null;
   mesaSesion?: MesaSesion | null;
   nombreCliente: string | null;
   telefonoCliente: string | null;
+  plataforma?: { nombre: string } | null;
+  codigoPlataforma?: string | null;
   meseroId: string;
   mesero?: PersonaBasica;
   estado: PedidoEstado;
@@ -158,7 +185,7 @@ export interface Pedido {
 }
 
 export type FacturaEstado = "PENDIENTE" | "PAGADA" | "PERDIDA";
-export type MetodoPago = "EFECTIVO" | "TARJETA" | "NEQUI" | "DAVIPLATA" | "TRANSFERENCIA" | "OTRO";
+export type MetodoPago = "EFECTIVO" | "TARJETA" | "NEQUI" | "DAVIPLATA" | "TRANSFERENCIA" | "OTRO" | "PLATAFORMA";
 
 export interface Pago {
   metodo: MetodoPago;
@@ -174,6 +201,10 @@ export interface Factura {
   descuentoMonto: number;
   descuentoMotivo: string | null;
   propinaMonto: number;
+  // Domicilio que paga el cliente (incluido en el total).
+  envioMonto: number;
+  // Lo que se queda la app de domicilios (no se le cobra al cliente).
+  comisionMonto: number;
   total: number;
   estado: FacturaEstado;
   metodoPago: MetodoPago | null;
@@ -216,7 +247,7 @@ export interface CuentaReporte {
   id: string;
   fecha: string;
   dia: string;
-  canal: "MESA" | "MOSTRADOR";
+  canal: CanalPedido;
   ubicacion: string;
   atendidoPor: string;
   estado: "PAGADA" | "PERDIDA";
@@ -224,6 +255,9 @@ export interface CuentaReporte {
   metodoPago: MetodoPago | null;
   pagos: Pago[];
   subtotal: number;
+  descuento: number;
+  descuentoMotivo: string | null;
+  descuentoAutorizadoPor: string | null;
   propina: number;
   total: number;
   // Admin que autorizó registrarla como perdida.
@@ -256,9 +290,15 @@ export interface ReporteVentas {
     propinas: number;
     perdidas: { cuentas: number; total: number };
     cancelaciones: { productos: number; total: number; merma: number; costoMerma: number };
+    descuentos: { cuentas: number; total: number };
+    // Domicilios cobrados a los clientes y comisiones de las apps.
+    envios: number;
+    comisiones: number;
     ganancia: {
       ventasConCosto: number;
       costoVentas: number;
+      descuentos: number;
+      comisiones: number;
       gananciaBruta: number;
       margenPct: number | null;
       productosSinCosto: string[];
@@ -278,9 +318,11 @@ export interface ReporteVentas {
     porMesa: { mesa: string; veces: number; duracionPromedioMin: number; ventas: number }[];
   };
   porMetodo: { metodo: MetodoPago; ventas: number; cuentas: number }[];
-  porCanal: Record<"MESA" | "MOSTRADOR", { ventas: number; cuentas: number }>;
+  porCanal: Record<CanalPedido, { ventas: number; cuentas: number }>;
   porMesero: { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }[];
   porProducto: ProductoReporte[];
+  porCombo: { nombre: string; vendidos: number; ventas: number }[];
+  porAdicion: { nombre: string; cantidad: number; ventas: number }[];
   perdidas: CuentaReporte[];
   cancelaciones: {
     id: string;
@@ -322,6 +364,8 @@ export interface TotalesCaja {
   totalDaviplata: number;
   totalTransferencia: number;
   totalOtro: number;
+  // Vendido por apps de domicilios: no entra a la caja.
+  totalPlataforma?: number;
   propinas: number;
   cuentasPerdidas: number;
   totalPerdidas: number;
@@ -380,6 +424,9 @@ export interface SolicitudPedidoItem {
   notas: string | null;
   paraLlevar: boolean;
   adicionIds?: string[];
+  adiciones?: { nombre: string; precio: number }[];
+  // Precio por unidad que se cobraría al confirmarla (promoción + adiciones).
+  precioEstimado?: number;
 }
 
 export interface SolicitudPedido {

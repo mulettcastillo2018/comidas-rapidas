@@ -14,6 +14,7 @@ export function totalesPorMetodo(t: TotalesCaja): [MetodoPago, number][] {
     ["DAVIPLATA", t.totalDaviplata],
     ["TRANSFERENCIA", t.totalTransferencia],
     ["OTRO", t.totalOtro],
+    ["PLATAFORMA", t.totalPlataforma ?? 0],
   ];
 }
 

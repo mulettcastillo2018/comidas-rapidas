@@ -96,7 +96,7 @@ export function ReporteTiemposCocina({ token }: { token: string }) {
             <tbody>
               {reporte.items.map((item) => (
                 <tr key={item.pedidoItemId} className="border-b border-border/60">
-                  <td className="py-1.5 pr-4">{item.mesaNumero.startsWith("Mostrador") ? item.mesaNumero : `Mesa ${item.mesaNumero}`}</td>
+                  <td className="py-1.5 pr-4">{item.mesaNumero}</td>
                   <td className="py-1.5 pr-4 text-muted-foreground">{item.meseroNombre}</td>
                   <td className="py-1.5 pr-4">{item.productoNombre}</td>
                   <td className="py-1.5 pr-4">{item.tiempoEstimadoMinutos} min</td>

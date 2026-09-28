@@ -13,7 +13,8 @@ import { SolicitudesCliente } from "@/components/mesa/SolicitudesCliente";
 import { NuevoPedido, type ItemBorrador } from "@/components/mesa/NuevoPedido";
 import { ListaPedidos } from "@/components/mesa/ListaPedidos";
 import { GestionMesa } from "@/components/mesa/GestionMesa";
-import { CuentaMesa } from "@/components/mesa/CuentaMesa";
+import { CuentaMesa, type DescuentoCuenta } from "@/components/mesa/CuentaMesa";
+import type { Cobro } from "@/components/RegistroPagos";
 import type { Factura, MesaSesion, MetodoPago, Pedido, PedidoItem, Producto, SolicitudPedido } from "@/lib/types";
 
 export default function MesaSesionPage() {
@@ -149,7 +150,14 @@ export default function MesaSesionPage() {
         token,
         body: JSON.stringify({
           mesaSesionId: id,
-          items: items.map((i) => ({ productoId: i.productoId, comensalId: i.comensalId, paraLlevar: i.paraLlevar, cantidad: i.cantidad, notas: i.notas || null })),
+          items: items.map((i) => ({
+            productoId: i.productoId,
+            comensalId: i.comensalId,
+            paraLlevar: i.paraLlevar,
+            cantidad: i.cantidad,
+            notas: i.notas || null,
+            adicionIds: i.adicionIds,
+          })),
         }),
       });
       aplicarPedido(pedido);
@@ -172,17 +180,25 @@ export default function MesaSesionPage() {
     setResolviendoSolicitudId(null);
   }
 
-  async function generarCuenta(propina: number) {
+  async function generarCuenta(propina: number, descuento: DescuentoCuenta | null) {
     if (!token) return;
     setGenerandoCuenta(true);
     await intentar(async () => {
-      await apiFetch<Factura>("/facturas", { method: "POST", token, body: JSON.stringify({ mesaSesionId: id, propinaMonto: propina }) });
+      // Con descuento o cortesía, el servidor pide la clave de un admin.
+      const factura = await conAutorizacion((pin) =>
+        apiFetch<Factura>("/facturas", {
+          method: "POST",
+          token,
+          body: JSON.stringify({ mesaSesionId: id, propinaMonto: propina, ...(descuento ? { descuento, pin } : {}) }),
+        })
+      );
+      if (!factura) return;
       await cargarSesion();
     }, "No se pudo generar la cuenta.");
     setGenerandoCuenta(false);
   }
 
-  async function cerrarCuenta(resultado: { metodo: MetodoPago } | "perdida") {
+  async function cerrarCuenta(resultado: Cobro | "perdida") {
     if (!token || !sesion?.factura) return;
     if (resultado === "perdida" && !confirm("¿Confirmas que el cliente se fue sin pagar? Esto cierra la mesa y deja registrada la pérdida.")) return;
     setPagando(true);
@@ -196,7 +212,7 @@ export default function MesaSesionPage() {
         if (!hecho) return;
         showToast("Cuenta registrada como pérdida, mesa liberada");
       } else {
-        await apiFetch(`/facturas/${sesion.factura!.id}/pagar`, { method: "PUT", token, body: JSON.stringify({ metodoPago: resultado.metodo }) });
+        await apiFetch(`/facturas/${sesion.factura!.id}/pagar`, { method: "PUT", token, body: JSON.stringify(resultado) });
         showToast("Cuenta pagada, mesa liberada");
       }
       router.push("/mesero");
@@ -278,7 +294,7 @@ export default function MesaSesionPage() {
           generando={generandoCuenta}
           pagando={pagando}
           onGenerar={generarCuenta}
-          onPagar={(metodo) => cerrarCuenta({ metodo })}
+          onPagar={(cobro) => cerrarCuenta(cobro)}
           onPerdida={() => cerrarCuenta("perdida")}
         />
       ) : null}

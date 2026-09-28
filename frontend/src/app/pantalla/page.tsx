@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
-import { reemplazarPedidoActivo } from "@/lib/pedidos";
+import { etiquetaCanal, reemplazarPedidoActivo } from "@/lib/pedidos";
 import { nombreCompleto, nombreCorto } from "@/lib/nombre";
+import { conAdiciones } from "@/lib/items";
 import { useAuthStore } from "@/store/auth.store";
 import type { Pedido } from "@/lib/types";
 
@@ -74,7 +75,7 @@ export default function PantallaPage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-3xl font-extrabold">
-                  {pedido.mesaSesion ? `Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : "🧾 Mostrador"}
+                  {pedido.mesaSesion ? `Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : etiquetaCanal(pedido)}
                 </p>
                 <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
                   {pedido.origenCliente ? "📱 Pedido por QR" : "🧑‍🍳 Tomado por mesero"}
@@ -86,7 +87,7 @@ export default function PantallaPage() {
                 {minutosTranscurridos(pedido, ahora)} min
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                {items.map((i) => `${i.cantidad}× ${i.producto?.nombre}`).join(", ")}
+                {items.map((i) => `${i.cantidad}× ${conAdiciones(i, i.producto?.nombre)}`).join(", ")}
               </p>
               <p className={`mt-3 text-lg font-bold ${todoListo ? "text-accent" : "text-muted-foreground"}`}>
                 {todoListo ? "¡Listo para recoger!" : `${listos}/${items.length} listos`}

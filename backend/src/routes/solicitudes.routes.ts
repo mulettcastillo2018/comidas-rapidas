@@ -9,6 +9,9 @@ import { ErrorDeNegocio } from "../lib/errores";
 import { crearLimitador } from "../lib/limitador";
 import { productoParaClientes } from "../lib/datosInternos";
 import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
+import { construirLineas } from "../services/lineasPedido";
+import { mejorPromocion, precioConDescuento, promocionesVigentes } from "../services/promociones";
+import { incluirCatalogo } from "../services/catalogo";
 import { cobroSchema, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
@@ -23,15 +26,42 @@ const limitadorPorIp = crearLimitador(30, 10 * 60_000);
 const solicitudInclude = {
   mesa: { select: { id: true, numero: true } },
   // También es la respuesta pública al cliente que pide por QR.
-  items: { include: { producto: productoParaClientes } },
+  items: { include: { producto: { ...productoParaClientes, include: { componentes: incluirCatalogo.componentes } } } },
   resueltaPor: { select: { id: true, nombre: true, apellido: true } },
 };
+
+type SolicitudCompleta = Prisma.SolicitudPedidoGetPayload<{ include: typeof solicitudInclude }>;
+
+// La solicitud solo guarda los ids de las adiciones: se les agregan nombre y
+// precio, y el precio por unidad que se cobraría hoy (con la promoción
+// vigente), para mostrarlo a quien la confirma y al cliente.
+async function conDetalle(solicitudes: SolicitudCompleta[]) {
+  const ids = solicitudes.flatMap((s) => s.items.flatMap((i) => i.adicionIds));
+  const adiciones = ids.length > 0 ? await prisma.adicion.findMany({ where: { id: { in: ids } }, select: { id: true, nombre: true, precio: true } }) : [];
+  const porId = new Map(adiciones.map((a) => [a.id, a]));
+  const vigentes = await promocionesVigentes();
+  return solicitudes.map((s) => ({
+    ...s,
+    items: s.items.map((item) => {
+      const elegidas = item.adicionIds.flatMap((id) => (porId.has(id) ? [porId.get(id)!] : []));
+      const promocion = mejorPromocion(item.producto, vigentes);
+      const base = promocion ? precioConDescuento(item.producto.precio, promocion.descuentoPct) : item.producto.precio;
+      return { ...item, adiciones: elegidas.map(({ nombre, precio }) => ({ nombre, precio })), precioEstimado: base + elegidas.reduce((t, a) => t + a.precio, 0) };
+    }),
+  }));
+}
+
+async function solicitudConDetalle(id: string) {
+  const solicitud = await prisma.solicitudPedido.findUnique({ where: { id }, include: solicitudInclude });
+  return solicitud ? (await conDetalle([solicitud]))[0] : null;
+}
 
 const solicitudItemSchema = z.object({
   productoId: z.string().min(1),
   cantidad: z.number().int().positive(),
   notas: z.string().trim().min(1).nullable().optional(),
   paraLlevar: z.boolean().optional(),
+  adicionIds: z.array(z.string().min(1)).max(20).optional(),
 });
 
 // mesaId ausente = pedido de mostrador (QR general, sin mesa detrás): el
@@ -97,21 +127,11 @@ solicitudesRouter.post(
     }
     limitadorPorIp.registrar(ip);
 
-    const productos = await prisma.producto.findMany({ where: { id: { in: items.map((i) => i.productoId) } } });
-    const productosPorId = new Map(productos.map((p) => [p.id, p]));
-    for (const item of items) {
-      const producto = productosPorId.get(item.productoId);
-      if (!producto || !producto.isActive) {
-        res.status(400).json({ error: "Uno de los productos seleccionados ya no está en la carta. Recarga la página." });
-        return;
-      }
-      if (!producto.disponible) {
-        res.status(409).json({ error: `${producto.nombre} se agotó hace un momento. Quítalo de tu pedido o elige otra cosa.` });
-        return;
-      }
-    }
+    // Misma validación que al confirmarlo (productos, agotados, adiciones,
+    // combos), para avisarle al cliente de una vez y no cuando ya se fue.
+    await construirLineas(prisma, items);
 
-    const solicitud = await prisma.solicitudPedido.create({
+    const creada = await prisma.solicitudPedido.create({
       data: {
         mesaId: mesaId ?? null,
         nombreCliente: nombreCliente ?? null,
@@ -124,11 +144,13 @@ solicitudesRouter.post(
             cantidad: item.cantidad,
             notas: item.notas ?? null,
             paraLlevar: item.paraLlevar ?? false,
+            adicionIds: item.adicionIds ?? [],
           })),
         },
       },
       include: solicitudInclude,
     });
+    const [solicitud] = await conDetalle([creada]);
 
     if (mesa) {
       // Avisa de inmediato al mesero correspondiente — así no se queda
@@ -184,7 +206,7 @@ solicitudesRouter.get(
       include: solicitudInclude,
       orderBy: { creadaEn: "asc" },
     });
-    res.json(solicitudes);
+    res.json(await conDetalle(solicitudes));
   })
 );
 
@@ -232,6 +254,7 @@ solicitudesRouter.put(
           cantidad: item.cantidad,
           notas: item.notas,
           paraLlevar: item.paraLlevar,
+          adicionIds: item.adicionIds,
         })),
         origenCliente: true,
       });
@@ -240,7 +263,7 @@ solicitudesRouter.put(
     });
 
     const pedidoCompleto = await anunciarPedidoNuevo(pedidoId);
-    const solicitudActualizada = await prisma.solicitudPedido.findUnique({ where: { id: req.params.id }, include: solicitudInclude });
+    const solicitudActualizada = await solicitudConDetalle(req.params.id);
     emitSolicitudActualizada(solicitudActualizada);
     res.json({ solicitud: solicitudActualizada, pedido: pedidoCompleto });
   })
@@ -276,6 +299,7 @@ solicitudesRouter.put(
           productoId: item.productoId,
           cantidad: item.cantidad,
           notas: item.notas,
+          adicionIds: item.adicionIds,
         })),
         origenCliente: true,
       });
@@ -301,7 +325,7 @@ solicitudesRouter.put(
 
     const pedidoCompleto = await anunciarPedidoNuevo(pedidoId);
     const factura = await prisma.factura.findUnique({ where: { id: facturaId } });
-    const solicitudActualizada = await prisma.solicitudPedido.findUnique({ where: { id: req.params.id }, include: solicitudInclude });
+    const solicitudActualizada = await solicitudConDetalle(req.params.id);
     emitSolicitudActualizada(solicitudActualizada);
     res.json({ solicitud: solicitudActualizada, pedido: pedidoCompleto, factura });
   })
@@ -318,7 +342,7 @@ solicitudesRouter.put(
       return;
     }
     await prisma.$transaction((tx) => tomarSolicitudPendiente(tx, solicitud.id, "DESCARTADA", req.user!.userId));
-    const actualizada = await prisma.solicitudPedido.findUnique({ where: { id: solicitud.id }, include: solicitudInclude });
+    const actualizada = await solicitudConDetalle(solicitud.id);
     emitSolicitudActualizada(actualizada);
     res.json(actualizada);
   })

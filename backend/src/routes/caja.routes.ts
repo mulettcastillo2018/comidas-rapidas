@@ -44,6 +44,8 @@ async function resumenSinCerrar(cliente: Cliente) {
     totalDaviplata: totalPor("DAVIPLATA"),
     totalTransferencia: totalPor("TRANSFERENCIA"),
     totalOtro: totalPor("OTRO"),
+    // Lo vendido por apps: no es plata en la caja (la app lo consigna).
+    totalPlataforma: totalPor("PLATAFORMA"),
     propinas: pagadas.reduce((s, f) => s + f.propinaMonto, 0),
     cuentasPerdidas: perdidas.length,
     totalPerdidas: perdidas.reduce((s, f) => s + f.total, 0),

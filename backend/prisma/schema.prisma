@@ -35,6 +35,7 @@ model User {
   cancelacionesAutorizadas PedidoItemStatusLog[] @relation("CancelacionesAutorizadas")
   facturasCerradas   Factura[]         @relation("FacturasCerradas")
   perdidasAutorizadas Factura[]        @relation("PerdidasAutorizadas")
+  descuentosAutorizados Factura[]      @relation("DescuentosAutorizados")
   movimientosInventario MovimientoInventario[]
   encuestasAtendidas Encuesta[]        @relation("EncuestasMesero")
   mesasAsignadas     Mesa[]            @relation("MesaAsignada")
@@ -84,6 +85,79 @@ model Producto {
   createdAt              DateTime     @default(now())
   pedidoItems            PedidoItem[]
   solicitudItems         SolicitudPedidoItem[]
+  // Adiciones que se le pueden poner (extra queso, sin cebolla...).
+  adiciones              ProductoAdicion[]
+  // Un combo es un producto hecho de otros productos (hamburguesa + papas +
+  // gaseosa) con un precio propio. Al pedirlo se registran sus partes, para
+  // que cocina, inventario y ganancia funcionen igual que con lo demás.
+  esCombo                Boolean      @default(false)
+  componentes            ComboComponente[] @relation("ComboPadre")
+  enCombos               ComboComponente[] @relation("ComboHijo")
+}
+
+model ComboComponente {
+  id         String   @id @default(cuid())
+  comboId    String
+  combo      Producto @relation("ComboPadre", fields: [comboId], references: [id])
+  productoId String
+  producto   Producto @relation("ComboHijo", fields: [productoId], references: [id])
+  cantidad   Int
+
+  @@unique([comboId, productoId])
+}
+
+// Adición a un producto: con precio (extra queso +$2.000) o sin él (sin
+// cebolla, término medio), para que quede estructurado y no como nota suelta.
+model Adicion {
+  id         String            @id @default(cuid())
+  nombre     String
+  precio     Int               @default(0)
+  costo      Int?
+  activa     Boolean           @default(true)
+  creadoEn   DateTime          @default(now())
+  productos  ProductoAdicion[]
+}
+
+model ProductoAdicion {
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id])
+  adicionId  String
+  adicion    Adicion  @relation(fields: [adicionId], references: [id])
+
+  @@id([productoId, adicionId])
+}
+
+// Lo que se le puso a un producto vendido, con su precio de ese momento.
+// El precio de la línea (PedidoItem.precioUnitario) ya lo incluye.
+model PedidoItemAdicion {
+  id           String     @id @default(cuid())
+  pedidoItemId String
+  pedidoItem   PedidoItem @relation(fields: [pedidoItemId], references: [id])
+  adicionId    String?
+  nombre       String
+  precio       Int
+  costo        Int?
+
+  @@index([pedidoItemId])
+}
+
+// Descuento por porcentaje en productos o categorías, en ciertos días y
+// horas (hora feliz, martes de perros...). Se aplica solo al pedir.
+model Promocion {
+  id           String    @id @default(cuid())
+  nombre       String
+  descuentoPct Int
+  activa       Boolean   @default(true)
+  // 0 = domingo … 6 = sábado; vacío = todos los días.
+  diasSemana   Int[]
+  // "17:00"; sin horas = todo el día.
+  horaInicio   String?
+  horaFin      String?
+  desde        DateTime?
+  hasta        DateTime?
+  productoIds  String[]
+  categoriaIds String[]
+  creadoEn     DateTime  @default(now())
 }
 
 enum MesaEstado {
@@ -168,6 +242,17 @@ enum PedidoEstado {
   CANCELADO
 }
 
+// Por dónde llegó el pedido.
+enum CanalPedido {
+  MESA
+  // Para recoger en caja (QR general o cliente en el local).
+  MOSTRADOR
+  // Domicilio con mensajero propio (pedido por teléfono o WhatsApp).
+  DOMICILIO
+  // Rappi, DiDi Food, etc.: la app cobra al cliente y se queda una comisión.
+  PLATAFORMA
+}
+
 model Pedido {
   // Un pedido normalmente pertenece a una mesa abierta (mesaSesionId), pero
   // también puede ser un pedido de mostrador sin ninguna mesa detrás (alguien
@@ -175,10 +260,16 @@ model Pedido {
   // mesaSesionId queda null y se usan nombreCliente/telefonoCliente en su
   // lugar para identificar a quién pertenece.
   id             String            @id @default(cuid())
+  canal          CanalPedido       @default(MOSTRADOR)
   mesaSesionId   String?
   mesaSesion     MesaSesion?       @relation(fields: [mesaSesionId], references: [id])
   nombreCliente    String?
   telefonoCliente  String?
+  domicilio        Domicilio?
+  plataformaId     String?
+  plataforma       Plataforma?     @relation(fields: [plataformaId], references: [id])
+  // Número de la orden en la app, para ubicarla cuando llega el repartidor.
+  codigoPlataforma String?
   meseroId       String
   mesero         User              @relation(fields: [meseroId], references: [id])
   estado         PedidoEstado      @default(RECIBIDO)
@@ -195,6 +286,44 @@ model Pedido {
   items          PedidoItem[]
   statusLogs     PedidoStatusLog[]
   factura        Factura?
+}
+
+enum EstadoDomicilio {
+  // En cocina o listo, esperando que salga.
+  PENDIENTE
+  EN_CAMINO
+  ENTREGADO
+  // No se pudo entregar (dirección errada, el cliente no respondió...).
+  FALLIDO
+}
+
+// Datos de entrega de un pedido a domicilio con mensajero propio.
+model Domicilio {
+  id            String          @id @default(cuid())
+  pedidoId      String          @unique
+  pedido        Pedido          @relation(fields: [pedidoId], references: [id])
+  // Dirección, barrio e indicaciones se borran a los 30 días (Ley 1581), como
+  // el teléfono.
+  direccion     String?
+  barrio        String?
+  indicaciones  String?
+  // Billete con el que va a pagar, para que el mensajero lleve las vueltas.
+  pagaCon       Int?
+  domiciliario  String?
+  estado        EstadoDomicilio @default(PENDIENTE)
+  salioEn       DateTime?
+  entregadoEn   DateTime?
+  motivoFallido String?
+}
+
+// Apps de domicilios con las que trabaja el negocio y su comisión.
+model Plataforma {
+  id          String   @id @default(cuid())
+  nombre      String   @unique
+  // Porcentaje que se queda la app de cada venta (p. ej. 23.5).
+  comisionPct Float
+  activa      Boolean  @default(true)
+  pedidos     Pedido[]
 }
 
 // Cocina despacha producto por producto (no el pedido completo de una sola
@@ -216,10 +345,19 @@ model PedidoItem {
   producto                 Producto     @relation(fields: [productoId], references: [id])
   cantidad                 Int
   notas                    String?
+  // Precio final por unidad: producto + adiciones − promoción (o la parte
+  // del precio de un combo que le corresponde).
   precioUnitario           Int
   // Costo al momento de venderlo (como el precio): si el costo del producto
   // cambia después, la ganancia de las ventas pasadas no se altera.
   costoUnitario            Int?
+  adiciones                PedidoItemAdicion[]
+  // Promoción aplicada: precio sin descuento y su nombre, para mostrarlo.
+  precioLista              Int?
+  promocionNombre          String?
+  // Partes de un mismo combo comparten comboGrupo.
+  comboGrupo               String?
+  comboNombre              String?
   tiempoPreparacionMinutos Int
   estado                   PedidoEstado @default(RECIBIDO)
   iniciadoEn               DateTime?
@@ -276,6 +414,9 @@ enum MetodoPago {
   // Transferencia bancaria, QR bancario, Bre-B.
   TRANSFERENCIA
   OTRO
+  // Lo cobró una app de domicilios, que le paga al negocio después (no entra
+  // a la caja).
+  PLATAFORMA
 }
 
 // Cómo se pagó una cuenta. Una cuenta puede pagarse con varios métodos (parte
@@ -428,6 +569,8 @@ model SolicitudPedidoItem {
   cantidad    Int
   notas       String?
   paraLlevar  Boolean         @default(false)
+  // Adiciones que el cliente eligió en la carta.
+  adicionIds  String[]
 }
 
 model Factura {
@@ -440,7 +583,19 @@ model Factura {
   pedidoId      String?       @unique
   pedido        Pedido?       @relation(fields: [pedidoId], references: [id])
   subtotal      Int
+  // Descuento a la cuenta completa o cortesía (100%), con motivo y quién lo
+  // autorizó. total = subtotal − descuento + propina.
+  descuentoMonto  Int         @default(0)
+  descuentoMotivo String?
+  descuentoAutorizadoPorId String?
+  descuentoAutorizadoPor   User? @relation("DescuentosAutorizados", fields: [descuentoAutorizadoPorId], references: [id])
   propinaMonto  Int           @default(0)
+  // Costo del domicilio que paga el cliente (incluido en el total).
+  envioMonto    Int           @default(0)
+  // Lo que se queda la app de domicilios (no se le cobra al cliente: es un
+  // costo del negocio y se resta de la ganancia).
+  comisionMonto Int           @default(0)
+  // total = subtotal − descuento + propina + envío.
   total         Int
   estado        FacturaEstado @default(PENDIENTE)
   // El método si se pagó con uno solo; null si se dividió en varios (el
@@ -478,6 +633,8 @@ model CierreCaja {
   totalNequi         Int @default(0)
   totalDaviplata     Int @default(0)
   totalTransferencia Int @default(0)
+  // Vendido por apps de domicilios: no entra a la caja, la app lo consigna.
+  totalPlataforma    Int @default(0)
   totalOtro       Int
   // Ya incluidas en los totales de arriba; se muestran aparte para repartir.
   propinas        Int

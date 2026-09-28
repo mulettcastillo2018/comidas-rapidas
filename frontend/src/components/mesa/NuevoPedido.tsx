@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { formatoPesos } from "@/lib/formato";
 import { resolverImagenUrl } from "@/lib/images";
+import { precioConAdiciones } from "@/lib/items";
 import type { Comensal, Producto } from "@/lib/types";
 
 export interface ItemBorrador {
@@ -12,6 +13,7 @@ export interface ItemBorrador {
   paraLlevar: boolean;
   cantidad: number;
   notas: string;
+  adicionIds: string[];
 }
 
 // Con inventario y pocas unidades: se le muestra al mesero para que no
@@ -36,17 +38,31 @@ export function NuevoPedido({
   comensales,
   enviando,
   onEnviar,
+  sinDestino,
+  titulo = "Nuevo pedido",
+  textoEnviar = "Enviar pedido",
+  onSubtotal,
 }: {
   productos: Producto[];
   comensales: Comensal[];
   enviando: boolean;
   onEnviar: (items: ItemBorrador[]) => Promise<boolean>;
+  // Sin mesa (domicilios, apps): no hay a quién asignar cada producto.
+  sinDestino?: boolean;
+  titulo?: string;
+  textoEnviar?: string;
+  // Valor de lo que va en el borrador, para mostrar el total afuera.
+  onSubtotal?: (subtotal: number) => void;
 }) {
   const [borrador, setBorrador] = useState<ItemBorrador[]>([]);
   const [productoId, setProductoId] = useState("");
   const [destino, setDestino] = useState(COMPARTIR);
   const [cantidad, setCantidad] = useState(1);
   const [notas, setNotas] = useState("");
+  const [adicionIds, setAdicionIds] = useState<string[]>([]);
+
+  // Al cambiar de producto, las adiciones elegidas ya no aplican.
+  useEffect(() => setAdicionIds([]), [productoId]);
 
   // Agrupados por categoría para no buscar en una lista larga revuelta.
   const porCategoria = useMemo(() => {
@@ -67,6 +83,15 @@ export function NuevoPedido({
   const seleccionado = productos.find((p) => p.id === productoId);
   const imagen = resolverImagenUrl(seleccionado?.imagenUrl);
   const agotadosEnBorrador = borrador.filter((i) => !productos.find((p) => p.id === i.productoId)?.disponible);
+  const subtotal = borrador.reduce(
+    (s, i) => s + precioConAdiciones(productos.find((p) => p.id === i.productoId), i.adicionIds) * i.cantidad,
+    0
+  );
+
+  useEffect(() => {
+    onSubtotal?.(subtotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal]);
 
   function agregar() {
     if (!productoId) return;
@@ -78,10 +103,12 @@ export function NuevoPedido({
         paraLlevar: destino === LLEVAR,
         cantidad,
         notas: notas.trim(),
+        adicionIds,
       },
     ]);
     setCantidad(1);
     setNotas("");
+    setAdicionIds([]);
   }
 
   async function enviar() {
@@ -90,7 +117,7 @@ export function NuevoPedido({
 
   return (
     <section className="mt-6 rounded-xl border border-border p-4">
-      <h2 className="text-sm font-bold">Nuevo pedido</h2>
+      <h2 className="text-sm font-bold">{titulo}</h2>
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <div className="min-w-0 max-w-full">
           <label className="mb-1 block text-xs font-semibold text-muted-foreground">Producto</label>
@@ -108,7 +135,10 @@ export function NuevoPedido({
                 <optgroup key={categoria} label={categoria}>
                   {lista.map((p) => (
                     <option key={p.id} value={p.id} disabled={!p.disponible}>
-                      {p.nombre} — {formatoPesos(p.precio)} {!p.disponible ? "(agotado)" : quedanPocas(p) ? `(quedan ${p.stock})` : ""}
+                      {p.esCombo ? "🍱 " : ""}
+                      {p.nombre} — {formatoPesos(p.promocion?.precio ?? p.precio)}
+                      {p.promocion ? ` (antes ${formatoPesos(p.precio)})` : ""}{" "}
+                      {!p.disponible ? "(agotado)" : quedanPocas(p) ? `(quedan ${p.stock})` : ""}
                     </option>
                   ))}
                 </optgroup>
@@ -121,6 +151,16 @@ export function NuevoPedido({
           {seleccionado && quedanPocas(seleccionado) ? (
             <p className="mt-1 text-[11px] font-semibold text-amber-700">Solo quedan {seleccionado.stock}.</p>
           ) : null}
+          {seleccionado?.promocion ? (
+            <p className="mt-1 text-[11px] font-semibold text-green-700">
+              🏷️ {seleccionado.promocion.nombre}: −{seleccionado.promocion.descuentoPct}%
+            </p>
+          ) : null}
+          {seleccionado?.esCombo ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Trae: {seleccionado.componentes?.map((c) => `${c.cantidad > 1 ? `${c.cantidad}× ` : ""}${c.producto.nombre}`).join(" + ")}
+            </p>
+          ) : null}
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-muted-foreground">Cantidad</label>
@@ -132,18 +172,20 @@ export function NuevoPedido({
             className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
           />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">Para</label>
-          <select value={destino} onChange={(e) => setDestino(e.target.value)} className="rounded-lg border border-border px-2 py-1.5 text-sm">
-            <option value={COMPARTIR}>Para compartir</option>
-            <option value={LLEVAR}>🥡 Para llevar</option>
-            {comensales.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!sinDestino ? (
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Para</label>
+            <select value={destino} onChange={(e) => setDestino(e.target.value)} className="rounded-lg border border-border px-2 py-1.5 text-sm">
+              <option value={COMPARTIR}>Para compartir</option>
+              <option value={LLEVAR}>🥡 Para llevar</option>
+              {comensales.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="flex-1">
           <label className="mb-1 block text-xs font-semibold text-muted-foreground">Notas (opcional)</label>
           <input
@@ -158,6 +200,28 @@ export function NuevoPedido({
         </button>
       </div>
 
+      {seleccionado && (seleccionado.adiciones?.length ?? 0) > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {seleccionado.adiciones!.map((a) => {
+            const elegida = adicionIds.includes(a.id);
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setAdicionIds((prev) => (elegida ? prev.filter((x) => x !== a.id) : [...prev, a.id]))}
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${elegida ? "border-accent bg-accent text-white" : "border-border text-muted-foreground"}`}
+              >
+                {a.nombre}
+                {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
+              </button>
+            );
+          })}
+          {adicionIds.length > 0 ? (
+            <span className="self-center text-xs text-muted-foreground">= {formatoPesos(precioConAdiciones(seleccionado, adicionIds))} c/u</span>
+          ) : null}
+        </div>
+      ) : null}
+
       {borrador.length > 0 ? (
         <div className="mt-4 space-y-1.5 border-t border-border pt-3">
           {borrador.map((item, index) => {
@@ -165,9 +229,14 @@ export function NuevoPedido({
             return (
               <div key={index} className="flex items-center justify-between gap-2 text-sm">
                 <span className={producto && !producto.disponible ? "text-red-600" : ""}>
-                  {item.cantidad}× {producto?.nombre ?? "Producto"} — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}
+                  {item.cantidad}× {producto?.nombre ?? "Producto"}
+                  {item.adicionIds.length > 0
+                    ? ` + ${(producto?.adiciones ?? []).filter((a) => item.adicionIds.includes(a.id)).map((a) => a.nombre).join(", ")}`
+                    : ""}
+                  {!sinDestino ? ` — ${etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}` : ""}
                   {item.notas ? ` (${item.notas})` : ""}
                   {producto && !producto.disponible ? " — se agotó" : ""}
+                  <span className="ml-1 text-xs text-muted-foreground">{formatoPesos(precioConAdiciones(producto, item.adicionIds) * item.cantidad)}</span>
                 </span>
                 <button onClick={() => setBorrador((prev) => prev.filter((_, i) => i !== index))} className="text-muted-foreground hover:text-red-600">
                   <Trash2 size={14} />
@@ -183,7 +252,7 @@ export function NuevoPedido({
             disabled={enviando || agotadosEnBorrador.length > 0}
             className="btn-primary mt-2 w-full rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {enviando ? "Enviando…" : "Enviar pedido"}
+            {enviando ? "Enviando…" : textoEnviar}
           </button>
         </div>
       ) : null}

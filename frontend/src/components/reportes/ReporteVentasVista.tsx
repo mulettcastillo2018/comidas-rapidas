@@ -6,7 +6,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { formatoFechaHora, formatoPesos, hoyLocal } from "@/lib/formato";
 import { METODO_PAGO_LABEL } from "@/lib/estados";
 import { DemandaYRotacion } from "./DemandaYRotacion";
-import type { ClasificacionMenu, CuentaReporte, ReporteVentas } from "@/lib/types";
+import type { CanalPedido, ClasificacionMenu, CuentaReporte, ReporteVentas } from "@/lib/types";
 
 const PRODUCTOS_VISIBLES = 10;
 
@@ -17,6 +17,13 @@ const CLASIFICACION: Record<ClasificacionMenu, { etiqueta: string; consejo: stri
   CABALLO: { etiqueta: "🐴 Caballo de batalla", consejo: "Se vende mucho pero deja poco: sube un poco el precio o baja su costo.", clase: "bg-amber-100 text-amber-800" },
   ROMPECABEZAS: { etiqueta: "🧩 Rompecabezas", consejo: "Deja buen margen pero se vende poco: promociónalo, ponlo más visible.", clase: "bg-sky-100 text-sky-800" },
   PERRO: { etiqueta: "🐶 Perro", consejo: "Ni se vende ni deja: piensa en cambiarlo o sacarlo de la carta.", clase: "bg-red-100 text-red-800" },
+};
+
+const CANALES: Record<CanalPedido, string> = {
+  MESA: "Mesas",
+  MOSTRADOR: "Mostrador (para recoger)",
+  DOMICILIO: "Domicilios propios",
+  PLATAFORMA: "Apps de domicilios",
 };
 
 function metodoDeCuenta(c: CuentaReporte) {
@@ -43,15 +50,17 @@ function nombreDia(dia: string) {
 function descargarCsv(reporte: ReporteVentas) {
   const celda = (valor: string | number) => `"${String(valor).replace(/"/g, '""')}"`;
   const filas = [
-    ["Fecha", "Canal", "Ubicación", "Atendido por", "Estado", "Método de pago", "Subtotal", "Propina", "Total"],
+    ["Fecha", "Canal", "Ubicación", "Atendido por", "Estado", "Método de pago", "Subtotal", "Descuento", "Motivo descuento", "Propina", "Total"],
     ...reporte.cuentas.map((c) => [
       formatoFechaHora(c.fecha),
-      c.canal === "MESA" ? "Mesa" : "Mostrador",
+      CANALES[c.canal],
       c.ubicacion,
       c.atendidoPor,
       c.estado === "PAGADA" ? "Pagada" : "Perdida",
       c.estado === "PAGADA" ? metodoDeCuenta(c) : "",
       c.subtotal,
+      c.descuento,
+      c.descuentoMotivo ?? "",
       c.propina,
       c.total,
     ]),
@@ -171,6 +180,19 @@ export function ReporteVentasVista({ token }: { token: string }) {
               }
               alerta={reporte.resumen.cancelaciones.merma > 0}
             />
+            {reporte.resumen.descuentos.cuentas > 0 ? (
+              <Tarjeta
+                titulo="Descuentos y cortesías"
+                valor={formatoPesos(reporte.resumen.descuentos.total)}
+                detalle={`${reporte.resumen.descuentos.cuentas} cuenta(s), ya restados de las ventas`}
+              />
+            ) : null}
+            {reporte.resumen.envios > 0 ? (
+              <Tarjeta titulo="Domicilios cobrados" valor={formatoPesos(reporte.resumen.envios)} detalle="incluidos en ventas" />
+            ) : null}
+            {reporte.resumen.comisiones > 0 ? (
+              <Tarjeta titulo="Comisiones de apps" valor={formatoPesos(reporte.resumen.comisiones)} detalle="se restan de la ganancia" alerta />
+            ) : null}
           </div>
 
           <section className="space-y-3">
@@ -180,7 +202,9 @@ export function ReporteVentasVista({ token }: { token: string }) {
                 <Tarjeta
                   titulo="Ganancia bruta"
                   valor={formatoPesos(reporte.resumen.ganancia.gananciaBruta)}
-                  detalle="ventas de productos − su costo (sin propinas)"
+                  detalle={`ventas de productos − su costo${reporte.resumen.ganancia.descuentos > 0 ? " − descuentos" : ""}${
+                    reporte.resumen.ganancia.comisiones > 0 ? " − comisiones de apps" : ""
+                  } (sin propinas ni domicilios)`}
                   alerta={reporte.resumen.ganancia.gananciaBruta < 0}
                 />
                 <Tarjeta titulo="Margen" valor={`${reporte.resumen.ganancia.margenPct ?? 0}%`} detalle="de cada peso vendido" />
@@ -243,13 +267,15 @@ export function ReporteVentasVista({ token }: { token: string }) {
               <h2 className="text-sm font-bold">Por canal</h2>
               <table className="mt-3 w-full text-left text-sm">
                 <tbody>
-                  {(["MESA", "MOSTRADOR"] as const).map((canal) => (
-                    <tr key={canal} className="border-b border-border/60">
-                      <td className="py-1.5 pr-4">{canal === "MESA" ? "Mesas" : "Mostrador (para recoger)"}</td>
-                      <td className="py-1.5 pr-4 text-muted-foreground">{reporte.porCanal[canal].cuentas} cuenta(s)</td>
-                      <td className="py-1.5 text-right font-semibold">{formatoPesos(reporte.porCanal[canal].ventas)}</td>
-                    </tr>
-                  ))}
+                  {(Object.keys(CANALES) as CanalPedido[])
+                    .filter((canal) => canal === "MESA" || canal === "MOSTRADOR" || (reporte.porCanal[canal]?.cuentas ?? 0) > 0)
+                    .map((canal) => (
+                      <tr key={canal} className="border-b border-border/60">
+                        <td className="py-1.5 pr-4">{CANALES[canal]}</td>
+                        <td className="py-1.5 pr-4 text-muted-foreground">{reporte.porCanal[canal]?.cuentas ?? 0} cuenta(s)</td>
+                        <td className="py-1.5 text-right font-semibold">{formatoPesos(reporte.porCanal[canal]?.ventas ?? 0)}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </section>
@@ -344,6 +370,82 @@ export function ReporteVentasVista({ token }: { token: string }) {
                   {verTodosProductos ? "Ver menos" : `Ver los ${reporte.porProducto.length} productos`}
                 </button>
               ) : null}
+            </section>
+          ) : null}
+
+          {reporte.porCombo.length > 0 || reporte.porAdicion.length > 0 ? (
+            <div className="grid gap-6 sm:grid-cols-2">
+              {reporte.porCombo.length > 0 ? (
+                <section>
+                  <h2 className="text-sm font-bold">Combos vendidos</h2>
+                  <table className="mt-3 w-full text-left text-sm">
+                    <tbody>
+                      {reporte.porCombo.map((c) => (
+                        <tr key={c.nombre} className="border-b border-border/60">
+                          <td className="py-1.5 pr-4">🍱 {c.nombre}</td>
+                          <td className="py-1.5 pr-4 text-muted-foreground">{c.vendidos}</td>
+                          <td className="py-1.5 text-right font-semibold">{formatoPesos(c.ventas)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              ) : null}
+              {reporte.porAdicion.length > 0 ? (
+                <section>
+                  <h2 className="text-sm font-bold">Adiciones más pedidas</h2>
+                  <table className="mt-3 w-full text-left text-sm">
+                    <tbody>
+                      {reporte.porAdicion.map((a) => (
+                        <tr key={a.nombre} className="border-b border-border/60">
+                          <td className="py-1.5 pr-4">{a.nombre}</td>
+                          <td className="py-1.5 pr-4 text-muted-foreground">{a.cantidad}</td>
+                          <td className="py-1.5 text-right font-semibold">{formatoPesos(a.ventas)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Lo que sumaron las adiciones por encima del precio del producto.</p>
+                </section>
+              ) : null}
+            </div>
+          ) : null}
+
+          {reporte.resumen.descuentos.cuentas > 0 ? (
+            <section>
+              <h2 className="text-sm font-bold">Descuentos y cortesías</h2>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-muted-foreground">
+                      <th className="py-1.5 pr-4">Fecha</th>
+                      <th className="py-1.5 pr-4">Dónde</th>
+                      <th className="py-1.5 pr-4">Motivo</th>
+                      <th className="py-1.5 pr-4">Autorizó</th>
+                      <th className="py-1.5 text-right">Descuento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reporte.cuentas
+                      .filter((c) => c.estado === "PAGADA" && c.descuento > 0)
+                      .map((c) => (
+                        <tr key={c.id} className="border-b border-border/60">
+                          <td className="py-1.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
+                          <td className="py-1.5 pr-4">
+                            {c.ubicacion}
+                            <span className="block text-[11px] text-muted-foreground">atendió {c.atendidoPor}</span>
+                          </td>
+                          <td className="py-1.5 pr-4">{c.descuentoMotivo ?? "—"}</td>
+                          <td className="py-1.5 pr-4 text-muted-foreground">{c.descuentoAutorizadoPor ?? "—"}</td>
+                          <td className="py-1.5 text-right font-semibold">
+                            {formatoPesos(c.descuento)}
+                            <span className="block text-[11px] font-normal text-muted-foreground">de {formatoPesos(c.subtotal)}</span>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           ) : null}
 

@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
-import { estaAtrasado, reemplazarPedidoActivo, ubicacionPedido } from "@/lib/pedidos";
+import { estaAtrasado, etiquetaCanal, reemplazarPedidoActivo, ubicacionPedido } from "@/lib/pedidos";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { PanelDisponibilidad } from "@/components/cocina/PanelDisponibilidad";
 import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
+import { etiquetaCombo } from "@/lib/items";
 import type { Pedido, PedidoItem, Producto } from "@/lib/types";
 
 const COLUMNAS = [
@@ -173,7 +174,7 @@ export default function CocinaPage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">
-                        {item.pedido.mesaSesion ? `Mesa ${item.pedido.mesaSesion.mesa?.numero}` : "🧾 Mostrador"}
+                        {item.pedido.mesaSesion ? `Mesa ${item.pedido.mesaSesion.mesa?.numero}` : etiquetaCanal(item.pedido)}
                       </span>
                       <span className="text-xs text-muted-foreground">~{item.tiempoPreparacionMinutos} min</span>
                     </div>
@@ -186,6 +187,10 @@ export default function CocinaPage() {
                       {item.cantidad}× {item.producto?.nombre}
                       {item.paraLlevar ? " — 🥡 Para llevar" : item.comensal ? ` — ${item.comensal.nombre}` : " — Para compartir"}
                     </p>
+                    {item.adiciones && item.adiciones.length > 0 ? (
+                      <p className="text-xs font-bold text-accent">+ {item.adiciones.map((a) => a.nombre).join(", ")}</p>
+                    ) : null}
+                    {item.comboNombre ? <p className="text-[11px] text-muted-foreground">{etiquetaCombo(item)}</p> : null}
                     {item.paraLlevar ? (
                       <p className="text-[10px] font-bold uppercase tracking-wide text-accent">Empacar para llevar</p>
                     ) : null}

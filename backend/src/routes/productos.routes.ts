@@ -6,6 +6,8 @@ import { catchAsync } from "../lib/catchAsync";
 import { uploadImagenProducto } from "../lib/upload";
 import { emitProductoActualizado } from "../realtime/socket";
 import { OMITIR_PRODUCTO, sinDatosInternos } from "../lib/datosInternos";
+import { ErrorDeNegocio } from "../lib/errores";
+import { conPromociones, incluirCatalogo } from "../services/catalogo";
 
 export const productosRouter = Router();
 
@@ -16,11 +18,11 @@ productosRouter.get(
     const productos = await prisma.producto.findMany({
       where: { isActive: true },
       orderBy: { nombre: "asc" },
-      include: { categoria: true },
+      include: incluirCatalogo,
       // El costo solo lo ve el admin.
       ...(req.user!.role === "ADMIN" ? {} : { omit: OMITIR_PRODUCTO }),
     });
-    res.json(productos);
+    res.json(await conPromociones(productos));
   })
 );
 
@@ -35,7 +37,29 @@ const productoSchema = z.object({
   costo: z.number().int().min(0).nullable().optional(),
   disponible: z.boolean().default(true),
   isActive: z.boolean().default(true),
+  esCombo: z.boolean().default(false),
+  // Solo para combos: qué productos trae y cuántos de cada uno.
+  componentes: z.array(z.object({ productoId: z.string().min(1), cantidad: z.number().int().min(1).max(10) })).max(10).optional(),
 });
+
+// Un combo se arma con productos normales (no con otros combos) y al menos
+// un producto; nunca contiene a sí mismo.
+async function validarComponentes(comboId: string | null, componentes: { productoId: string; cantidad: number }[]) {
+  if (componentes.length === 0) throw new ErrorDeNegocio("Un combo necesita al menos un producto", 400);
+  const ids = componentes.map((c) => c.productoId);
+  if (new Set(ids).size !== ids.length) throw new ErrorDeNegocio("Un producto aparece dos veces en el combo; usa la cantidad", 400);
+  const productos = await prisma.producto.findMany({ where: { id: { in: ids } } });
+  if (productos.length !== ids.length || productos.some((p) => p.esCombo || p.id === comboId || !p.isActive)) {
+    throw new ErrorDeNegocio("Los combos se arman con productos activos de la carta (no con otros combos)", 400);
+  }
+}
+
+async function guardarComponentes(comboId: string, componentes: { productoId: string; cantidad: number }[]) {
+  await prisma.$transaction([
+    prisma.comboComponente.deleteMany({ where: { comboId } }),
+    prisma.comboComponente.createMany({ data: componentes.map((c) => ({ comboId, ...c })) }),
+  ]);
+}
 
 // "Agotado" lo decide quien ve la nevera y los insumos: cocina (o el admin).
 productosRouter.put(
@@ -71,7 +95,10 @@ productosRouter.post(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const producto = await prisma.producto.create({ data: parsed.data });
+    const { componentes, ...datos } = parsed.data;
+    if (datos.esCombo) await validarComponentes(null, componentes ?? []);
+    const producto = await prisma.producto.create({ data: datos });
+    if (datos.esCombo) await guardarComponentes(producto.id, componentes!);
     res.status(201).json(producto);
   })
 );
@@ -86,7 +113,14 @@ productosRouter.put(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const producto = await prisma.producto.update({ where: { id: req.params.id }, data: parsed.data, include: { categoria: true } });
+    const { componentes, ...datos } = parsed.data;
+    const actual = await prisma.producto.findUnique({ where: { id: req.params.id } });
+    if (!actual) throw new ErrorDeNegocio("Producto no encontrado", 404);
+    const seraCombo = datos.esCombo ?? actual.esCombo;
+    if (seraCombo && componentes) await validarComponentes(actual.id, componentes);
+    const producto = await prisma.producto.update({ where: { id: actual.id }, data: datos, include: { categoria: true } });
+    if (seraCombo && componentes) await guardarComponentes(producto.id, componentes);
+    if (!seraCombo && actual.esCombo) await prisma.comboComponente.deleteMany({ where: { comboId: producto.id } });
     emitProductoActualizado(producto);
     res.json(producto);
   })

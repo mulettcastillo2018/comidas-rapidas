@@ -7,9 +7,10 @@ const INTERVALO_MS = 5 * 60_000;
 // de pendientes por mesa.
 const MINUTOS_VIGENCIA_SOLICITUD = 60;
 const DIAS_VIGENCIA_NOTIFICACION = 7;
-// El teléfono de un cliente de mostrador solo sirve para avisarle de ese
-// pedido (Ley 1581: se usa para la finalidad autorizada y no se guarda más de
-// lo necesario). El nombre se conserva porque identifica la venta.
+// El teléfono de un cliente de mostrador (y la dirección de un domicilio)
+// solo sirve para ese pedido (Ley 1581: se usa para la finalidad autorizada y
+// no se guarda más de lo necesario). El nombre se conserva porque identifica
+// la venta.
 const DIAS_VIGENCIA_TELEFONO = 30;
 
 export function iniciarLimpiezaPeriodica() {
@@ -32,6 +33,13 @@ export async function ejecutarLimpieza() {
   await prisma.pedido.updateMany({
     where: { telefonoCliente: { not: null }, creadoEn: { lt: limiteTelefono } },
     data: { telefonoCliente: null },
+  });
+  await prisma.domicilio.updateMany({
+    where: {
+      OR: [{ direccion: { not: null } }, { barrio: { not: null } }, { indicaciones: { not: null } }],
+      pedido: { creadoEn: { lt: limiteTelefono } },
+    },
+    data: { direccion: null, barrio: null, indicaciones: null },
   });
 }
 
