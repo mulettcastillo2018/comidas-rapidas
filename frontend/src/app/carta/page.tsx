@@ -8,11 +8,8 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { resolverImagenUrl } from "@/lib/images";
 import { unlockAudio } from "@/lib/notificationSound";
+import { formatoPesos } from "@/lib/formato";
 import type { CategoriaConCarta, SolicitudPedido } from "@/lib/types";
-
-function formatCOP(amount: number) {
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP" }).format(amount);
-}
 
 // Último pedido enviado desde este celular, para poder volver a su página de
 // seguimiento si el cliente cerró la pestaña. Solo en este dispositivo.
@@ -189,7 +186,7 @@ function CartaContent() {
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
-                          <p className="font-semibold">{formatCOP(producto.precio)}</p>
+                          <p className="font-semibold">{formatoPesos(producto.precio)}</p>
                           {puedeOrdenar ? (
                             <button
                               onClick={() => agregarAlCarrito(producto)}
@@ -249,7 +246,7 @@ function CartaContent() {
             </div>
             <div className="mt-2 flex items-center justify-between text-sm font-bold">
               <span>Total</span>
-              <span>{formatCOP(total)}</span>
+              <span>{formatoPesos(total)}</span>
             </div>
             <input
               value={nombreCliente}

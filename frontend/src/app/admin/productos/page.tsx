@@ -4,11 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, ApiError, uploadFile } from "@/lib/api";
 import { resolverImagenUrl } from "@/lib/images";
 import { useAuthStore } from "@/store/auth.store";
+import { formatoPesos } from "@/lib/formato";
+import { reducirImagen } from "@/lib/imagen";
 import type { Categoria, Producto } from "@/lib/types";
-
-function formatCOP(amount: number) {
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP" }).format(amount);
-}
 
 interface ProductoFormValues {
   nombre: string;
@@ -228,7 +226,7 @@ export default function AdminProductosPage() {
     setError(null);
     setUploadingId(productoParaImagen);
     try {
-      await uploadFile(`/productos/${productoParaImagen}/imagen`, file, "imagen", token);
+      await uploadFile(`/productos/${productoParaImagen}/imagen`, await reducirImagen(file), "imagen", token);
       await loadData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo subir la imagen.");
@@ -298,7 +296,7 @@ export default function AdminProductosPage() {
                     {producto.categoria?.nombre} ·{" "}
                     {producto.requiereCocina ? `${producto.tiempoPreparacionMinutos} min de preparación` : "No pasa por cocina"}
                   </p>
-                  <p className="text-sm font-semibold">{formatCOP(producto.precio)}</p>
+                  <p className="text-sm font-semibold">{formatoPesos(producto.precio)}</p>
                 </div>
               </div>
               <div className="flex gap-3">

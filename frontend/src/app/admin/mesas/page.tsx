@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
 import { useAuthStore } from "@/store/auth.store";
@@ -62,26 +62,20 @@ export default function AdminMesasPage() {
     if (!token) return;
     loadData();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
-    // contra la API en vez de quedarnos con el estado viejo de las mesas.
-    socket.on("connect", loadData);
-    socket.on("mesa:actualizada", (mesa: Mesa) => {
-      setMesas((prev) => aplicarCambioDeMesa(prev, mesa, true));
+    // Al reconectar (reinicio del servidor, wifi...) se recarga desde la API
+    // en vez de quedarse con el estado viejo de las mesas.
+    return suscribirEnVivo(token, {
+      connect: loadData,
+      "mesa:actualizada": (mesa: Mesa) => setMesas((prev) => aplicarCambioDeMesa(prev, mesa, true)),
+      "mesaSesion:nueva": (sesion: MesaSesion) => {
+        setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
+        setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);
+      },
+      "mesaSesion:cerrada": (payload: { mesaId: string; sesionId: string }) => {
+        setMesas((prev) => prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: "LIBRE" } : m)));
+        setSesionesActivas((prev) => prev.filter((s) => s.id !== payload.sesionId));
+      },
     });
-    socket.on("mesaSesion:nueva", (sesion: MesaSesion) => {
-      setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
-      setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);
-    });
-    socket.on("mesaSesion:cerrada", (payload: { mesaId: string; sesionId: string }) => {
-      setMesas((prev) => prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: "LIBRE" } : m)));
-      setSesionesActivas((prev) => prev.filter((s) => s.id !== payload.sesionId));
-    });
-
-    return () => {
-      socket.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 

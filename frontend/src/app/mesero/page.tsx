@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
 import { useAuthStore } from "@/store/auth.store";
@@ -39,28 +39,6 @@ export default function MeseroPage() {
     if (!token) return;
     loadData();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
-    // contra la API en vez de quedarnos con mesas/solicitudes viejas.
-    socket.on("connect", loadData);
-    socket.on("mesa:actualizada", (mesa: Mesa) => {
-      setMesas((prev) => aplicarCambioDeMesa(prev, mesa, false));
-    });
-    socket.on("mesaSesion:nueva", (sesion: MesaSesion) => {
-      setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);
-      setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
-    });
-    socket.on("mesaSesion:cerrada", (payload: { mesaId: string; sesionId: string }) => {
-      setSesionesActivas((prev) => prev.filter((s) => s.id !== payload.sesionId));
-      setMesas((prev) => prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: "LIBRE" } : m)));
-    });
-    socket.on("solicitud:nueva", (solicitud: SolicitudPedido) => {
-      setSolicitudesPendientes((prev) => [...prev.filter((s) => s.id !== solicitud.id), solicitud]);
-    });
-    socket.on("solicitud:actualizada", (solicitud: SolicitudPedido) => {
-      setSolicitudesPendientes((prev) => prev.filter((s) => s.id !== solicitud.id));
-    });
     // Para que la grilla muestre al instante qué mesas tienen algo listo para
     // entregar, sin que el mesero tenga que entrar mesa por mesa a revisar.
     const actualizarPedidoEnSesiones = (pedido: Pedido) => {
@@ -72,12 +50,27 @@ export default function MeseroPage() {
         )
       );
     };
-    socket.on("pedido:nuevo", actualizarPedidoEnSesiones);
-    socket.on("pedido:actualizado", actualizarPedidoEnSesiones);
 
-    return () => {
-      socket.disconnect();
-    };
+    // Al reconectar (reinicio del servidor, wifi...) se recarga desde la API
+    // en vez de quedarse con mesas/solicitudes viejas.
+    return suscribirEnVivo(token, {
+      connect: loadData,
+      "mesa:actualizada": (mesa: Mesa) => setMesas((prev) => aplicarCambioDeMesa(prev, mesa, false)),
+      "mesaSesion:nueva": (sesion: MesaSesion) => {
+        setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);
+        setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
+      },
+      "mesaSesion:cerrada": (payload: { mesaId: string; sesionId: string }) => {
+        setSesionesActivas((prev) => prev.filter((s) => s.id !== payload.sesionId));
+        setMesas((prev) => prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: "LIBRE" } : m)));
+      },
+      "solicitud:nueva": (solicitud: SolicitudPedido) =>
+        setSolicitudesPendientes((prev) => [...prev.filter((s) => s.id !== solicitud.id), solicitud]),
+      "solicitud:actualizada": (solicitud: SolicitudPedido) =>
+        setSolicitudesPendientes((prev) => prev.filter((s) => s.id !== solicitud.id)),
+      "pedido:nuevo": actualizarPedidoEnSesiones,
+      "pedido:actualizado": actualizarPedidoEnSesiones,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 

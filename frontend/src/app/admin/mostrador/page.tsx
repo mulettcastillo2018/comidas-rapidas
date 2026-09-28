@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
+import { reemplazarPedidoActivo } from "@/lib/pedidos";
+import { formatoPesos } from "@/lib/formato";
 import { estimarListoEn, formatoHora } from "@/lib/tiempoEstimado";
 import { useAuthStore } from "@/store/auth.store";
 import type { MetodoPago, Pedido, SolicitudPedido } from "@/lib/types";
@@ -40,30 +42,22 @@ export default function AdminMostradorPage() {
     cargarSolicitudes();
     cargarPedidos();
 
-    const socket = createSocket(token);
-    socket.on("connect", () => {
-      cargarSolicitudes();
-      cargarPedidos();
-    });
-    socket.on("solicitud:nueva", (s: SolicitudPedido) => {
-      if (!s.mesaId) setSolicitudes((prev) => [...prev.filter((x) => x.id !== s.id), s]);
-    });
-    socket.on("solicitud:actualizada", (s: SolicitudPedido) => {
-      setSolicitudes((prev) => prev.filter((x) => x.id !== s.id));
-    });
-    socket.on("pedido:nuevo", (p: Pedido) => {
-      if (!p.mesaSesionId) setPedidos((prev) => [...prev.filter((x) => x.id !== p.id), p]);
-    });
-    socket.on("pedido:actualizado", (p: Pedido) => {
-      setPedidos((prev) => {
-        if (p.estado === "ENTREGADO" || p.estado === "CANCELADO") return prev.filter((x) => x.id !== p.id);
-        return prev.map((x) => (x.id === p.id ? p : x));
-      });
-    });
-
-    return () => {
-      socket.disconnect();
+    // Solo pedidos sin mesa: los de mesa los atiende cada mesero.
+    const aplicarPedido = (p: Pedido) => {
+      if (!p.mesaSesionId) setPedidos((prev) => reemplazarPedidoActivo(prev, p));
     };
+    return suscribirEnVivo(token, {
+      connect: () => {
+        cargarSolicitudes();
+        cargarPedidos();
+      },
+      "solicitud:nueva": (s: SolicitudPedido) => {
+        if (!s.mesaId) setSolicitudes((prev) => [...prev.filter((x) => x.id !== s.id), s]);
+      },
+      "solicitud:actualizada": (s: SolicitudPedido) => setSolicitudes((prev) => prev.filter((x) => x.id !== s.id)),
+      "pedido:nuevo": aplicarPedido,
+      "pedido:actualizado": aplicarPedido,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -138,7 +132,7 @@ export default function AdminMostradorPage() {
                     ))}
                   </ul>
                   <p className="mt-2 text-sm font-bold">
-                    Total: {new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP" }).format(total)}
+                    Total: {formatoPesos(total)}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Dile al cliente: estará listo en unos {Math.max(0, ...solicitud.items.map((i) => i.producto?.tiempoPreparacionMinutos ?? 0))} min

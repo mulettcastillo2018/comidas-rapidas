@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
+import { reemplazarPedidoActivo } from "@/lib/pedidos";
 import { nombreCompleto, nombreCorto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import type { Pedido } from "@/lib/types";
@@ -22,26 +23,13 @@ export default function PantallaPage() {
     const cargarPedidos = () => apiFetch<Pedido[]>("/pedidos/activos", { token }).then(setPedidos);
     cargarPedidos();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
-    // contra la API en vez de quedarnos con datos viejos en pantalla.
-    socket.on("connect", cargarPedidos);
-    socket.on("pedido:nuevo", (pedido: Pedido) => {
-      setPedidos((prev) => [...prev, pedido]);
+    // Al reconectar (reinicio del servidor, wifi...) se recarga desde la API
+    // en vez de quedarse con datos viejos en pantalla.
+    return suscribirEnVivo(token, {
+      connect: cargarPedidos,
+      "pedido:nuevo": (pedido: Pedido) => setPedidos((prev) => [...prev.filter((p) => p.id !== pedido.id), pedido]),
+      "pedido:actualizado": (pedido: Pedido) => setPedidos((prev) => reemplazarPedidoActivo(prev, pedido)),
     });
-    socket.on("pedido:actualizado", (pedido: Pedido) => {
-      setPedidos((prev) => {
-        if (pedido.estado === "ENTREGADO" || pedido.estado === "CANCELADO") {
-          return prev.filter((p) => p.id !== pedido.id);
-        }
-        return prev.map((p) => (p.id === pedido.id ? pedido : p));
-      });
-    });
-
-    return () => {
-      socket.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 

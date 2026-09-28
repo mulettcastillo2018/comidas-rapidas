@@ -3,31 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
+import { ITEM_ESTADO_LABEL } from "@/lib/estados";
+import { estaAtrasado, reemplazarPedidoActivo } from "@/lib/pedidos";
 import { useAuthStore } from "@/store/auth.store";
 import type { Pedido, PedidoItem } from "@/lib/types";
 
 interface ItemConContexto extends PedidoItem {
   pedido: Pedido;
-}
-
-const ITEM_ESTADO_LABELS: Record<string, string> = {
-  RECIBIDO: "En espera",
-  EN_PREPARACION: "Preparando",
-  LISTO: "Listo",
-  CANCELADO: "Cancelado",
-};
-
-// Mismo criterio de atraso que usa /cocina: el reloj arranca cuando empezó a
-// prepararse o, si aún no ha empezado, desde que llegó el pedido.
-function minutosTranscurridos(item: ItemConContexto, ahora: number): number {
-  const referencia = item.iniciadoEn ? new Date(item.iniciadoEn) : new Date(item.pedido.creadoEn);
-  return (ahora - referencia.getTime()) / 60000;
-}
-
-function estaAtrasado(item: ItemConContexto, ahora: number): boolean {
-  return item.estado !== "LISTO" && minutosTranscurridos(item, ahora) > item.tiempoPreparacionMinutos;
 }
 
 export default function AdminPedidosPage() {
@@ -40,26 +24,13 @@ export default function AdminPedidosPage() {
     const cargarPedidos = () => apiFetch<Pedido[]>("/pedidos/activos", { token }).then(setPedidos);
     cargarPedidos();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
-    // contra la API en vez de quedarnos con pedidos viejos en pantalla.
-    socket.on("connect", cargarPedidos);
-    socket.on("pedido:nuevo", (pedido: Pedido) => {
-      setPedidos((prev) => [...prev, pedido]);
+    // Al reconectar (reinicio del servidor, wifi...) se recarga desde la API
+    // en vez de quedarse con pedidos viejos en pantalla.
+    return suscribirEnVivo(token, {
+      connect: cargarPedidos,
+      "pedido:nuevo": (pedido: Pedido) => setPedidos((prev) => reemplazarPedidoActivo(prev, pedido)),
+      "pedido:actualizado": (pedido: Pedido) => setPedidos((prev) => reemplazarPedidoActivo(prev, pedido)),
     });
-    socket.on("pedido:actualizado", (pedido: Pedido) => {
-      setPedidos((prev) => {
-        if (pedido.estado === "ENTREGADO" || pedido.estado === "CANCELADO") {
-          return prev.filter((p) => p.id !== pedido.id);
-        }
-        return prev.map((p) => (p.id === pedido.id ? pedido : p));
-      });
-    });
-
-    return () => {
-      socket.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -110,7 +81,7 @@ export default function AdminPedidosPage() {
               </div>
               <div className="mt-3 space-y-2">
                 {items.map((item) => {
-                  const atrasado = estaAtrasado(item, ahora);
+                  const atrasado = estaAtrasado(item, item.pedido.creadoEn, ahora);
                   return (
                     <div
                       key={item.id}
@@ -128,7 +99,7 @@ export default function AdminPedidosPage() {
                             item.estado === "LISTO" ? "bg-accent text-white" : "bg-muted text-muted-foreground"
                           }`}
                         >
-                          {ITEM_ESTADO_LABELS[item.estado] ?? item.estado}
+                          {ITEM_ESTADO_LABEL[item.estado] ?? item.estado}
                         </span>
                       </div>
                       {item.paraLlevar ? (

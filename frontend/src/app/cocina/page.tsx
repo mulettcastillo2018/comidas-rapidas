@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
+import { estaAtrasado, reemplazarPedidoActivo, ubicacionPedido } from "@/lib/pedidos";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
@@ -18,19 +19,6 @@ const COLUMNAS = [
 
 interface ItemConContexto extends PedidoItem {
   pedido: Pedido;
-}
-
-// El "reloj" de un producto arranca cuando cocina lo empieza a preparar; si
-// todavía no lo ha empezado, se cuenta desde que llegó el pedido — en ambos
-// casos, pasarse del tiempo configurado es la señal de alerta (o se demoró
-// de verdad, o salió y nadie lo marcó en el sistema).
-function minutosTranscurridos(item: ItemConContexto, ahora: number): number {
-  const referencia = item.iniciadoEn ? new Date(item.iniciadoEn) : new Date(item.pedido.creadoEn);
-  return (ahora - referencia.getTime()) / 60000;
-}
-
-function estaAtrasado(item: ItemConContexto, ahora: number): boolean {
-  return minutosTranscurridos(item, ahora) > item.tiempoPreparacionMinutos;
 }
 
 export default function CocinaPage() {
@@ -51,37 +39,22 @@ export default function CocinaPage() {
     cargarPedidos();
     cargarProductos();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
-    // contra la API en vez de quedarnos con pedidos viejos en pantalla.
-    socket.on("connect", () => {
-      cargarPedidos();
-      cargarProductos();
+    // Al reconectar (reinicio del servidor, wifi...) se recarga desde la API
+    // en vez de quedarse con pedidos viejos en pantalla.
+    return suscribirEnVivo(token, {
+      connect: () => {
+        cargarPedidos();
+        cargarProductos();
+      },
+      "pedido:nuevo": (pedido: Pedido) => {
+        setPedidos((prev) => [...prev.filter((p) => p.id !== pedido.id), pedido]);
+        // Un pedido de solo bebidas no le toca a cocina: no se anuncia.
+        if (!pedido.items.some((i) => i.estado === "RECIBIDO")) return;
+        showToast(`Nuevo pedido — ${ubicacionPedido(pedido)}`);
+      },
+      "pedido:actualizado": (pedido: Pedido) => setPedidos((prev) => reemplazarPedidoActivo(prev, pedido)),
+      "producto:actualizado": (producto: Producto) => setProductos((prev) => prev.map((p) => (p.id === producto.id ? producto : p))),
     });
-    socket.on("pedido:nuevo", (pedido: Pedido) => {
-      setPedidos((prev) => [...prev.filter((p) => p.id !== pedido.id), pedido]);
-      // Un pedido de solo bebidas no le toca a cocina: no se anuncia.
-      if (!pedido.items.some((i) => i.estado === "RECIBIDO")) return;
-      showToast(
-        pedido.mesaSesion ? `Nuevo pedido — Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : `Nuevo pedido — Mostrador (${pedido.nombreCliente ?? "cliente"})`
-      );
-    });
-    socket.on("producto:actualizado", (producto: Producto) => {
-      setProductos((prev) => prev.map((p) => (p.id === producto.id ? producto : p)));
-    });
-    socket.on("pedido:actualizado", (pedido: Pedido) => {
-      setPedidos((prev) => {
-        if (pedido.estado === "ENTREGADO" || pedido.estado === "CANCELADO") {
-          return prev.filter((p) => p.id !== pedido.id);
-        }
-        return prev.map((p) => (p.id === pedido.id ? pedido : p));
-      });
-    });
-
-    return () => {
-      socket.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -182,7 +155,7 @@ export default function CocinaPage() {
             </h2>
             <div className="mt-3 space-y-3">
               {itemsPorColumna[columna.estado]?.map((item) => {
-                const atrasado = columna.estado !== "LISTO" && estaAtrasado(item, ahora);
+                const atrasado = estaAtrasado(item, item.pedido.creadoEn, ahora);
                 return (
                   <div
                     key={item.id}

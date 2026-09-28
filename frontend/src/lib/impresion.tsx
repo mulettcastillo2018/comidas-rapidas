@@ -14,8 +14,11 @@ export function useImpresion<T>() {
     document.body.classList.add("imprimiendo");
     const terminar = () => setContenido(null);
     window.addEventListener("afterprint", terminar);
-    window.print();
+    // Un instante para que el contenido (p. ej. imágenes de QR) se pinte antes
+    // de abrir el diálogo de impresión.
+    const espera = setTimeout(() => window.print(), 150);
     return () => {
+      clearTimeout(espera);
       window.removeEventListener("afterprint", terminar);
       document.body.classList.remove("imprimiendo");
     };

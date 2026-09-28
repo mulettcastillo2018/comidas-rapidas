@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
@@ -61,30 +61,26 @@ export default function MesaSesionPage() {
     cargarSolicitudes();
     cargarProductos();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
-    // contra la API en vez de quedarnos con datos viejos en pantalla.
-    socket.on("connect", () => {
-      cargarSesion();
-      cargarSolicitudes();
-      cargarProductos();
+    // Al reconectar (reinicio del servidor, wifi...) se recarga todo desde la
+    // API en vez de quedarse con datos viejos en pantalla.
+    return suscribirEnVivo(token, {
+      connect: () => {
+        cargarSesion();
+        cargarSolicitudes();
+        cargarProductos();
+      },
+      "pedido:nuevo": aplicarPedido,
+      "pedido:actualizado": aplicarPedido,
+      // Comensal nuevo, cambio de mesa o reasignación hecha desde otro equipo.
+      "mesaSesion:nueva": (actualizada: MesaSesion) => {
+        if (actualizada.id === id) setSesion(actualizada);
+      },
+      "producto:actualizado": (producto: Producto) => {
+        setProductos((prev) => prev.map((p) => (p.id === producto.id ? { ...p, ...producto } : p)));
+      },
+      "solicitud:nueva": (s: SolicitudPedido) => setSolicitudes((prev) => [...prev.filter((x) => x.id !== s.id), s]),
+      "solicitud:actualizada": (s: SolicitudPedido) => setSolicitudes((prev) => prev.filter((x) => x.id !== s.id)),
     });
-    socket.on("pedido:nuevo", aplicarPedido);
-    socket.on("pedido:actualizado", aplicarPedido);
-    // Comensal nuevo, cambio de mesa o reasignación hecha desde otro equipo.
-    socket.on("mesaSesion:nueva", (actualizada: MesaSesion) => {
-      if (actualizada.id === id) setSesion(actualizada);
-    });
-    socket.on("producto:actualizado", (producto: Producto) => {
-      setProductos((prev) => prev.map((p) => (p.id === producto.id ? { ...p, ...producto } : p)));
-    });
-    socket.on("solicitud:nueva", (s: SolicitudPedido) => setSolicitudes((prev) => [...prev.filter((x) => x.id !== s.id), s]));
-    socket.on("solicitud:actualizada", (s: SolicitudPedido) => setSolicitudes((prev) => prev.filter((x) => x.id !== s.id)));
-
-    return () => {
-      socket.disconnect();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
 

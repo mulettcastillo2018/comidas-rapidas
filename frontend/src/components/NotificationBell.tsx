@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { createSocket } from "@/lib/socket";
+import { suscribirEnVivo } from "@/lib/socket";
 import { playForTipo, unlockAudio } from "@/lib/notificationSound";
 import { useAuthStore } from "@/store/auth.store";
 import type { Notificacion } from "@/lib/types";
@@ -28,14 +28,14 @@ export function NotificationBell() {
     const cargarNotificaciones = () => apiFetch<Notificacion[]>("/notificaciones", { token }).then(setNotificaciones);
     cargarNotificaciones();
 
-    const socket = createSocket(token);
-    // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
-    // perdernos notificaciones mientras tanto; al reconectar sincronizamos
-    // de nuevo contra la API.
-    socket.on("connect", cargarNotificaciones);
-    socket.on("notificacion:nueva", (n: Notificacion) => {
-      setNotificaciones((prev) => [n, ...prev].slice(0, 50));
-      playForTipo(n.tipo);
+    // Al reconectar (reinicio del servidor, wifi...) se recarga desde la API
+    // por si llegaron notificaciones mientras tanto.
+    const dejarDeEscuchar = suscribirEnVivo(token, {
+      connect: cargarNotificaciones,
+      "notificacion:nueva": (n: Notificacion) => {
+        setNotificaciones((prev) => [n, ...prev].slice(0, 50));
+        playForTipo(n.tipo);
+      },
     });
 
     const desbloquear = () => unlockAudio();
@@ -43,7 +43,7 @@ export function NotificationBell() {
     window.addEventListener("keydown", desbloquear, { once: true });
 
     return () => {
-      socket.disconnect();
+      dejarDeEscuchar();
       window.removeEventListener("click", desbloquear);
       window.removeEventListener("keydown", desbloquear);
     };
