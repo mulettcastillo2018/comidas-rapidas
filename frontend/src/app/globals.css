@@ -51,3 +51,11 @@ body {
   transform: translateY(-1px);
   box-shadow: 0 14px 28px -10px color-mix(in srgb, var(--accent) 70%, transparent);
 }
+
+/* Ver lib/impresion.tsx: al imprimir una precuenta o un comprobante, solo
+   sale ese contenido, no la página completa. */
+@media print {
+  body.imprimiendo > :not(.zona-impresion) {
+    display: none !important;
+  }
+}

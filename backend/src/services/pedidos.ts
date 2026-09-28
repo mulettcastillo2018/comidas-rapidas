@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { ErrorDeNegocio } from "../lib/errores";
+import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { emitPedidoNuevo } from "../realtime/socket";
 import { notificarPorRol } from "./notificaciones";
 
@@ -49,9 +50,32 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
   for (const item of items) {
     const producto = productosPorId.get(item.productoId);
     if (!producto || !producto.isActive) {
-      throw new ErrorDeNegocio("Uno de los productos seleccionados ya no está disponible", 400);
+      throw new ErrorDeNegocio("Uno de los productos seleccionados ya no está en la carta", 400);
+    }
+    // Se revisa aquí (y no solo en la pantalla) porque un pedido del cliente
+    // por QR puede confirmarse un buen rato después de armado.
+    if (!producto.disponible) {
+      throw new ErrorDeNegocio(`${producto.nombre} está agotado en este momento. Quítalo del pedido o cámbialo por otro.`, 409);
     }
   }
+
+  // Lo que no requiere cocina (bebidas, empacados) nace listo para llevar a
+  // la mesa; el pedido toma el estado de su producto menos avanzado.
+  const ahora = new Date();
+  const itemsData = items.map((item) => {
+    const producto = productosPorId.get(item.productoId)!;
+    return {
+      comensalId: item.comensalId ?? null,
+      paraLlevar: item.paraLlevar ?? false,
+      productoId: item.productoId,
+      cantidad: item.cantidad,
+      notas: item.notas ?? null,
+      precioUnitario: producto.precio,
+      tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
+      ...(producto.requiereCocina ? {} : { estado: "LISTO" as const, listoEn: ahora }),
+    };
+  });
+  const estadoInicial = calcularEstadoPedido(itemsData.map((i) => ({ estado: i.estado ?? "RECIBIDO" })));
 
   const created = await tx.pedido.create({
     data: {
@@ -61,21 +85,10 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
       meseroId,
       notasGenerales: notasGenerales ?? null,
       origenCliente,
-      items: {
-        create: items.map((item) => {
-          const producto = productosPorId.get(item.productoId)!;
-          return {
-            comensalId: item.comensalId ?? null,
-            paraLlevar: item.paraLlevar ?? false,
-            productoId: item.productoId,
-            cantidad: item.cantidad,
-            notas: item.notas ?? null,
-            precioUnitario: producto.precio,
-            tiempoPreparacionMinutos: producto.tiempoPreparacionMinutos,
-          };
-        }),
-      },
-      statusLogs: { create: { aEstado: "RECIBIDO", cambiadoPorId: meseroId } },
+      estado: estadoInicial,
+      ...(estadoInicial === "LISTO" ? { listoEn: ahora } : {}),
+      items: { create: itemsData },
+      statusLogs: { create: { aEstado: estadoInicial, cambiadoPorId: meseroId } },
     },
   });
   return created.id;
@@ -88,12 +101,17 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
     const ubicacion = pedidoCompleto.mesaSesion
       ? `Mesa ${pedidoCompleto.mesaSesion.mesa.numero}`
       : `Mostrador — ${pedidoCompleto.nombreCliente ?? "cliente"}`;
-    await notificarPorRol({
-      rol: "COCINA",
-      tipo: "PEDIDO_NUEVO",
-      mensaje: `Nuevo pedido en ${ubicacion} — ${pedidoCompleto.items.length} producto(s)`,
-      pedidoId: pedidoCompleto.id,
-    });
+    // Si todo es de los que no pasan por cocina (p. ej. solo gaseosas), no
+    // hay nada que avisarle a cocina.
+    const paraCocina = pedidoCompleto.items.filter((i) => i.estado === "RECIBIDO").length;
+    if (paraCocina > 0) {
+      await notificarPorRol({
+        rol: "COCINA",
+        tipo: "PEDIDO_NUEVO",
+        mensaje: `Nuevo pedido en ${ubicacion} — ${paraCocina} producto(s)`,
+        pedidoId: pedidoCompleto.id,
+      });
+    }
   }
   return pedidoCompleto;
 }

@@ -32,6 +32,8 @@ export interface Producto {
   categoriaId: string;
   categoria?: Categoria;
   imagenUrl: string | null;
+  // false = no pasa por cocina (bebidas, empacados): nace listo para llevar.
+  requiereCocina: boolean;
   disponible: boolean;
   isActive: boolean;
 }

@@ -98,8 +98,12 @@ solicitudesRouter.post(
     const productosPorId = new Map(productos.map((p) => [p.id, p]));
     for (const item of items) {
       const producto = productosPorId.get(item.productoId);
-      if (!producto || !producto.isActive || !producto.disponible) {
-        res.status(400).json({ error: "Uno de los productos seleccionados ya no está disponible" });
+      if (!producto || !producto.isActive) {
+        res.status(400).json({ error: "Uno de los productos seleccionados ya no está en la carta. Recarga la página." });
+        return;
+      }
+      if (!producto.disponible) {
+        res.status(409).json({ error: `${producto.nombre} se agotó hace un momento. Quítalo de tu pedido o elige otra cosa.` });
         return;
       }
     }

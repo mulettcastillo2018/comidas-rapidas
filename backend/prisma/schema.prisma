@@ -53,6 +53,9 @@ model Producto {
   categoriaId            String
   categoria              Categoria    @relation(fields: [categoriaId], references: [id])
   imagenUrl              String?
+  // false para lo que no se prepara (gaseosas, agua, productos empacados): el
+  // mesero lo toma directo, así que nace "listo" y no ocupa la fila de cocina.
+  requiereCocina         Boolean      @default(true)
   disponible             Boolean      @default(true)
   isActive               Boolean      @default(true)
   createdAt              DateTime     @default(now())

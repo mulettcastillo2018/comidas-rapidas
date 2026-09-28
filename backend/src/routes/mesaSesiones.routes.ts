@@ -4,7 +4,8 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
-import { emitMesaSesionNueva } from "../realtime/socket";
+import { emitMesaSesionCerrada, emitMesaSesionNueva, emitPedidoActualizado } from "../realtime/socket";
+import { pedidoInclude } from "../services/pedidos";
 
 export const mesaSesionesRouter = Router();
 
@@ -118,6 +119,117 @@ mesaSesionesRouter.post(
     const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: sesion.id }, include: sesionInclude });
     emitMesaSesionNueva(sesionCompleta);
     res.status(201).json(sesionCompleta);
+  })
+);
+
+// Solo el mesero que atiende la mesa (o el admin) la modifica, y solo
+// mientras no se haya generado la cuenta: después, la cuenta ya está hecha
+// con esos comensales y esa mesa.
+async function sesionModificable(sesionId: string, usuario: { userId: string; role: string }) {
+  const sesion = await prisma.mesaSesion.findUnique({ where: { id: sesionId }, include: { mesa: true, _count: { select: { comensales: true } } } });
+  if (!sesion) throw new ErrorDeNegocio("Sesión de mesa no encontrada", 404);
+  if (sesion.meseroId !== usuario.userId && usuario.role !== "ADMIN") throw new ErrorDeNegocio("Esta mesa la está atendiendo otro mesero", 403);
+  if (sesion.estado !== "ABIERTA") throw new ErrorDeNegocio("La cuenta de esta mesa ya se generó; no se puede modificar", 409);
+  return sesion;
+}
+
+const agregarComensalSchema = z.object({
+  nombre: z.string().trim().min(1),
+  confirmaSillaExtra: z.boolean().optional().default(false),
+});
+
+// Llega alguien más a una mesa ya abierta: se suma como comensal (para
+// asignarle sus productos). Si ya no caben, igual que al abrir, el mesero
+// confirma que trae una silla adicional.
+mesaSesionesRouter.post(
+  "/:id/comensales",
+  requireAuth,
+  requireMesero,
+  catchAsync(async (req, res) => {
+    const parsed = agregarComensalSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Escribe el nombre del comensal" });
+      return;
+    }
+    const sesion = await sesionModificable(req.params.id, req.user!);
+    const total = sesion._count.comensales + 1;
+    const sillasAdicionales = Math.max(0, total - sesion.mesa.capacidad);
+    if (sillasAdicionales > sesion.sillasAdicionales && !parsed.data.confirmaSillaExtra) {
+      throw new ErrorDeNegocio(
+        `La Mesa ${sesion.mesa.numero} es para ${sesion.mesa.capacidad} y ya está llena. Confirma si vas a traer una silla adicional.`,
+        400
+      );
+    }
+    await prisma.$transaction([
+      prisma.comensal.create({ data: { mesaSesionId: sesion.id, nombre: parsed.data.nombre } }),
+      prisma.mesaSesion.update({ where: { id: sesion.id }, data: { sillasAdicionales } }),
+    ]);
+    const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: sesion.id }, include: sesionInclude });
+    emitMesaSesionNueva(sesionCompleta);
+    res.status(201).json(sesionCompleta);
+  })
+);
+
+const moverSchema = z.object({
+  mesaId: z.string().min(1),
+  confirmaSillaExtra: z.boolean().optional().default(false),
+});
+
+// El grupo se cambia de mesa (más gente, ventana, sol...): se lleva todo lo
+// que ya pidió. La mesa nueva debe estar libre y la vieja queda libre.
+mesaSesionesRouter.put(
+  "/:id/mover",
+  requireAuth,
+  requireMesero,
+  catchAsync(async (req, res) => {
+    const parsed = moverSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Indica a qué mesa se cambian" });
+      return;
+    }
+    const sesion = await sesionModificable(req.params.id, req.user!);
+    const destino = await prisma.mesa.findUnique({ where: { id: parsed.data.mesaId } });
+    if (!destino || !destino.activa) throw new ErrorDeNegocio("Mesa no encontrada", 404);
+    if (destino.id === sesion.mesaId) throw new ErrorDeNegocio("Ya están en esa mesa", 400);
+    if (destino.meseroAsignadoId && destino.meseroAsignadoId !== sesion.meseroId && req.user!.role !== "ADMIN") {
+      throw new ErrorDeNegocio(`La Mesa ${destino.numero} está asignada a otro mesero`, 403);
+    }
+    const sillasAdicionales = Math.max(0, sesion._count.comensales - destino.capacidad);
+    if (sillasAdicionales > 0 && !parsed.data.confirmaSillaExtra) {
+      throw new ErrorDeNegocio(
+        `La Mesa ${destino.numero} es para ${destino.capacidad} y son ${sesion._count.comensales}. Confirma si vas a llevar ${sillasAdicionales} silla(s) adicional(es).`,
+        400
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const ocupada = await tx.mesa.updateMany({ where: { id: destino.id, estado: "LIBRE" }, data: { estado: "OCUPADA" } });
+      if (ocupada.count === 0) throw new ErrorDeNegocio(`La Mesa ${destino.numero} ya está ocupada`, 409);
+      // Condicionado a que siga abierta y en la mesa de origen: si alguien la
+      // movió o le generó la cuenta mientras tanto, se deshace todo (si no,
+      // quedaría una mesa "ocupada" sin nadie).
+      const movida = await tx.mesaSesion.updateMany({
+        where: { id: sesion.id, mesaId: sesion.mesaId, estado: "ABIERTA" },
+        data: { mesaId: destino.id, sillasAdicionales },
+      });
+      if (movida.count === 0) throw new ErrorDeNegocio("Esta mesa cambió mientras tanto. Actualiza e intenta de nuevo.", 409);
+      await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
+      // Los pedidos del cliente por QR que seguían esperando en la mesa vieja
+      // se van con el grupo.
+      await tx.solicitudPedido.updateMany({ where: { mesaId: sesion.mesaId, estado: "PENDIENTE" }, data: { mesaId: destino.id } });
+    });
+
+    // Grillas: la mesa vieja se libera y la sesión aparece en la nueva.
+    // Cocina y pantalla: sus pedidos en curso ahora dicen la mesa nueva.
+    emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id });
+    const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: sesion.id }, include: sesionInclude });
+    emitMesaSesionNueva(sesionCompleta);
+    const enCurso = await prisma.pedido.findMany({
+      where: { mesaSesionId: sesion.id, estado: { in: ["RECIBIDO", "EN_PREPARACION", "LISTO"] } },
+      include: pedidoInclude,
+    });
+    for (const pedido of enCurso) emitPedidoActualizado(pedido);
+    res.json(sesionCompleta);
   })
 );
 

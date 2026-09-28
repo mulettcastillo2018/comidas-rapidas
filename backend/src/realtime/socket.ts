@@ -48,9 +48,16 @@ export function createRealtimeServer(httpServer: HttpServer): SocketIOServer {
   return io;
 }
 
-// Emite un pedido nuevo a la pantalla de cocina y a la pantalla pública.
+// Emite un pedido nuevo a cocina, a la pantalla pública y a los meseros (lo
+// que no pasa por cocina, como las bebidas, nace listo para llevar a la mesa).
 export function emitPedidoNuevo(pedido: unknown) {
-  ioInstance?.to("cocina").to("pantalla").emit("pedido:nuevo", pedido);
+  ioInstance?.to("cocina").to("pantalla").to("meseros").emit("pedido:nuevo", pedido);
+}
+
+// Cocina marca un producto como agotado (o de nuevo disponible): los meseros
+// lo ven al instante en su lista en vez de ofrecerlo y que luego falle.
+export function emitProductoActualizado(producto: unknown) {
+  ioInstance?.to("meseros").to("cocina").emit("producto:actualizado", producto);
 }
 
 // Emite un cambio de estado de pedido a meseros (para que sepan cuándo

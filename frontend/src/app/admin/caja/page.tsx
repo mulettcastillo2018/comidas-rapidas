@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, Printer } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatoFechaHora, formatoPesos } from "@/lib/formato";
+import { useImpresion, ZonaImpresion } from "@/lib/impresion";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import type { CajaActual, CierreCaja } from "@/lib/types";
@@ -84,7 +85,7 @@ export default function AdminCajaPage() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recienCerrado, setRecienCerrado] = useState<CierreCaja | null>(null);
-  const [imprimiendo, setImprimiendo] = useState<CierreCaja | null>(null);
+  const [imprimiendo, setImprimiendo] = useImpresion<CierreCaja>();
 
   async function cargar() {
     if (!token) return;
@@ -100,14 +101,6 @@ export default function AdminCajaPage() {
     cargar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-
-  useEffect(() => {
-    if (!imprimiendo) return;
-    const quitar = () => setImprimiendo(null);
-    window.addEventListener("afterprint", quitar);
-    window.print();
-    return () => window.removeEventListener("afterprint", quitar);
-  }, [imprimiendo]);
 
   const hayMovimientos = Boolean(actual && actual.cuentasPagadas + actual.cuentasPerdidas > 0);
   const esperado = actual ? (baseInicial ?? 0) + actual.totalEfectivo : 0;
@@ -150,12 +143,12 @@ export default function AdminCajaPage() {
   return (
     <>
       {imprimiendo ? (
-        <div className="hidden print:block">
+        <ZonaImpresion>
           <Comprobante cierre={imprimiendo} />
-        </div>
+        </ZonaImpresion>
       ) : null}
 
-      <div className={`space-y-8 ${imprimiendo ? "print:hidden" : ""}`}>
+      <div className="space-y-8">
         <p className="text-sm text-muted-foreground">
           Al terminar el turno, cuenta el efectivo que hay en la caja y escríbelo aquí: el sistema lo compara con lo
           cobrado en efectivo desde el último cierre y te dice si cuadra.

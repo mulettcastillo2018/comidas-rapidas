@@ -17,6 +17,7 @@ interface ProductoFormValues {
   tiempoPreparacionMinutos: number;
   categoriaId: string;
   imagenUrl: string | null;
+  requiereCocina: boolean;
   disponible: boolean;
   isActive: boolean;
 }
@@ -27,6 +28,7 @@ const EMPTY_VALUES: Omit<ProductoFormValues, "categoriaId"> = {
   precio: 0,
   tiempoPreparacionMinutos: 10,
   imagenUrl: null,
+  requiereCocina: true,
   disponible: true,
   isActive: true,
 };
@@ -120,6 +122,20 @@ function ProductoForm({
       <label className="flex items-center gap-2 text-sm text-muted-foreground">
         <input type="checkbox" checked={values.disponible} onChange={(e) => update("disponible", e.target.checked)} />
         Disponible hoy
+      </label>
+      <label className="flex items-start gap-2 text-sm text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={values.requiereCocina}
+          onChange={(e) => update("requiereCocina", e.target.checked)}
+          className="mt-1"
+        />
+        <span>
+          Pasa por cocina
+          <span className="block text-xs">
+            Desmárcalo en bebidas o productos listos para servir: el mesero los lleva directo y no ocupan la fila de cocina.
+          </span>
+        </span>
       </label>
       <div className="flex gap-2">
         <button
@@ -279,7 +295,8 @@ export default function AdminProductosPage() {
                     {!producto.disponible ? <span className="ml-2 text-xs text-red-600">Agotado hoy</span> : null}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {producto.categoria?.nombre} · {producto.tiempoPreparacionMinutos} min de preparación
+                    {producto.categoria?.nombre} ·{" "}
+                    {producto.requiereCocina ? `${producto.tiempoPreparacionMinutos} min de preparación` : "No pasa por cocina"}
                   </p>
                   <p className="text-sm font-semibold">{formatCOP(producto.precio)}</p>
                 </div>

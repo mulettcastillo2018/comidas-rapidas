@@ -7,7 +7,8 @@ import { createSocket } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
-import type { Pedido, PedidoItem } from "@/lib/types";
+import { PanelDisponibilidad } from "@/components/cocina/PanelDisponibilidad";
+import type { Pedido, PedidoItem, Producto } from "@/lib/types";
 
 const COLUMNAS = [
   { estado: "RECIBIDO" as const, titulo: "Recibido" },
@@ -40,22 +41,34 @@ export default function CocinaPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const [ahora, setAhora] = useState(() => Date.now());
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [cambiandoProductoId, setCambiandoProductoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
     const cargarPedidos = () => apiFetch<Pedido[]>("/pedidos/activos", { token }).then(setPedidos);
+    const cargarProductos = () => apiFetch<Producto[]>("/productos", { token }).then(setProductos);
     cargarPedidos();
+    cargarProductos();
 
     const socket = createSocket(token);
     // Si el socket se desconecta (reinicio del servidor, wifi, etc.) podemos
     // perdernos eventos mientras tanto; al reconectar volvemos a sincronizar
     // contra la API en vez de quedarnos con pedidos viejos en pantalla.
-    socket.on("connect", cargarPedidos);
+    socket.on("connect", () => {
+      cargarPedidos();
+      cargarProductos();
+    });
     socket.on("pedido:nuevo", (pedido: Pedido) => {
-      setPedidos((prev) => [...prev, pedido]);
+      setPedidos((prev) => [...prev.filter((p) => p.id !== pedido.id), pedido]);
+      // Un pedido de solo bebidas no le toca a cocina: no se anuncia.
+      if (!pedido.items.some((i) => i.estado === "RECIBIDO")) return;
       showToast(
         pedido.mesaSesion ? `Nuevo pedido — Mesa ${pedido.mesaSesion.mesa?.numero ?? "?"}` : `Nuevo pedido — Mostrador (${pedido.nombreCliente ?? "cliente"})`
       );
+    });
+    socket.on("producto:actualizado", (producto: Producto) => {
+      setProductos((prev) => prev.map((p) => (p.id === producto.id ? producto : p)));
     });
     socket.on("pedido:actualizado", (pedido: Pedido) => {
       setPedidos((prev) => {
@@ -84,6 +97,8 @@ export default function CocinaPage() {
     for (const pedido of pedidos) {
       for (const item of pedido.items) {
         if (item.estado === "CANCELADO") continue;
+        // Bebidas y empacados los despacha el mesero directo.
+        if (item.producto && !item.producto.requiereCocina) continue;
         if (!grupos[item.estado]) continue;
         grupos[item.estado].push({ ...item, pedido });
       }
@@ -115,6 +130,27 @@ export default function CocinaPage() {
     }
   }
 
+  async function cambiarDisponibilidad(producto: Producto) {
+    if (!token) return;
+    const nuevo = !producto.disponible;
+    if (!nuevo && !confirm(`¿Marcar ${producto.nombre} como agotado? Los meseros ya no podrán pedirlo y sale de la carta del QR.`)) return;
+    setError(null);
+    setCambiandoProductoId(producto.id);
+    try {
+      const actualizado = await apiFetch<Producto>(`/productos/${producto.id}/disponible`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({ disponible: nuevo }),
+      });
+      setProductos((prev) => prev.map((p) => (p.id === actualizado.id ? actualizado : p)));
+      showToast(nuevo ? `${producto.nombre} disponible de nuevo` : `${producto.nombre} marcado como agotado`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo cambiar la disponibilidad.");
+    } finally {
+      setCambiandoProductoId(null);
+    }
+  }
+
   if (!user || (user.role !== "COCINA" && user.role !== "ADMIN")) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-10 text-center sm:px-6">
@@ -131,6 +167,12 @@ export default function CocinaPage() {
         verdad va atrasado o si ya salió y falta confirmarlo aquí.
       </p>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+
+      <PanelDisponibilidad
+        productos={productos}
+        cambiando={cambiandoProductoId}
+        onCambiar={cambiarDisponibilidad}
+      />
 
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         {COLUMNAS.map((columna) => (
