@@ -13,12 +13,13 @@ const DIAS_VIGENCIA_NOTIFICACION = 7;
 const DIAS_VIGENCIA_TELEFONO = 30;
 
 export function iniciarLimpiezaPeriodica() {
-  const correr = () => limpiar().catch((err) => console.error("Error en la limpieza periódica:", err));
+  const correr = () => ejecutarLimpieza().catch((err) => console.error("Error en la limpieza periódica:", err));
   correr();
   setInterval(correr, INTERVALO_MS);
 }
 
-async function limpiar() {
+// Exportada también para las pruebas, que la corren sin esperar el intervalo.
+export async function ejecutarLimpieza() {
   await vencerSolicitudesViejas();
   await prisma.notificacion.deleteMany({
     where: { creadaEn: { lt: new Date(Date.now() - DIAS_VIGENCIA_NOTIFICACION * 24 * 60 * 60_000) } },

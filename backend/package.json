@@ -8,7 +8,11 @@
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "db:verificar": "prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code",
+    "test": "tsx --test tests/unit/*.test.ts",
+    "test:e2e": "tsx tests/e2e/run.ts",
+    "test:tipos": "tsc -p tests"
   },
   "dependencies": {
     "@prisma/client": "^6",
@@ -32,6 +36,7 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^20",
     "prisma": "^6",
+    "socket.io-client": "^4.8.4",
     "tsx": "^4.19.2",
     "typescript": "^5"
   }
