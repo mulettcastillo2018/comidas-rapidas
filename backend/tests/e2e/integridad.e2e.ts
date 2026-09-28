@@ -1,5 +1,5 @@
 import { prisma } from "../../src/lib/prisma";
-import { conectar, despachar, estados, login, req, sesiones, verificar } from "./_utilidades";
+import { conectar, despachar, estados, login, req, sesiones, supervisorDePrueba, verificar } from "./_utilidades";
 import { limpiar, registroDeCreados } from "./_limpieza";
 
 // Operaciones simultáneas que antes podían duplicar o romper datos, y
@@ -43,9 +43,10 @@ export async function probarIntegridad() {
     verificar(tarde.status === 409, `cancelar después de generar la cuenta: rechazado (${tarde.status})`);
 
     console.log("\n[integridad] Pagar y 'se fue sin pagar' al mismo tiempo");
+    const supervisor = await supervisorDePrueba(t.admin, creados);
     const cierres = await Promise.all([
       req("PUT", `/facturas/${factura.id}/pagar`, { metodoPago: "EFECTIVO" }, t.mesero),
-      req("PUT", `/facturas/${factura.id}/marcar-perdida`, undefined, t.mesero),
+      req("PUT", `/facturas/${factura.id}/marcar-perdida`, { pin: supervisor.pin }, t.mesero),
     ]);
     verificar(estados(cierres) === "200,409", `solo uno se aplica (${estados(cierres)})`);
     verificar((await prisma.mesa.findUnique({ where: { id: mesa.id } }))?.estado === "LIBRE", "la mesa quedó libre");

@@ -64,6 +64,21 @@ export async function sesiones() {
   return { admin, mesero, cocina, meseroId };
 }
 
+// Admin temporal con clave de supervisor, para autorizar acciones en las
+// pruebas sin tocar la clave de los admins reales. Se borra en la limpieza.
+export async function supervisorDePrueba(tokenAdmin: string, creados: { usuarios: string[] }) {
+  const email = `supervisor_${Date.now()}_${Math.floor(Math.random() * 1000)}@comidasrapidas.test`;
+  const usuario = exigir(
+    await req("POST", "/usuarios", { nombre: "Supervisor", apellido: "E2E", email, password: process.env.E2E_PASSWORD, role: "ADMIN" }, tokenAdmin),
+    "Crear admin de prueba"
+  );
+  creados.usuarios.push(usuario.id);
+  const token = await login(email);
+  const pin = String(100000 + Math.floor(Math.random() * 900000));
+  exigir(await req("PUT", "/usuarios/me/pin", { pin }, token), "Configurar clave de supervisor");
+  return { id: usuario.id as string, token, pin };
+}
+
 export async function conectar(token: string): Promise<Socket> {
   const socket = io(API_URL, { auth: { token }, transports: ["websocket"] });
   await new Promise<void>((resolve) => socket.on("connect", () => resolve()));

@@ -15,6 +15,20 @@ export function esDiaValido(dia: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(dia) && !Number.isNaN(new Date(`${dia}T00:00:00${DESFASE}`).getTime());
 }
 
+const formatoHora = new Intl.DateTimeFormat("en-US", { timeZone: ZONA_HORARIA, hour: "numeric", hourCycle: "h23" });
+const formatoDiaSemana = new Intl.DateTimeFormat("en-US", { timeZone: ZONA_HORARIA, weekday: "short" });
+const DIAS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Hora local (0–23) de una fecha.
+export function horaLocal(fecha: Date): number {
+  return Number(formatoHora.format(fecha)) % 24;
+}
+
+// Día de la semana local: 0 = domingo … 6 = sábado.
+export function diaSemanaLocal(fecha: Date): number {
+  return DIAS.indexOf(formatoDiaSemana.format(fecha));
+}
+
 // Rango [inicio del día `desde`, inicio del día siguiente a `hasta`) en hora local.
 export function rangoDeDias(desde: string, hasta: string): { inicio: Date; fin: Date } {
   const inicio = new Date(`${desde}T00:00:00${DESFASE}`);

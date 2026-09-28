@@ -9,6 +9,9 @@ import { emitPedidoActualizado } from "../realtime/socket";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { enlaces, notificarUsuarios, notificarPorRol } from "../services/notificaciones";
 import { crearPedido, pedidoInclude } from "../services/pedidos";
+import { avisarAutorizacion, exigirAutorizacion } from "../services/autorizacion";
+import { devolverStock, revisarStock } from "../services/inventario";
+import { nombreCompleto } from "../lib/nombre";
 
 export const pedidosRouter = Router();
 
@@ -87,7 +90,24 @@ pedidosRouter.post(
 // TODOS sus productos están listos) y la cancelación del ticket completo.
 // Avanzar producto por producto se hace en PUT /:id/items/:itemId/estado.
 const ESTADOS_PEDIDO_PERMITIDOS = ["ENTREGADO", "CANCELADO"] as const;
-const cambiarEstadoPedidoSchema = z.object({ estado: z.enum(ESTADOS_PEDIDO_PERMITIDOS) });
+// pin: clave de supervisor, cuando la cancelación necesita autorización.
+const cambiarEstadoPedidoSchema = z.object({ estado: z.enum(ESTADOS_PEDIDO_PERMITIDOS), pin: z.string().optional() });
+
+interface ItemConProducto {
+  estado: string;
+  producto: { requiereCocina: boolean };
+}
+
+// Cancelar algo en lo que cocina ya invirtió trabajo e insumos (merma) no lo
+// decide el mesero solo: necesita la clave de un admin.
+const cancelarNecesitaClave = (item: ItemConProducto) =>
+  item.producto.requiereCocina && (item.estado === "EN_PREPARACION" || item.estado === "LISTO");
+
+// Vuelve al inventario lo cancelado que no se alcanzó a usar: lo que no pasa
+// por cocina (una gaseosa sin abrir) o lo que cocina todavía no empezaba.
+const vuelveAlInventario = (item: ItemConProducto) => !item.producto.requiereCocina || item.estado === "RECIBIDO";
+
+const MOTIVO_CLAVE = "Cancelar productos que cocina ya empezó";
 
 const TRANSICIONES_PEDIDO_VALIDAS: Record<string, string[]> = {
   RECIBIDO: ["CANCELADO"],
@@ -106,7 +126,10 @@ pedidosRouter.put(
     }
     const { estado } = parsed.data;
 
-    const pedido = await prisma.pedido.findUnique({ where: { id: req.params.id }, include: { items: true, mesaSesion: true } });
+    const pedido = await prisma.pedido.findUnique({
+      where: { id: req.params.id },
+      include: { items: { include: { producto: { select: { requiereCocina: true } } } }, mesaSesion: true },
+    });
     if (!pedido) {
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
@@ -132,6 +155,9 @@ pedidosRouter.put(
     // dejan el mismo rastro por producto (lo usa el reporte de cancelaciones).
     const enCurso = pedido.items.filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO");
     const yaEnCocina = estado === "CANCELADO" && enCurso.some((i) => i.estado === "EN_PREPARACION" || i.estado === "LISTO");
+    const necesitanClave = estado === "CANCELADO" ? enCurso.filter(cancelarNecesitaClave) : [];
+    const autorizadoPorId = necesitanClave.length > 0 ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE) : null;
+    const devolver = estado === "CANCELADO" ? enCurso.filter(vuelveAlInventario) : [];
 
     await prisma.$transaction(async (tx) => {
       await bloquearPedido(tx, pedido.id);
@@ -145,8 +171,15 @@ pedidosRouter.put(
         throw new ErrorDeNegocio("El pedido cambió mientras tanto (alguien entregó o canceló un producto). Revisa y vuelve a intentarlo.", 409);
       }
       await tx.pedidoItemStatusLog.createMany({
-        data: enCurso.map((i) => ({ pedidoItemId: i.id, deEstado: i.estado, aEstado: estado, cambiadoPorId: req.user!.userId })),
+        data: enCurso.map((i) => ({
+          pedidoItemId: i.id,
+          deEstado: i.estado,
+          aEstado: estado,
+          cambiadoPorId: req.user!.userId,
+          autorizadoPorId: necesitanClave.includes(i) ? autorizadoPorId : null,
+        })),
       });
+      await devolverStock(tx, devolver.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })), req.user!.userId);
 
       const nuevoEstado = calcularEstadoPedido(pedido.items.map((i) => (enCurso.includes(i) ? { estado } : i)));
       await tx.pedido.update({
@@ -160,10 +193,18 @@ pedidosRouter.put(
 
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
+    if (devolver.length > 0) await revisarStock(devolver.map((i) => i.productoId));
+    const ubicacion = pedidoActualizado?.mesaSesion
+      ? `Mesa ${pedidoActualizado.mesaSesion.mesa.numero}`
+      : `Mostrador — ${pedidoActualizado?.nombreCliente ?? "cliente"}`;
+    if (autorizadoPorId && req.user!.role !== "ADMIN") {
+      await avisarAutorizacion(
+        autorizadoPorId,
+        `${await nombreDe(req.user!.userId)} canceló lo que faltaba de un pedido de ${ubicacion} que cocina ya había empezado (con clave de ${await nombreDe(autorizadoPorId)}).`,
+        pedidoActualizado?.mesaSesion ? enlaces.mesaAbierta(pedidoActualizado.mesaSesion.id) : undefined
+      );
+    }
     if (yaEnCocina && pedidoActualizado) {
-      const ubicacion = pedidoActualizado.mesaSesion
-        ? `Mesa ${pedidoActualizado.mesaSesion.mesa.numero}`
-        : `Mostrador — ${pedidoActualizado.nombreCliente ?? "cliente"}`;
       await notificarPorRol({
         rol: "COCINA",
         tipo: "ITEM_CANCELADO",
@@ -180,7 +221,7 @@ pedidosRouter.put(
 // el mesero entrega producto por producto (LISTO->ENTREGADO) sin tener que
 // esperar a que los demás productos del mismo pedido también estén listos.
 const ESTADOS_ITEM_PERMITIDOS = ["EN_PREPARACION", "LISTO", "ENTREGADO", "CANCELADO"] as const;
-const cambiarEstadoItemSchema = z.object({ estado: z.enum(ESTADOS_ITEM_PERMITIDOS) });
+const cambiarEstadoItemSchema = z.object({ estado: z.enum(ESTADOS_ITEM_PERMITIDOS), pin: z.string().optional() });
 
 const TRANSICIONES_ITEM_VALIDAS: Record<string, string[]> = {
   RECIBIDO: ["EN_PREPARACION", "CANCELADO"],
@@ -201,7 +242,7 @@ pedidosRouter.put(
 
     const item = await prisma.pedidoItem.findUnique({
       where: { id: req.params.itemId },
-      include: { pedido: { include: { mesaSesion: true } } },
+      include: { pedido: { include: { mesaSesion: true } }, producto: { select: { requiereCocina: true, nombre: true } } },
     });
     if (!item || item.pedidoId !== req.params.id) {
       res.status(404).json({ error: "Producto del pedido no encontrado" });
@@ -226,6 +267,9 @@ pedidosRouter.put(
     // ella — avisamos para que no se queden preparando o esperando algo que
     // el mesero ya canceló.
     const yaEstabaEnCocina = estado === "CANCELADO" && (item.estado === "EN_PREPARACION" || item.estado === "LISTO");
+    const autorizadoPorId =
+      estado === "CANCELADO" && cancelarNecesitaClave(item) ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE) : null;
+    const devolver = estado === "CANCELADO" && vuelveAlInventario(item);
 
     const timestamps: Record<string, Date> = {};
     if (estado === "EN_PREPARACION") timestamps.iniciadoEn = new Date();
@@ -238,8 +282,9 @@ pedidosRouter.put(
       const cambiado = await tx.pedidoItem.updateMany({ where: { id: item.id, estado: item.estado }, data: { estado, ...timestamps } });
       if (cambiado.count === 0) throw new ErrorDeNegocio("Este producto cambió de estado mientras tanto. Actualiza e intenta de nuevo.", 409);
       await tx.pedidoItemStatusLog.create({
-        data: { pedidoItemId: item.id, deEstado: item.estado, aEstado: estado, cambiadoPorId: req.user!.userId },
+        data: { pedidoItemId: item.id, deEstado: item.estado, aEstado: estado, cambiadoPorId: req.user!.userId, autorizadoPorId },
       });
+      if (devolver) await devolverStock(tx, [{ productoId: item.productoId, cantidad: item.cantidad, pedidoItemId: item.id }], req.user!.userId);
 
       // Recalcular el agregado del pedido a partir de sus ítems.
       const todosLosItems = await tx.pedidoItem.findMany({ where: { pedidoId: item.pedidoId } });
@@ -292,6 +337,18 @@ pedidosRouter.put(
         enlace: enlaces.cocina(pedidoActualizado.id),
       });
     }
+    if (devolver) await revisarStock([item.productoId]);
+    if (autorizadoPorId && req.user!.role !== "ADMIN") {
+      await avisarAutorizacion(
+        autorizadoPorId,
+        `${await nombreDe(req.user!.userId)} canceló ${item.cantidad}× ${item.producto.nombre} de ${ubicacion} que cocina ya había empezado (con clave de ${await nombreDe(autorizadoPorId)}).`,
+        pedidoActualizado?.mesaSesion ? enlaces.mesaAbierta(pedidoActualizado.mesaSesion.id) : undefined
+      );
+    }
     res.json(pedidoActualizado);
   })
 );
+
+async function nombreDe(userId: string) {
+  return nombreCompleto(await prisma.user.findUnique({ where: { id: userId }, select: { nombre: true, apellido: true } }));
+}

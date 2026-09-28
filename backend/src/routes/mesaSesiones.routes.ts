@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -112,6 +113,9 @@ mesaSesionesRouter.post(
           meseroId: req.user!.userId,
           nombreResponsable,
           sillasAdicionales,
+          // Para el QR de "¿cómo te atendimos?" de la precuenta (aleatorio:
+          // que nadie califique mesas ajenas adivinando el código).
+          codigoEncuesta: randomBytes(9).toString("base64url"),
           comensales: { create: comensales.map((nombre) => ({ nombre })) },
         },
       });

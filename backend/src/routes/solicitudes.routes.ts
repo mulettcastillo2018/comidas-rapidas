@@ -7,7 +7,7 @@ import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.mid
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { crearLimitador } from "../lib/limitador";
-import { productoPublico } from "../lib/datosInternos";
+import { productoParaClientes } from "../lib/datosInternos";
 import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
 import { cobroSchema, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
@@ -22,7 +22,8 @@ const limitadorPorIp = crearLimitador(30, 10 * 60_000);
 
 const solicitudInclude = {
   mesa: { select: { id: true, numero: true } },
-  items: { include: { producto: productoPublico } },
+  // También es la respuesta pública al cliente que pide por QR.
+  items: { include: { producto: productoParaClientes } },
   resueltaPor: { select: { id: true, nombre: true, apellido: true } },
 };
 

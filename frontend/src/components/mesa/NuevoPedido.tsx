@@ -14,6 +14,12 @@ export interface ItemBorrador {
   notas: string;
 }
 
+// Con inventario y pocas unidades: se le muestra al mesero para que no
+// ofrezca lo que no hay.
+function quedanPocas(p: Producto) {
+  return Boolean(p.controlaStock) && (p.stock ?? 0) > 0 && (p.stock ?? 0) <= Math.max(p.stockMinimo ?? 0, 5);
+}
+
 // "Para" del producto: un comensal, "compartir" (para la mesa) o "llevar"
 // (para alguien que no está en la mesa).
 const COMPARTIR = "compartir";
@@ -102,7 +108,7 @@ export function NuevoPedido({
                 <optgroup key={categoria} label={categoria}>
                   {lista.map((p) => (
                     <option key={p.id} value={p.id} disabled={!p.disponible}>
-                      {p.nombre} — {formatoPesos(p.precio)} {!p.disponible ? "(agotado)" : ""}
+                      {p.nombre} — {formatoPesos(p.precio)} {!p.disponible ? "(agotado)" : quedanPocas(p) ? `(quedan ${p.stock})` : ""}
                     </option>
                   ))}
                 </optgroup>
@@ -111,6 +117,9 @@ export function NuevoPedido({
           </div>
           {seleccionado && !seleccionado.requiereCocina ? (
             <p className="mt-1 text-[11px] text-muted-foreground">No pasa por cocina: queda listo para que lo lleves.</p>
+          ) : null}
+          {seleccionado && quedanPocas(seleccionado) ? (
+            <p className="mt-1 text-[11px] font-semibold text-amber-700">Solo quedan {seleccionado.stock}.</p>
           ) : null}
         </div>
         <div>

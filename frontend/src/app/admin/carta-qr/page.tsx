@@ -6,28 +6,13 @@ import { AlertTriangle, Printer } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useImpresion, ZonaImpresion } from "@/lib/impresion";
 import { ordenarMesas } from "@/lib/mesas";
+import { esDireccionLocal, urlPublica } from "@/lib/urlPublica";
 import { useAuthStore } from "@/store/auth.store";
 import type { Mesa } from "@/lib/types";
 
 // Los QR impresos deben apuntar a la dirección pública definitiva: si
 // apuntan a localhost o a la IP del wifi, dejan de funcionar al publicar el
 // sitio y habría que reimprimirlos todos.
-function baseUrl(): string {
-  return (process.env.NEXT_PUBLIC_URL_PUBLICA || window.location.origin).replace(/\/$/, "");
-}
-
-function esDireccionLocal(url: string): boolean {
-  const host = new URL(url).hostname;
-  return (
-    host === "localhost" ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    host.endsWith(".local")
-  );
-}
-
 function urlCarta(base: string, seleccion: string): string {
   if (seleccion === "mostrador") return `${base}/carta?recoger=1`;
   if (seleccion) return `${base}/carta?mesa=${seleccion}`;
@@ -49,7 +34,7 @@ export default function AdminCartaQrPage() {
   const [imprimiendo, setImprimiendo] = useImpresion<QrImprimible[]>();
 
   useEffect(() => {
-    setBase(baseUrl());
+    setBase(urlPublica());
     if (!token) return;
     apiFetch<Mesa[]>("/mesas", { token }).then((data) => setMesas(ordenarMesas(data)));
   }, [token]);

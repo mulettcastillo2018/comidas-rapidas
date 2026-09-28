@@ -15,6 +15,10 @@ const TIPO_LABEL: Record<string, string> = {
   ITEM_LISTO: "Listo para entregar",
   SOLICITUD_PEDIDO_CLIENTE: "Pedido del cliente",
   ITEM_CANCELADO: "Producto cancelado",
+  AUTORIZACION: "Autorización",
+  STOCK: "Inventario",
+  LLAMADO_MESA: "Te llaman",
+  OPINION: "Opinión de un cliente",
 };
 
 // A dónde lleva el clic. Las notificaciones nuevas traen el destino exacto
@@ -29,6 +33,11 @@ function destino(n: Notificacion, rol: UserRole): string {
       return n.pedidoId ? `/cocina?pedido=${n.pedidoId}` : "/cocina";
     case "SOLICITUD_PEDIDO_CLIENTE":
       return rol === "ADMIN" && n.mensaje.startsWith("Pedido de mostrador") ? "/admin/mostrador" : "/mesero";
+    case "STOCK":
+      return rol === "ADMIN" ? "/admin/inventario" : "/cocina";
+    case "AUTORIZACION":
+    case "OPINION":
+      return "/admin/reportes";
     default:
       return "/mesero";
   }

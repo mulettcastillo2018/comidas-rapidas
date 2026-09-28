@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useAuthStore } from "@/store/auth.store";
 import { ReporteVentasVista } from "@/components/reportes/ReporteVentasVista";
 import { ReporteTiemposCocina } from "@/components/reportes/ReporteTiemposCocina";
+import { ReporteOpiniones } from "@/components/reportes/ReporteOpiniones";
 
 const VISTAS = [
   { id: "ventas", label: "Ventas" },
+  { id: "opiniones", label: "Opiniones" },
   { id: "tiempos", label: "Tiempos de cocina" },
 ] as const;
 
@@ -29,7 +31,13 @@ export default function AdminReportesPage() {
           </button>
         ))}
       </div>
-      {vista === "ventas" ? <ReporteVentasVista token={token} /> : <ReporteTiemposCocina token={token} />}
+      {vista === "ventas" ? (
+        <ReporteVentasVista token={token} />
+      ) : vista === "opiniones" ? (
+        <ReporteOpiniones token={token} />
+      ) : (
+        <ReporteTiemposCocina token={token} />
+      )}
     </div>
   );
 }

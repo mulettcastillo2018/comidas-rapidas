@@ -1,5 +1,5 @@
 import { prisma } from "../../src/lib/prisma";
-import { esperar, req, sesiones, verificar } from "./_utilidades";
+import { esperar, req, sesiones, supervisorDePrueba, verificar } from "./_utilidades";
 import { limpiar, registroDeCreados } from "./_limpieza";
 
 // La notificación más reciente de un usuario que cumpla la condición.
@@ -39,7 +39,8 @@ export async function probarNotificaciones() {
     verificar(nuevo?.enlace === `/cocina?pedido=${pedido.id}`, `pedido nuevo (${nuevo?.enlace})`);
     const [itemA, itemB] = pedido.items;
     await req("PUT", `/pedidos/${pedido.id}/items/${itemB.id}/estado`, { estado: "EN_PREPARACION" }, t.cocina);
-    await req("PUT", `/pedidos/${pedido.id}/items/${itemB.id}/estado`, { estado: "CANCELADO" }, t.mesero);
+    const supervisor = await supervisorDePrueba(t.admin, creados);
+    await req("PUT", `/pedidos/${pedido.id}/items/${itemB.id}/estado`, { estado: "CANCELADO", pin: supervisor.pin }, t.mesero);
     const cancelado = await ultima(cocinaId, { tipo: "ITEM_CANCELADO", pedidoId: pedido.id });
     verificar(cancelado?.enlace === `/cocina?pedido=${pedido.id}`, `producto cancelado (${cancelado?.enlace})`);
 

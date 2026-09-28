@@ -4,7 +4,9 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { nombreCompleto } from "../lib/nombre";
-import { diaLocal, esDiaValido, rangoDeDias } from "../lib/fechas";
+import { diaLocal, diaSemanaLocal, esDiaValido, horaLocal, rangoDeDias } from "../lib/fechas";
+
+const NOMBRES_DIA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 export const reportesRouter = Router();
 
@@ -61,11 +63,12 @@ reportesRouter.get(
       return;
     }
 
-    const [facturas, cancelados] = await Promise.all([
+    const [facturas, cancelados, pedidosDelRango, visitas, mesasActivas] = await Promise.all([
       prisma.factura.findMany({
         where: { estado: { in: ["PAGADA", "PERDIDA"] }, pagadaEn: { gte: inicio, lt: fin } },
         include: {
           cerradaPor: personaSelect,
+          autorizadaPor: personaSelect,
           pagos: { select: { metodo: true, monto: true } },
           mesaSesion: { include: { mesa: true, mesero: personaSelect, pedidos: { include: { items: itemsConProducto } } } },
           pedido: { include: { mesero: personaSelect, items: itemsConProducto } },
@@ -76,10 +79,28 @@ reportesRouter.get(
         where: { aEstado: "CANCELADO", cambiadoEn: { gte: inicio, lt: fin } },
         include: {
           cambiadoPor: personaSelect,
+          autorizadoPor: personaSelect,
           pedidoItem: { include: { producto: { select: { nombre: true } }, pedido: { include: { mesaSesion: { include: { mesa: true } } } } } },
         },
         orderBy: { cambiadoEn: "asc" },
       }),
+      // Demanda: cuándo llegan los pedidos (no cuándo se cobran).
+      prisma.pedido.findMany({
+        where: { creadoEn: { gte: inicio, lt: fin } },
+        select: { creadoEn: true, items: { select: { cantidad: true, precioUnitario: true, estado: true } } },
+      }),
+      // Rotación: visitas a mesas que terminaron en el rango.
+      prisma.mesaSesion.findMany({
+        where: { estado: "CERRADA", cerradaEn: { gte: inicio, lt: fin } },
+        select: {
+          abiertaEn: true,
+          cerradaEn: true,
+          mesa: { select: { numero: true } },
+          _count: { select: { comensales: true } },
+          factura: { select: { estado: true, total: true } },
+        },
+      }),
+      prisma.mesa.count({ where: { activa: true } }),
     ]);
 
     const cuentas = facturas.map((f) => {
@@ -97,6 +118,8 @@ reportesRouter.get(
         subtotal: f.subtotal,
         propina: f.propinaMonto,
         total: f.total,
+        // Quién autorizó con su clave registrarla como perdida.
+        autorizadaPor: f.autorizadaPor ? nombreCompleto(f.autorizadaPor) : null,
         items: (esMesa ? f.mesaSesion!.pedidos.flatMap((p) => p.items) : (f.pedido?.items ?? [])).filter((i) => i.estado !== "CANCELADO"),
       };
     });
@@ -173,6 +196,7 @@ reportesRouter.get(
         valor: item.cantidad * item.precioUnitario,
         ubicacion: item.pedido.mesaSesion ? `Mesa ${item.pedido.mesaSesion.mesa.numero}` : `Mostrador — ${item.pedido.nombreCliente ?? "cliente"}`,
         canceladoPor: nombreCompleto(log.cambiadoPor),
+        autorizadoPor: log.autorizadoPor ? nombreCompleto(log.autorizadoPor) : null,
         // Si ya estaba en preparación o listo, se perdieron insumos (merma).
         yaEnCocina: log.deEstado === "EN_PREPARACION" || log.deEstado === "LISTO",
         costo: item.costoUnitario !== null ? item.cantidad * item.costoUnitario : null,
@@ -189,6 +213,45 @@ reportesRouter.get(
     const conCosto = productos.filter((p) => p.unidadesConCosto > 0);
     const ventasConCosto = suma(conCosto.map((p) => p.ventasConCosto));
     const costoVentas = suma(conCosto.map((p) => p.costo));
+
+    // Por hora del día y día de la semana (hora de Colombia).
+    const porHora = Array.from({ length: 24 }, (_, hora) => ({ hora, pedidos: 0, ventas: 0 }));
+    const porDiaSemana = [1, 2, 3, 4, 5, 6, 0].map((dia) => ({ dia, nombre: NOMBRES_DIA[dia], pedidos: 0, ventas: 0, dias: 0 }));
+    for (let t = inicio.getTime(); t < fin.getTime(); t += 86_400_000) {
+      porDiaSemana.find((d) => d.dia === diaSemanaLocal(new Date(t)))!.dias++;
+    }
+    for (const pedido of pedidosDelRango) {
+      const valor = suma(pedido.items.filter((i) => i.estado !== "CANCELADO").map((i) => i.cantidad * i.precioUnitario));
+      const h = porHora[horaLocal(pedido.creadoEn)];
+      h.pedidos++;
+      h.ventas += valor;
+      const d = porDiaSemana.find((x) => x.dia === diaSemanaLocal(pedido.creadoEn))!;
+      d.pedidos++;
+      d.ventas += valor;
+    }
+
+    const minutos = (v: { abiertaEn: Date; cerradaEn: Date | null }) => (v.cerradaEn!.getTime() - v.abiertaEn.getTime()) / 60_000;
+    const promedio = (valores: number[]) => (valores.length ? Math.round((suma(valores) / valores.length) * 10) / 10 : null);
+    const cobradas = visitas.filter((v) => v.factura?.estado === "PAGADA");
+    const porMesa = new Map<string, { mesa: string; veces: number; minutos: number[]; ventas: number }>();
+    for (const v of visitas) {
+      const m = porMesa.get(v.mesa.numero) ?? { mesa: v.mesa.numero, veces: 0, minutos: [], ventas: 0 };
+      m.veces++;
+      m.minutos.push(minutos(v));
+      if (v.factura?.estado === "PAGADA") m.ventas += v.factura.total;
+      porMesa.set(v.mesa.numero, m);
+    }
+    const rotacion = {
+      mesasAtendidas: visitas.length,
+      duracionPromedioMin: promedio(visitas.map(minutos)),
+      comensalesPromedio: promedio(visitas.map((v) => v._count.comensales)),
+      ticketPromedioMesa: cobradas.length ? Math.round(suma(cobradas.map((v) => v.factura!.total)) / cobradas.length) : null,
+      // Cuántos grupos pasa, en promedio, cada mesa en un día.
+      vecesPorMesaAlDia: mesasActivas > 0 && dias > 0 ? Math.round((visitas.length / mesasActivas / dias) * 10) / 10 : null,
+      porMesa: Array.from(porMesa.values())
+        .map((m) => ({ mesa: m.mesa, veces: m.veces, duracionPromedioMin: promedio(m.minutos) ?? 0, ventas: m.ventas }))
+        .sort((a, b) => a.mesa.localeCompare(b.mesa, "es", { numeric: true })),
+    };
 
     const ventas = suma(pagadas.map((c) => c.total));
     res.json({
@@ -217,6 +280,9 @@ reportesRouter.get(
         },
       },
       porDia: Array.from(porDia.values()),
+      porHora,
+      porDiaSemana,
+      rotacion,
       porMetodo: Array.from(porMetodo.values()).sort((a, b) => b.ventas - a.ventas),
       porCanal,
       porMesero: Array.from(porMesero.values()).sort((a, b) => b.ventas - a.ventas),
@@ -224,6 +290,62 @@ reportesRouter.get(
       perdidas: perdidas.map(({ items: _items, ...c }) => ({ ...c, atendidoPor: nombreCompleto(c.atendidoPor) })),
       cancelaciones,
       cuentas: cuentas.map(({ items: _items, ...c }) => ({ ...c, atendidoPor: nombreCompleto(c.atendidoPor) })),
+    });
+  })
+);
+
+// Opiniones de los clientes (encuesta del QR de la precuenta o del
+// seguimiento de un pedido de mostrador).
+reportesRouter.get(
+  "/satisfaccion",
+  requireAuth,
+  requireAdmin,
+  catchAsync(async (req, res) => {
+    const parsed = rangoSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Indica un rango de fechas válido (desde y hasta, formato AAAA-MM-DD)" });
+      return;
+    }
+    const { inicio, fin } = rangoDeDias(parsed.data.desde, parsed.data.hasta);
+    const encuestas = await prisma.encuesta.findMany({
+      where: { creadaEn: { gte: inicio, lt: fin } },
+      include: {
+        mesero: { select: { id: true, nombre: true, apellido: true, role: true } },
+        mesaSesion: { select: { mesa: { select: { numero: true } } } },
+        solicitud: { select: { mesa: { select: { numero: true } } } },
+      },
+      orderBy: { creadaEn: "desc" },
+    });
+    const redondear = (v: number) => Math.round(v * 10) / 10;
+    const distribucion = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as Record<number, number>;
+    for (const e of encuestas) distribucion[e.calificacion]++;
+    // Por mesero: solo meseros (en mostrador quien confirma es el admin).
+    const porMesero = new Map<string, { meseroId: string; nombre: string; suma: number; opiniones: number }>();
+    for (const e of encuestas) {
+      if (!e.mesero || e.mesero.role !== "MESERO") continue;
+      const m = porMesero.get(e.mesero.id) ?? { meseroId: e.mesero.id, nombre: nombreCompleto(e.mesero), suma: 0, opiniones: 0 };
+      m.suma += e.calificacion;
+      m.opiniones++;
+      porMesero.set(e.mesero.id, m);
+    }
+    res.json({
+      total: encuestas.length,
+      promedio: encuestas.length ? redondear(encuestas.reduce((s, e) => s + e.calificacion, 0) / encuestas.length) : null,
+      distribucion,
+      porMesero: Array.from(porMesero.values())
+        .map(({ suma: s, ...m }) => ({ ...m, promedio: redondear(s / m.opiniones) }))
+        .sort((a, b) => b.promedio - a.promedio),
+      recientes: encuestas.slice(0, 30).map((e) => {
+        const mesa = e.mesaSesion?.mesa.numero ?? e.solicitud?.mesa?.numero;
+        return {
+          id: e.id,
+          calificacion: e.calificacion,
+          comentario: e.comentario,
+          contexto: mesa ? `Mesa ${mesa}` : "Pedido para recoger",
+          mesero: e.mesero?.role === "MESERO" ? nombreCompleto(e.mesero) : null,
+          creadaEn: e.creadaEn,
+        };
+      }),
     });
   })
 );

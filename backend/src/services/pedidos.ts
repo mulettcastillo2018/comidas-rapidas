@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { ErrorDeNegocio } from "../lib/errores";
 import { calcularEstadoPedido } from "../lib/pedidoAggregate";
 import { OMITIR_ITEM, productoPublico } from "../lib/datosInternos";
+import { descontarStock, revisarStock } from "./inventario";
 import { emitPedidoNuevo } from "../realtime/socket";
 import { enlaces, notificarPorRol } from "./notificaciones";
 
@@ -93,7 +94,13 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
       items: { create: itemsData },
       statusLogs: { create: { aEstado: estadoInicial, cambiadoPorId: meseroId } },
     },
+    include: { items: { select: { id: true, productoId: true, cantidad: true } } },
   });
+  await descontarStock(
+    tx,
+    created.items.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })),
+    meseroId
+  );
   return created.id;
 }
 
@@ -101,6 +108,7 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
   const pedidoCompleto = await prisma.pedido.findUnique({ where: { id: pedidoId }, include: pedidoInclude });
   if (pedidoCompleto) {
     emitPedidoNuevo(pedidoCompleto);
+    await revisarStock(pedidoCompleto.items.map((i) => i.productoId));
     const ubicacion = pedidoCompleto.mesaSesion
       ? `Mesa ${pedidoCompleto.mesaSesion.mesa.numero}`
       : `Mostrador — ${pedidoCompleto.nombreCliente ?? "cliente"}`;

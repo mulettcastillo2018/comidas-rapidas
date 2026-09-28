@@ -16,9 +16,41 @@ usuariosRouter.get(
   catchAsync(async (_req, res) => {
     const usuarios = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true, pinHash: true },
     });
-    res.json(usuarios);
+    // Solo si tiene clave de supervisor, nunca el hash.
+    res.json(usuarios.map(({ pinHash, ...u }) => ({ ...u, tienePin: pinHash !== null })));
+  })
+);
+
+const pinSchema = z.object({ pin: z.string().regex(/^\d{4,6}$/, "La clave debe tener de 4 a 6 números").nullable() });
+
+// Cada admin configura su propia clave de supervisor (nadie más la conoce).
+// null la quita.
+usuariosRouter.put(
+  "/me/pin",
+  requireAuth,
+  requireAdmin,
+  catchAsync(async (req, res) => {
+    const parsed = pinSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Clave inválida" });
+      return;
+    }
+    const { pin } = parsed.data;
+    // Cada autorización queda a nombre de quien digitó la clave: dos admins
+    // no pueden tener la misma.
+    if (pin) {
+      const otros = await prisma.user.findMany({ where: { role: "ADMIN", id: { not: req.user!.userId }, pinHash: { not: null } }, select: { pinHash: true } });
+      for (const otro of otros) {
+        if (await bcrypt.compare(pin, otro.pinHash!)) {
+          res.status(409).json({ error: "Esa clave no está disponible. Elige otra." });
+          return;
+        }
+      }
+    }
+    await prisma.user.update({ where: { id: req.user!.userId }, data: { pinHash: pin ? await bcrypt.hash(pin, 10) : null } });
+    res.json({ tienePin: pin !== null });
   })
 );
 

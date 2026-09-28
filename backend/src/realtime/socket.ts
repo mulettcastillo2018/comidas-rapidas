@@ -95,6 +95,12 @@ export function emitMesaSesionCerrada(payload: { mesaId: string; sesionId: strin
   ioInstance?.to("meseros").emit("mesaSesion:cerrada", payload);
 }
 
+// El cliente tocó "Llamar al mesero" o "Pedir la cuenta" en el QR de su mesa:
+// la grilla de mesas lo marca en vivo.
+export function emitLlamadoMesa(llamado: { mesaId: string; tipo: "MESERO" | "CUENTA" }) {
+  ioInstance?.to("meseros").emit("mesa:llamado", llamado);
+}
+
 export function emitSolicitudNueva(solicitud: unknown) {
   ioInstance?.to("meseros").emit("solicitud:nueva", solicitud);
 }

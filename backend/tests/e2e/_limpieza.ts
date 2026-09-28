@@ -42,6 +42,7 @@ export async function limpiar(c: Creados) {
   await prisma.notificacion.deleteMany({
     where: { OR: [{ pedidoId: { in: pedidos } }, { userId: { in: c.usuarios } }, ...c.textos.map((t) => ({ mensaje: { contains: t } }))] },
   });
+  await prisma.encuesta.deleteMany({ where: { OR: [{ mesaSesionId: { in: sesiones } }, { solicitudId: { in: solicitudes } }] } });
   await prisma.solicitudPedidoItem.deleteMany({ where: { solicitudId: { in: solicitudes } } });
   await prisma.solicitudPedido.deleteMany({ where: { id: { in: solicitudes } } });
   const deFacturas = { OR: [{ pedidoId: { in: pedidos } }, { mesaSesionId: { in: sesiones } }] };
@@ -54,6 +55,7 @@ export async function limpiar(c: Creados) {
   await prisma.comensal.deleteMany({ where: { mesaSesionId: { in: sesiones } } });
   await prisma.mesaSesion.deleteMany({ where: { id: { in: sesiones } } });
   await prisma.mesa.deleteMany({ where: { numero: { startsWith: c.prefijoMesas } } });
+  await prisma.movimientoInventario.deleteMany({ where: { productoId: { in: c.productos } } });
   await prisma.producto.deleteMany({ where: { id: { in: c.productos } } });
   await prisma.user.deleteMany({ where: { id: { in: c.usuarios } } });
 }

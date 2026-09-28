@@ -9,6 +9,7 @@ import { getCategoryIcon } from "@/lib/categoryIcons";
 import { resolverImagenUrl } from "@/lib/images";
 import { unlockAudio } from "@/lib/notificationSound";
 import { formatoPesos } from "@/lib/formato";
+import { LlamarMesero } from "@/components/LlamarMesero";
 import type { CategoriaConCarta, SolicitudPedido } from "@/lib/types";
 
 // Último pedido enviado desde este celular, para poder volver a su página de
@@ -138,6 +139,12 @@ function CartaContent() {
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
       <h1 className="brand-gradient-text text-center text-3xl font-extrabold tracking-tight">Comidas Rápidas</h1>
       <p className="mt-2 text-center text-muted-foreground">Nuestra carta</p>
+
+      {mesaId ? (
+        <div className="mt-4">
+          <LlamarMesero mesaId={mesaId} />
+        </div>
+      ) : null}
 
       {puedeOrdenar && pedidoReciente ? (
         <Link

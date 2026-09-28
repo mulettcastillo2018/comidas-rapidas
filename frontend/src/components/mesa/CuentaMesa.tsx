@@ -4,7 +4,9 @@ import { useState } from "react";
 import { Printer } from "lucide-react";
 import { METODO_PAGO_LABEL } from "@/lib/estados";
 import { formatoFechaHora, formatoPesos } from "@/lib/formato";
+import QRCode from "qrcode";
 import { useImpresion, ZonaImpresion } from "@/lib/impresion";
+import { urlPublica } from "@/lib/urlPublica";
 import { calcularPrecuenta, PORCENTAJE_PROPINA_SUGERIDA, propinaSugerida, type Precuenta } from "@/lib/precuenta";
 import type { MesaSesion, MetodoPago } from "@/lib/types";
 
@@ -49,8 +51,9 @@ function PorPersona({ precuenta }: { precuenta: Precuenta }) {
   );
 }
 
-// Lo que se imprime: la precuenta para entregar en la mesa.
-function PrecuentaImpresa({ sesion, precuenta }: { sesion: MesaSesion; precuenta: Precuenta }) {
+// Lo que se imprime: la precuenta para entregar en la mesa, con un QR para
+// que el cliente califique la atención.
+function PrecuentaImpresa({ sesion, precuenta, qrEncuesta }: { sesion: MesaSesion; precuenta: Precuenta; qrEncuesta: string | null }) {
   const lineas = new Map<string, { nombre: string; cantidad: number; valor: number }>();
   for (const item of precuenta.items) {
     const clave = `${item.productoId}-${item.precioUnitario}`;
@@ -93,6 +96,13 @@ function PrecuentaImpresa({ sesion, precuenta }: { sesion: MesaSesion; precuenta
       ) : null}
       {precuenta.propina > 0 ? <p className="mt-3 text-center text-[11px]">{AVISO_PROPINA}</p> : null}
       <p className="mt-1 text-center text-[11px]">{AVISO_LEGAL}</p>
+      {qrEncuesta ? (
+        <div className="mt-4 flex flex-col items-center gap-1 border-t border-dashed border-foreground pt-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrEncuesta} alt="" className="h-28 w-28" />
+          <p className="text-center text-[11px]">¿Cómo te atendimos? Escanea y califícanos.</p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -119,16 +129,23 @@ export function CuentaMesa({
   const sugerida = propinaSugerida(subtotalActual);
   const [propina, setPropina] = useState(0);
   const [metodoPago, setMetodoPago] = useState<MetodoPago>("EFECTIVO");
-  const [imprimiendo, setImprimiendo] = useImpresion<true>();
+  const [imprimiendo, setImprimiendo] = useImpresion<{ qrEncuesta: string | null }>();
   const precuenta = calcularPrecuenta(sesion, factura ? factura.propinaMonto : propina);
 
   const hayPedidos = (sesion.pedidos?.length ?? 0) > 0;
+
+  async function imprimir() {
+    const qrEncuesta = sesion.codigoEncuesta
+      ? await QRCode.toDataURL(`${urlPublica()}/encuesta/${sesion.codigoEncuesta}`, { width: 240, margin: 1 }).catch(() => null)
+      : null;
+    setImprimiendo({ qrEncuesta });
+  }
 
   return (
     <>
       {imprimiendo ? (
         <ZonaImpresion>
-          <PrecuentaImpresa sesion={sesion} precuenta={precuenta} />
+          <PrecuentaImpresa sesion={sesion} precuenta={precuenta} qrEncuesta={imprimiendo.qrEncuesta} />
         </ZonaImpresion>
       ) : null}
 
@@ -136,7 +153,7 @@ export function CuentaMesa({
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-bold">Cuenta</h2>
           {hayPedidos ? (
-            <button onClick={() => setImprimiendo(true)} className="flex items-center gap-1 text-xs font-semibold text-accent">
+            <button onClick={imprimir} className="flex items-center gap-1 text-xs font-semibold text-accent">
               <Printer size={14} /> Imprimir precuenta
             </button>
           ) : null}

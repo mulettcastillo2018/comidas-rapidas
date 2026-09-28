@@ -36,6 +36,23 @@ export interface Producto {
   requiereCocina: boolean;
   // Costo por unidad; solo llega al admin (null = sin configurar).
   costo?: number | null;
+  // Inventario por unidades (bebidas, empacados); no llega a la carta pública.
+  controlaStock?: boolean;
+  stock?: number;
+  stockMinimo?: number;
+  // Adiciones que se le pueden poner (extra queso, sin cebolla...).
+  adiciones?: AdicionBasica[];
+  // Un combo: producto hecho de otros productos, con precio propio.
+  esCombo?: boolean;
+  componentes?: { productoId: string; cantidad: number; producto: { id: string; nombre: string } }[];
+  // Promoción que aplica en este momento (precio ya con descuento).
+  promocion?: { nombre: string; descuentoPct: number; precio: number } | null;
+}
+
+export interface AdicionBasica {
+  id: string;
+  nombre: string;
+  precio: number;
   disponible: boolean;
   isActive: boolean;
 }
@@ -78,6 +95,8 @@ export interface MesaSesion {
   comensales?: Comensal[];
   pedidos?: Pedido[];
   factura?: Factura | null;
+  // Código de la encuesta de satisfacción (va en QR en la precuenta impresa).
+  codigoEncuesta?: string | null;
 }
 
 export type PedidoEstado = "RECIBIDO" | "EN_PREPARACION" | "LISTO" | "ENTREGADO" | "CANCELADO";
@@ -92,7 +111,14 @@ export interface PedidoItem {
   producto?: Producto;
   cantidad: number;
   notas: string | null;
+  // Precio final por unidad (con adiciones y promoción).
   precioUnitario: number;
+  adiciones?: { nombre: string; precio: number }[];
+  precioLista?: number | null;
+  promocionNombre?: string | null;
+  // Partes de un mismo combo comparten comboGrupo.
+  comboGrupo?: string | null;
+  comboNombre?: string | null;
   tiempoPreparacionMinutos: number;
   estado: PedidoEstado;
   iniciadoEn: string | null;
@@ -144,10 +170,14 @@ export interface Factura {
   mesaSesionId: string | null;
   pedidoId: string | null;
   subtotal: number;
+  // Descuento a toda la cuenta o cortesía; total = subtotal − descuento + propina.
+  descuentoMonto: number;
+  descuentoMotivo: string | null;
   propinaMonto: number;
   total: number;
   estado: FacturaEstado;
   metodoPago: MetodoPago | null;
+  pagos?: Pago[];
   generadaEn: string;
   pagadaEn: string | null;
 }
@@ -196,6 +226,8 @@ export interface CuentaReporte {
   subtotal: number;
   propina: number;
   total: number;
+  // Admin que autorizó registrarla como perdida.
+  autorizadaPor: string | null;
 }
 
 export type ClasificacionMenu = "ESTRELLA" | "CABALLO" | "ROMPECABEZAS" | "PERRO";
@@ -233,6 +265,18 @@ export interface ReporteVentas {
     };
   };
   porDia: { dia: string; ventas: number; cuentas: number }[];
+  // Por hora del día (0–23) y día de la semana, según cuándo llegó el pedido:
+  // sirve para saber cuánta gente se necesita en cada turno.
+  porHora: { hora: number; pedidos: number; ventas: number }[];
+  porDiaSemana: { dia: number; nombre: string; pedidos: number; ventas: number; dias: number }[];
+  rotacion: {
+    mesasAtendidas: number;
+    duracionPromedioMin: number | null;
+    comensalesPromedio: number | null;
+    ticketPromedioMesa: number | null;
+    vecesPorMesaAlDia: number | null;
+    porMesa: { mesa: string; veces: number; duracionPromedioMin: number; ventas: number }[];
+  };
   porMetodo: { metodo: MetodoPago; ventas: number; cuentas: number }[];
   porCanal: Record<"MESA" | "MOSTRADOR", { ventas: number; cuentas: number }>;
   porMesero: { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }[];
@@ -246,9 +290,27 @@ export interface ReporteVentas {
     valor: number;
     ubicacion: string;
     canceladoPor: string;
+    autorizadoPor: string | null;
     yaEnCocina: boolean;
   }[];
   cuentas: CuentaReporte[];
+}
+
+export interface OpinionCliente {
+  id: string;
+  calificacion: number;
+  comentario: string | null;
+  contexto: string;
+  mesero: string | null;
+  creadaEn: string;
+}
+
+export interface ReporteSatisfaccion {
+  total: number;
+  promedio: number | null;
+  distribucion: Record<1 | 2 | 3 | 4 | 5, number>;
+  porMesero: { meseroId: string; nombre: string; promedio: number; opiniones: number }[];
+  recientes: OpinionCliente[];
 }
 
 export interface TotalesCaja {
@@ -317,6 +379,7 @@ export interface SolicitudPedidoItem {
   cantidad: number;
   notas: string | null;
   paraLlevar: boolean;
+  adicionIds?: string[];
 }
 
 export interface SolicitudPedido {
@@ -339,7 +402,11 @@ export type NotificacionTipo =
   | "ITEM_RETRASADO"
   | "ITEM_LISTO"
   | "SOLICITUD_PEDIDO_CLIENTE"
-  | "ITEM_CANCELADO";
+  | "ITEM_CANCELADO"
+  | "AUTORIZACION"
+  | "STOCK"
+  | "LLAMADO_MESA"
+  | "OPINION";
 
 export interface Notificacion {
   id: string;

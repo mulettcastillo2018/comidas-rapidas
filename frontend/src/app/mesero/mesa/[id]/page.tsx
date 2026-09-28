@@ -6,6 +6,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { useResaltado } from "@/lib/resaltado";
+import { useClaveSupervisor } from "@/components/ClaveSupervisor";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { SolicitudesCliente } from "@/components/mesa/SolicitudesCliente";
@@ -33,6 +34,7 @@ export default function MesaSesionPage() {
   const [pagando, setPagando] = useState(false);
   // Al llegar desde "producto listo para entregar": ese producto se resalta.
   const [resaltado, lectorResaltado] = useResaltado(["item"]);
+  const { conAutorizacion, modal: modalClave } = useClaveSupervisor();
 
   async function cargarSesion() {
     if (!token) return;
@@ -109,11 +111,14 @@ export default function MesaSesionPage() {
     }
     setActualizandoItemId(item.id);
     await intentar(async () => {
+      // Cancelar algo que cocina ya empezó pide la clave de un admin.
+      const actualizado = await conAutorizacion((pin) =>
+        apiFetch<Pedido>(`/pedidos/${pedido.id}/items/${item.id}/estado`, { method: "PUT", token, body: JSON.stringify({ estado, pin }) })
+      );
+      if (!actualizado) return;
       // Se aplica la respuesta de una vez (sin esperar el evento en vivo) para
       // que el botón no quede mostrando el estado viejo y evitar dobles clics.
-      aplicarPedido(
-        await apiFetch<Pedido>(`/pedidos/${pedido.id}/items/${item.id}/estado`, { method: "PUT", token, body: JSON.stringify({ estado }) })
-      );
+      aplicarPedido(actualizado);
       if (estado === "CANCELADO") showToast("Producto cancelado");
     }, "No se pudo actualizar el producto.");
     setActualizandoItemId(null);
@@ -124,7 +129,11 @@ export default function MesaSesionPage() {
     if (estado === "CANCELADO" && !confirm("¿Cancelar lo que falta de este pedido? Lo que ya se entregó se sigue cobrando.")) return;
     setActualizandoPedidoId(pedido.id);
     await intentar(async () => {
-      aplicarPedido(await apiFetch<Pedido>(`/pedidos/${pedido.id}/estado`, { method: "PUT", token, body: JSON.stringify({ estado }) }));
+      const actualizado = await conAutorizacion((pin) =>
+        apiFetch<Pedido>(`/pedidos/${pedido.id}/estado`, { method: "PUT", token, body: JSON.stringify({ estado, pin }) })
+      );
+      if (!actualizado) return;
+      aplicarPedido(actualizado);
       showToast(estado === "ENTREGADO" ? "Pedido entregado" : "Pedido cancelado");
     }, "No se pudo actualizar el pedido.");
     setActualizandoPedidoId(null);
@@ -179,7 +188,12 @@ export default function MesaSesionPage() {
     setPagando(true);
     await intentar(async () => {
       if (resultado === "perdida") {
-        await apiFetch(`/facturas/${sesion.factura!.id}/marcar-perdida`, { method: "PUT", token });
+        // Necesita la clave de un admin (si no, se podría cobrar en efectivo y
+        // registrarlo como pérdida).
+        const hecho = await conAutorizacion((pin) =>
+          apiFetch(`/facturas/${sesion.factura!.id}/marcar-perdida`, { method: "PUT", token, body: JSON.stringify({ pin }) })
+        );
+        if (!hecho) return;
         showToast("Cuenta registrada como pérdida, mesa liberada");
       } else {
         await apiFetch(`/facturas/${sesion.factura!.id}/pagar`, { method: "PUT", token, body: JSON.stringify({ metodoPago: resultado.metodo }) });
@@ -199,6 +213,7 @@ export default function MesaSesionPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+      {modalClave}
       <h1 className="text-2xl font-bold">
         Mesa {sesion.mesa?.numero} — {sesion.nombreResponsable}
       </h1>

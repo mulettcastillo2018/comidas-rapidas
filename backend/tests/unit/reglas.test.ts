@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calcularEstadoPedido } from "../../src/lib/pedidoAggregate";
 import { estimarListoEn } from "../../src/lib/tiempoEstimado";
-import { diaLocal, esDiaValido, rangoDeDias } from "../../src/lib/fechas";
+import { diaLocal, diaSemanaLocal, esDiaValido, horaLocal, rangoDeDias } from "../../src/lib/fechas";
 import { nombreCompleto, nombreCorto } from "../../src/lib/nombre";
 import { crearLimitador } from "../../src/lib/limitador";
 
@@ -36,6 +36,10 @@ test("los días se cuentan en hora de Colombia (UTC-5)", () => {
   const { inicio, fin } = rangoDeDias("2026-03-15", "2026-03-16");
   assert.equal(inicio.toISOString(), "2026-03-15T05:00:00.000Z");
   assert.equal(fin.toISOString(), "2026-03-17T05:00:00.000Z");
+  // 02:30 UTC del lunes = 9:30 p. m. del domingo en Colombia.
+  assert.equal(horaLocal(new Date("2026-03-16T02:30:00Z")), 21);
+  assert.equal(diaSemanaLocal(new Date("2026-03-16T02:30:00Z")), 0);
+  assert.equal(horaLocal(new Date("2026-03-16T05:00:00Z")), 0);
   assert.ok(esDiaValido("2026-02-28"));
   assert.ok(!esDiaValido("2026-2-28"));
   assert.ok(!esDiaValido("hoy"));

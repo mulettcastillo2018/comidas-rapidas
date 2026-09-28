@@ -1,5 +1,5 @@
 import { prisma } from "../../src/lib/prisma";
-import { despachar, estados, exigir, req, sesiones, verificar } from "./_utilidades";
+import { despachar, estados, exigir, req, sesiones, supervisorDePrueba, verificar } from "./_utilidades";
 import { limpiar, registroDeCreados } from "./_limpieza";
 
 const hora = (iso: string) => new Date(iso);
@@ -26,7 +26,8 @@ export async function probarVentasYCaja() {
     const itemB = p1.items.find((i: { productoId: string }) => i.productoId === B.id);
     for (const [estado, token] of [["EN_PREPARACION", t.cocina], ["LISTO", t.cocina], ["ENTREGADO", t.mesero]]) await item(p1.id, itemA.id, estado, token);
     await item(p1.id, itemB.id, "EN_PREPARACION", t.cocina);
-    const cancelar = await req("PUT", `/pedidos/${p1.id}/estado`, { estado: "CANCELADO" }, t.mesero);
+    const supervisor = await supervisorDePrueba(t.admin, creados);
+    const cancelar = await req("PUT", `/pedidos/${p1.id}/estado`, { estado: "CANCELADO", pin: supervisor.pin }, t.mesero);
     const itemsP1 = await prisma.pedidoItem.findMany({ where: { pedidoId: p1.id } });
     verificar(itemsP1.find((i) => i.id === itemA.id)?.estado === "ENTREGADO", "lo entregado sigue ENTREGADO (y se cobra)");
     verificar(itemsP1.find((i) => i.id === itemB.id)?.estado === "CANCELADO" && cancelar.data?.estado === "ENTREGADO", "lo que faltaba se cancela y el pedido queda ENTREGADO");
@@ -53,7 +54,7 @@ export async function probarVentasYCaja() {
     const p3 = await pedir(sesion2.id, [{ productoId: C.id, cantidad: 1 }]);
     await despachar(p3.id, { cocina: t.cocina, entrega: t.mesero });
     const f2 = (await req("POST", "/facturas", { mesaSesionId: sesion2.id }, t.mesero)).data;
-    await req("PUT", `/facturas/${f2.id}/marcar-perdida`, undefined, t.mesero);
+    await req("PUT", `/facturas/${f2.id}/marcar-perdida`, { pin: supervisor.pin }, t.mesero);
     const sol = (await req("POST", "/solicitudes", {
       mesaId: null,
       nombreCliente: "Prueba Reporte E2E",

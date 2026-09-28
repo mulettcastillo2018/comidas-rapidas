@@ -56,7 +56,7 @@ function playSound(kind: SoundKind) {
 }
 
 export function playForTipo(tipo: string) {
-  if (tipo === "PEDIDO_NUEVO" || tipo === "SOLICITUD_PEDIDO_CLIENTE") playSound("nuevo");
+  if (tipo === "PEDIDO_NUEVO" || tipo === "SOLICITUD_PEDIDO_CLIENTE" || tipo === "LLAMADO_MESA" || tipo === "OPINION") playSound("nuevo");
   else if (tipo === "ITEM_LISTO") playSound("listo");
   else playSound("retrasado");
 }

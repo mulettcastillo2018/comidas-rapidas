@@ -5,6 +5,7 @@ import { Download } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatoFechaHora, formatoPesos, hoyLocal } from "@/lib/formato";
 import { METODO_PAGO_LABEL } from "@/lib/estados";
+import { DemandaYRotacion } from "./DemandaYRotacion";
 import type { ClasificacionMenu, CuentaReporte, ReporteVentas } from "@/lib/types";
 
 const PRODUCTOS_VISIBLES = 10;
@@ -215,6 +216,8 @@ export function ReporteVentasVista({ token }: { token: string }) {
             </section>
           ) : null}
 
+          <DemandaYRotacion reporte={reporte} />
+
           <div className="grid gap-6 sm:grid-cols-2">
             <section>
               <h2 className="text-sm font-bold">Por método de pago</h2>
@@ -362,7 +365,10 @@ export function ReporteVentasVista({ token }: { token: string }) {
                       <tr key={c.id} className="border-b border-border/60">
                         <td className="py-1.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
                         <td className="py-1.5 pr-4">{c.ubicacion}</td>
-                        <td className="py-1.5 pr-4">{c.atendidoPor}</td>
+                        <td className="py-1.5 pr-4">
+                          {c.atendidoPor}
+                          {c.autorizadaPor ? <span className="block text-[11px] text-muted-foreground">autorizó {c.autorizadaPor}</span> : null}
+                        </td>
                         <td className="py-1.5 text-right font-semibold text-red-600">{formatoPesos(c.total)}</td>
                       </tr>
                     ))}
@@ -397,7 +403,10 @@ export function ReporteVentasVista({ token }: { token: string }) {
                           ) : null}
                         </td>
                         <td className="py-1.5 pr-4">{c.ubicacion}</td>
-                        <td className="py-1.5 pr-4 text-muted-foreground">{c.canceladoPor}</td>
+                        <td className="py-1.5 pr-4 text-muted-foreground">
+                          {c.canceladoPor}
+                          {c.autorizadoPor ? <span className="block text-[11px]">autorizó {c.autorizadoPor}</span> : null}
+                        </td>
                         <td className="py-1.5 text-right">{formatoPesos(c.valor)}</td>
                       </tr>
                     ))}

@@ -5,6 +5,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
+import { MiClaveSupervisor } from "@/components/admin/MiClaveSupervisor";
 import type { UserRole } from "@/lib/types";
 
 interface AdminUser {
@@ -15,6 +16,7 @@ interface AdminUser {
   role: UserRole;
   isActive: boolean;
   createdAt: string;
+  tienePin: boolean;
 }
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -169,8 +171,11 @@ export default function AdminUsuariosPage() {
     }
   }
 
+  const yo = usuarios.find((u) => u.id === currentUser?.id);
+
   return (
     <div className="space-y-6">
+      {token && yo ? <MiClaveSupervisor token={token} tienePin={yo.tienePin} onCambio={loadUsuarios} /> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
       <div className="space-y-2">
@@ -180,6 +185,9 @@ export default function AdminUsuariosPage() {
               <div>
                 <p className="font-semibold">
                   {nombreCompleto(user)} {!user.isActive ? <span className="text-red-600">(desactivado)</span> : null}
+                  {user.role === "ADMIN" && user.tienePin ? (
+                    <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800">con clave de supervisor</span>
+                  ) : null}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {user.email} · Desde {formatDate(user.createdAt)}

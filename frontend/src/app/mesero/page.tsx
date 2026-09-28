@@ -25,6 +25,15 @@ export default function MeseroPage() {
   const [saving, setSaving] = useState(false);
   // Al llegar desde la notificación de un pedido QR en una mesa sin abrir.
   const [resaltado, lectorResaltado] = useResaltado(["mesa"]);
+  // Mesas donde el cliente tocó "Llamar al mesero" o "Pedir la cuenta" desde
+  // el QR. Se quita al entrar a la mesa o a los 5 minutos.
+  const [llamados, setLlamados] = useState<Record<string, { tipo: "MESERO" | "CUENTA"; en: number }>>({});
+  const [ahora, setAhora] = useState(() => Date.now());
+
+  useEffect(() => {
+    const reloj = setInterval(() => setAhora(Date.now()), 30_000);
+    return () => clearInterval(reloj);
+  }, []);
 
   async function loadData() {
     if (!token) return;
@@ -73,6 +82,8 @@ export default function MeseroPage() {
         setSolicitudesPendientes((prev) => prev.filter((s) => s.id !== solicitud.id)),
       "pedido:nuevo": actualizarPedidoEnSesiones,
       "pedido:actualizado": actualizarPedidoEnSesiones,
+      "mesa:llamado": (llamado: { mesaId: string; tipo: "MESERO" | "CUENTA" }) =>
+        setLlamados((prev) => ({ ...prev, [llamado.mesaId]: { tipo: llamado.tipo, en: Date.now() } })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -243,7 +254,11 @@ export default function MeseroPage() {
               key={mesa.id}
               data-resaltado={resaltado.mesa === mesa.id}
               disabled={mesa.estado === "LIBRE" && asignadaAOtroMesero(mesa)}
-              onClick={() => (mesa.estado === "LIBRE" ? startOpening(mesa) : sesion && router.push(`/mesero/mesa/${sesion.id}`))}
+              onClick={() => {
+                setLlamados(({ [mesa.id]: _atendido, ...resto }) => resto);
+                if (mesa.estado === "LIBRE") startOpening(mesa);
+                else if (sesion) router.push(`/mesero/mesa/${sesion.id}`);
+              }}
               className={`flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${
                 mesa.estado === "LIBRE" ? "border-border hover:border-accent" : "border-accent bg-accent/5"
               } ${resaltado.mesa === mesa.id ? CLASE_RESALTADO : ""}`}
@@ -275,6 +290,11 @@ export default function MeseroPage() {
               {solicitudesDeMesa(mesa.id) > 0 ? (
                 <span className="animate-pulse rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">
                   🔔 Pedido del cliente esperando
+                </span>
+              ) : null}
+              {llamados[mesa.id] && ahora - llamados[mesa.id].en < 5 * 60_000 ? (
+                <span className="animate-pulse rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {llamados[mesa.id].tipo === "CUENTA" ? "🧾 Pide la cuenta" : "🙋 Te están llamando"}
                 </span>
               ) : null}
             </button>

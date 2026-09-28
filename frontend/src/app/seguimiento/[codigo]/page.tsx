@@ -7,6 +7,7 @@ import { Check } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { playForTipo, unlockAudio } from "@/lib/notificationSound";
 import { formatoHora } from "@/lib/tiempoEstimado";
+import { LlamarMesero } from "@/components/LlamarMesero";
 
 type Etapa = "ESPERANDO_CONFIRMACION" | "VENCIDA" | "DESCARTADA" | "EN_COCINA" | "LISTO" | "ENTREGADO" | "CANCELADO";
 
@@ -143,6 +144,17 @@ export default function SeguimientoPage() {
         <p className={`text-xl font-extrabold ${datos.etapa === "LISTO" ? "text-accent" : problema ? "text-red-600" : ""}`}>{titulo}</p>
         <p className="mt-1 text-sm text-muted-foreground">{detalle}</p>
       </div>
+
+      {datos.etapa === "ENTREGADO" && datos.canal === "MOSTRADOR" ? (
+        <Link href={`/encuesta/${codigo}`} className="btn-primary mt-4 block rounded-full px-4 py-2.5 text-center text-sm">
+          ¿Cómo te fue? Califícanos ⭐
+        </Link>
+      ) : null}
+      {datos.canal === "MESA" && datos.mesaId && !ETAPAS_FINALES.includes(datos.etapa) ? (
+        <div className="mt-4">
+          <LlamarMesero mesaId={datos.mesaId} />
+        </div>
+      ) : null}
 
       {paso !== undefined ? (
         <ol className="mt-6 flex items-start justify-between">

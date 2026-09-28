@@ -22,14 +22,21 @@ model User {
   apellido           String        @default("")
   email              String        @unique
   passwordHash       String
+  // Clave de supervisor (solo admins): autoriza en el celular del mesero lo
+  // que no debe hacer solo, como registrar que un cliente se fue sin pagar.
+  pinHash            String?
   role               Role
   isActive           Boolean       @default(true)
   createdAt          DateTime      @default(now())
   mesaSesiones       MesaSesion[]
   pedidos            Pedido[]
   pedidoStatusLogs   PedidoStatusLog[]
-  pedidoItemStatusLogs PedidoItemStatusLog[]
-  facturasCerradas   Factura[]
+  pedidoItemStatusLogs PedidoItemStatusLog[] @relation("CambiosDeItem")
+  cancelacionesAutorizadas PedidoItemStatusLog[] @relation("CancelacionesAutorizadas")
+  facturasCerradas   Factura[]         @relation("FacturasCerradas")
+  perdidasAutorizadas Factura[]        @relation("PerdidasAutorizadas")
+  movimientosInventario MovimientoInventario[]
+  encuestasAtendidas Encuesta[]        @relation("EncuestasMesero")
   mesasAsignadas     Mesa[]            @relation("MesaAsignada")
   notificaciones     Notificacion[]
   solicitudesResueltas SolicitudPedido[]
@@ -61,6 +68,17 @@ model Producto {
   // Lo que le cuesta al negocio una unidad (insumos + empaque), para saber
   // cuánto deja cada venta. null = todavía no se ha configurado.
   costo                  Int?
+  // Inventario por unidades (bebidas, empacados): cada venta descuenta y al
+  // llegar a cero el producto se marca agotado solo.
+  controlaStock          Boolean      @default(false)
+  stock                  Int          @default(0)
+  stockMinimo            Int          @default(0)
+  // Se agotó por llegar a cero (no porque alguien lo marcara): al volver a
+  // entrar mercancía se reactiva solo.
+  agotadoPorStock        Boolean      @default(false)
+  // Ya se avisó que está por debajo del mínimo (para no repetir el aviso).
+  alertaStockBajo        Boolean      @default(false)
+  movimientosInventario  MovimientoInventario[]
   disponible             Boolean      @default(true)
   isActive               Boolean      @default(true)
   createdAt              DateTime     @default(now())
@@ -111,6 +129,27 @@ model MesaSesion {
   comensales        Comensal[]
   pedidos           Pedido[]
   factura           Factura?
+  // Código aleatorio del QR de "¿cómo te atendimos?" que va en la precuenta.
+  codigoEncuesta    String?          @unique
+  encuesta          Encuesta?
+}
+
+// Opinión del cliente (1 a 5 estrellas y un comentario opcional): una por
+// visita a la mesa o por pedido de mostrador.
+model Encuesta {
+  id           String           @id @default(cuid())
+  mesaSesionId String?          @unique
+  mesaSesion   MesaSesion?      @relation(fields: [mesaSesionId], references: [id])
+  solicitudId  String?          @unique
+  solicitud    SolicitudPedido? @relation(fields: [solicitudId], references: [id])
+  // Quién atendió, para ver las opiniones por mesero.
+  meseroId     String?
+  mesero       User?            @relation("EncuestasMesero", fields: [meseroId], references: [id])
+  calificacion Int
+  comentario   String?
+  creadaEn     DateTime         @default(now())
+
+  @@index([creadaEn])
 }
 
 model Comensal {
@@ -198,7 +237,11 @@ model PedidoItemStatusLog {
   deEstado      PedidoEstado?
   aEstado       PedidoEstado
   cambiadoPorId String
-  cambiadoPor   User          @relation(fields: [cambiadoPorId], references: [id])
+  cambiadoPor   User          @relation("CambiosDeItem", fields: [cambiadoPorId], references: [id])
+  // Admin que autorizó con su clave (p. ej. cancelar algo que cocina ya
+  // estaba preparando). null = no necesitaba autorización.
+  autorizadoPorId String?
+  autorizadoPor   User?       @relation("CancelacionesAutorizadas", fields: [autorizadoPorId], references: [id])
   cambiadoEn    DateTime      @default(now())
 }
 
@@ -249,6 +292,34 @@ model PagoFactura {
   @@index([facturaId])
 }
 
+enum TipoMovimientoInventario {
+  // Llegó mercancía (compra).
+  ENTRADA
+  // Salió por una venta.
+  VENTA
+  // Volvió al inventario porque se canceló antes de usarse.
+  DEVOLUCION
+  // Corrección tras contar físicamente.
+  AJUSTE
+}
+
+model MovimientoInventario {
+  id              String                   @id @default(cuid())
+  productoId      String
+  producto        Producto                 @relation(fields: [productoId], references: [id])
+  tipo            TipoMovimientoInventario
+  // Con signo: + entra, − sale.
+  cantidad        Int
+  stockResultante Int
+  nota            String?
+  userId          String?
+  user            User?                    @relation(fields: [userId], references: [id])
+  pedidoItemId    String?
+  creadoEn        DateTime                 @default(now())
+
+  @@index([productoId, creadoEn])
+}
+
 enum TipoMovimientoCaja {
   // Plata que entra a la caja sin ser una venta (p. ej. más base).
   ENTRADA
@@ -281,6 +352,14 @@ enum NotificacionTipo {
   ITEM_LISTO
   SOLICITUD_PEDIDO_CLIENTE
   ITEM_CANCELADO
+  // Al admin: algo que se hizo con su clave de supervisor.
+  AUTORIZACION
+  // Al admin: un producto con inventario se agotó o quedó bajo el mínimo.
+  STOCK
+  // Al mesero: el cliente tocó "Llamar al mesero" o "Pedir la cuenta" en el QR.
+  LLAMADO_MESA
+  // Al admin: un cliente calificó mal la atención.
+  OPINION
 }
 
 // Notificación entregada a un usuario puntual (mesero dueño de la mesa,
@@ -337,6 +416,7 @@ model SolicitudPedido {
   // Cuándo autorizó el cliente usar su nombre y teléfono (Ley 1581 de 2012);
   // obligatorio en pedidos de mostrador, que son los que piden esos datos.
   datosAutorizadosEn DateTime?
+  encuesta      Encuesta?
 }
 
 model SolicitudPedidoItem {
@@ -370,7 +450,10 @@ model Factura {
   generadaEn    DateTime      @default(now())
   pagadaEn      DateTime?
   cerradaPorId  String?
-  cerradaPor    User?         @relation(fields: [cerradaPorId], references: [id])
+  cerradaPor    User?         @relation("FacturasCerradas", fields: [cerradaPorId], references: [id])
+  // Admin que autorizó registrarla como perdida (si la registró un mesero).
+  autorizadaPorId String?
+  autorizadaPor   User?       @relation("PerdidasAutorizadas", fields: [autorizadaPorId], references: [id])
   // Cierre de caja en el que se contabilizó (null = todavía no se ha
   // cerrado caja desde que se cobró o se dio por perdida).
   cierreCajaId  String?

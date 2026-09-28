@@ -2,6 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { cobroSchema, pagosDelCobro, registrarPagos, type Cobro } from "../services/pagos";
+import { avisarAutorizacion, exigirAutorizacion } from "../services/autorizacion";
+import { enlaces } from "../services/notificaciones";
+import { nombreCompleto } from "../lib/nombre";
 import { requireAuth, requireMesero } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
@@ -81,7 +84,7 @@ facturasRouter.post(
 async function resolverCuentaDeMesa(
   facturaId: string,
   usuario: { userId: string; role: string },
-  resultado: { estado: "PAGADA"; cobro: Cobro } | { estado: "PERDIDA" }
+  resultado: { estado: "PAGADA"; cobro: Cobro } | { estado: "PERDIDA"; autorizadaPorId: string }
 ) {
   const factura = await prisma.factura.findUnique({ where: { id: facturaId }, include: { mesaSesion: true } });
   if (!factura) throw new ErrorDeNegocio("Factura no encontrada", 404);
@@ -95,7 +98,12 @@ async function resolverCuentaDeMesa(
   await prisma.$transaction(async (tx) => {
     const resuelta = await tx.factura.updateMany({
       where: { id: factura.id, estado: "PENDIENTE" },
-      data: { estado: resultado.estado, pagadaEn: new Date(), cerradaPorId: usuario.userId },
+      data: {
+        estado: resultado.estado,
+        pagadaEn: new Date(),
+        cerradaPorId: usuario.userId,
+        ...(resultado.estado === "PERDIDA" ? { autorizadaPorId: resultado.autorizadaPorId } : {}),
+      },
     });
     if (resuelta.count === 0) throw new ErrorDeNegocio("Esta cuenta ya fue resuelta", 409);
     if (pagos.length > 0) {
@@ -128,12 +136,32 @@ facturasRouter.put(
 // Cliente se fue sin pagar (o se decide no cobrar): deja constancia de la
 // pérdida en vez de forzar a marcarla "pagada" (que sería falso) o dejar la
 // mesa atascada para siempre esperando un pago que no va a llegar.
+// Un mesero no puede hacerlo solo: si cobró en efectivo podría quedarse la
+// plata y registrarlo como pérdida. Necesita la clave de un admin.
 facturasRouter.put(
   "/:id/marcar-perdida",
   requireAuth,
   requireMesero,
   catchAsync(async (req, res) => {
-    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PERDIDA" });
+    const pin = typeof req.body?.pin === "string" ? req.body.pin : undefined;
+    const autorizadaPorId = await exigirAutorizacion(req.user!, pin, "Registrar que el cliente se fue sin pagar");
+    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PERDIDA", autorizadaPorId });
+
+    const detalle = await prisma.factura.findUnique({
+      where: { id: req.params.id },
+      include: {
+        mesaSesion: { include: { mesa: true } },
+        cerradaPor: { select: { nombre: true, apellido: true } },
+        autorizadaPor: { select: { nombre: true, apellido: true } },
+      },
+    });
+    if (detalle?.mesaSesion) {
+      await avisarAutorizacion(
+        autorizadaPorId,
+        `${nombreCompleto(detalle.cerradaPor)} registró la Mesa ${detalle.mesaSesion.mesa.numero} como "se fue sin pagar" (${detalle.total.toLocaleString("es-CO")}). Autorizó: ${nombreCompleto(detalle.autorizadaPor)}.`,
+        enlaces.mesaAbierta(detalle.mesaSesion.id)
+      );
+    }
     res.json(factura);
   })
 );
