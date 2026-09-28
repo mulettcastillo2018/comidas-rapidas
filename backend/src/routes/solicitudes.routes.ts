@@ -5,11 +5,17 @@ import { prisma } from "../lib/prisma";
 import { requireAuth, requireMesero, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
+import { crearLimitador } from "../lib/limitador";
 import { crearPedidoEnTx, anunciarPedidoNuevo } from "../services/pedidos";
 import { notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
 
 export const solicitudesRouter = Router();
+
+const MAX_PENDIENTES_POR_MESA = 5;
+const MAX_PENDIENTES_MOSTRADOR = 15;
+// Amplio a propósito: solo frena envíos automatizados masivos.
+const limitadorPorIp = crearLimitador(30, 10 * 60_000);
 
 const solicitudInclude = {
   mesa: { select: { id: true, numero: true } },
@@ -54,11 +60,32 @@ solicitudesRouter.post(
     }
     const { mesaId, nombreCliente, telefonoCliente, items } = parsed.data;
 
-    const mesa = mesaId ? await prisma.mesa.findUnique({ where: { id: mesaId } }) : null;
-    if (mesaId && !mesa) {
-      res.status(404).json({ error: "Mesa no encontrada" });
+    const ip = req.ip ?? "desconocida";
+    if (limitadorPorIp.excedido(ip)) {
+      res.status(429).json({ error: "Demasiados pedidos seguidos desde este dispositivo. Espera unos minutos." });
       return;
     }
+
+    const mesa = mesaId ? await prisma.mesa.findUnique({ where: { id: mesaId } }) : null;
+    if (mesaId && (!mesa || !mesa.activa)) {
+      res.status(404).json({ error: "Este código QR ya no corresponde a una mesa en servicio. Pídele al mesero que tome tu pedido." });
+      return;
+    }
+
+    // Protección principal contra pedidos falsos: un tope de solicitudes sin
+    // confirmar por mesa (o en caja). No depende de la IP, que en el wifi del
+    // local puede ser la misma para todos los clientes.
+    const pendientes = await prisma.solicitudPedido.count({ where: { mesaId: mesaId ?? null, estado: "PENDIENTE" } });
+    const tope = mesaId ? MAX_PENDIENTES_POR_MESA : MAX_PENDIENTES_MOSTRADOR;
+    if (pendientes >= tope) {
+      res.status(429).json({
+        error: mesaId
+          ? "Esta mesa ya tiene varios pedidos esperando que el mesero los confirme. Espera a que llegue."
+          : "Hay muchos pedidos esperando en caja. Acércate a caja para que te atiendan.",
+      });
+      return;
+    }
+    limitadorPorIp.registrar(ip);
 
     const productos = await prisma.producto.findMany({ where: { id: { in: items.map((i) => i.productoId) } } });
     const productosPorId = new Map(productos.map((p) => [p.id, p]));

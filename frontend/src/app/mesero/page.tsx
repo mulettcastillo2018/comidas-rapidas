@@ -6,6 +6,7 @@ import { Plus, X } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
+import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
 import { useAuthStore } from "@/store/auth.store";
 import type { Mesa, MesaSesion, Pedido, SolicitudPedido } from "@/lib/types";
 
@@ -29,7 +30,7 @@ export default function MeseroPage() {
       apiFetch<MesaSesion[]>("/mesa-sesiones?activas=true", { token }),
       apiFetch<SolicitudPedido[]>("/solicitudes?estado=PENDIENTE", { token }),
     ]);
-    setMesas(mesasData);
+    setMesas(ordenarMesas(mesasData));
     setSesionesActivas(sesionesData);
     setSolicitudesPendientes(solicitudesData);
   }
@@ -44,7 +45,7 @@ export default function MeseroPage() {
     // contra la API en vez de quedarnos con mesas/solicitudes viejas.
     socket.on("connect", loadData);
     socket.on("mesa:actualizada", (mesa: Mesa) => {
-      setMesas((prev) => prev.map((m) => (m.id === mesa.id ? mesa : m)));
+      setMesas((prev) => aplicarCambioDeMesa(prev, mesa, false));
     });
     socket.on("mesaSesion:nueva", (sesion: MesaSesion) => {
       setSesionesActivas((prev) => [...prev.filter((s) => s.id !== sesion.id), sesion]);

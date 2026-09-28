@@ -72,7 +72,7 @@ mesaSesionesRouter.post(
     const { mesaId, nombreResponsable, comensales, confirmaSillaExtra } = parsed.data;
 
     const mesa = await prisma.mesa.findUnique({ where: { id: mesaId } });
-    if (!mesa) {
+    if (!mesa || !mesa.activa) {
       res.status(404).json({ error: "Mesa no encontrada" });
       return;
     }

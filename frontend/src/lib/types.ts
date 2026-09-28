@@ -45,6 +45,11 @@ export interface Mesa {
   estado: MesaEstado;
   meseroAsignadoId: string | null;
   meseroAsignado?: PersonaBasica | null;
+  // Una mesa con historial no se borra, se desactiva (deja de verse en la
+  // grilla del mesero y en el QR, pero sus cuentas viejas siguen intactas).
+  activa: boolean;
+  // Solo viene en el evento en vivo cuando la mesa se borró del todo.
+  eliminada?: boolean;
 }
 
 export type MesaSesionEstado = "ABIERTA" | "CUENTA_SOLICITADA" | "CERRADA";

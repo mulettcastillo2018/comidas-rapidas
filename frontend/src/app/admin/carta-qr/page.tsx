@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { apiFetch } from "@/lib/api";
+import { ordenarMesas } from "@/lib/mesas";
 import { useAuthStore } from "@/store/auth.store";
 import type { Mesa } from "@/lib/types";
 
@@ -15,7 +16,7 @@ export default function AdminCartaQrPage() {
 
   useEffect(() => {
     if (!token) return;
-    apiFetch<Mesa[]>("/mesas", { token }).then(setMesas);
+    apiFetch<Mesa[]>("/mesas", { token }).then((data) => setMesas(ordenarMesas(data)));
   }, [token]);
 
   useEffect(() => {

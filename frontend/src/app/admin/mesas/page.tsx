@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
+import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
 import { useAuthStore } from "@/store/auth.store";
 import type { Mesa, MesaSesion, UserRole } from "@/lib/types";
 
@@ -25,15 +26,16 @@ export default function AdminMesasPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [reasignandoId, setReasignandoId] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   async function loadData() {
     if (!token) return;
     const [mesasData, usuariosData, sesionesData] = await Promise.all([
-      apiFetch<Mesa[]>("/mesas", { token }),
+      apiFetch<Mesa[]>("/mesas?incluirInactivas=true", { token }),
       apiFetch<UsuarioBasico[]>("/usuarios", { token }),
       apiFetch<MesaSesion[]>("/mesa-sesiones?activas=true", { token }),
     ]);
-    setMesas(mesasData);
+    setMesas(ordenarMesas(mesasData));
     setMeseros(usuariosData.filter((u) => u.role === "MESERO" && u.isActive));
     setSesionesActivas(sesionesData);
   }
@@ -66,7 +68,7 @@ export default function AdminMesasPage() {
     // contra la API en vez de quedarnos con el estado viejo de las mesas.
     socket.on("connect", loadData);
     socket.on("mesa:actualizada", (mesa: Mesa) => {
-      setMesas((prev) => prev.map((m) => (m.id === mesa.id ? mesa : m)));
+      setMesas((prev) => aplicarCambioDeMesa(prev, mesa, true));
     });
     socket.on("mesaSesion:nueva", (sesion: MesaSesion) => {
       setMesas((prev) => prev.map((m) => (m.id === sesion.mesaId ? { ...m, estado: "OCUPADA" } : m)));
@@ -135,14 +137,39 @@ export default function AdminMesasPage() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(mesa: Mesa) {
     if (!token) return;
-    if (!confirm("¿Eliminar esta mesa?")) return;
+    if (
+      !confirm(
+        `¿Quitar la Mesa ${mesa.numero}?\n\nSi ya tuvo clientes (pedidos o cuentas), no se borra: se desactiva para no perder ese historial, y la puedes reactivar cuando quieras.`
+      )
+    )
+      return;
+    setError(null);
+    setAviso(null);
     try {
-      await apiFetch(`/mesas/${id}`, { method: "DELETE", token });
+      const respuesta = await apiFetch<{ eliminada: boolean }>(`/mesas/${mesa.id}`, { method: "DELETE", token });
+      setAviso(
+        respuesta.eliminada
+          ? `Mesa ${mesa.numero} eliminada.`
+          : `Mesa ${mesa.numero} desactivada: ya no aparece para los meseros ni en el QR, pero su historial se conserva.`
+      );
       await loadData();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo eliminar la mesa.");
+      setError(err instanceof ApiError ? err.message : "No se pudo quitar la mesa.");
+    }
+  }
+
+  async function handleReactivar(mesa: Mesa) {
+    if (!token) return;
+    setError(null);
+    setAviso(null);
+    try {
+      await apiFetch(`/mesas/${mesa.id}`, { method: "PUT", token, body: JSON.stringify({ activa: true }) });
+      setAviso(`Mesa ${mesa.numero} reactivada.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo reactivar la mesa.");
     }
   }
 
@@ -153,6 +180,7 @@ export default function AdminMesasPage() {
         un mesero específico (solo él o el admin podrán atenderla) o dejarla libre para cualquiera.
       </p>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {aviso ? <p className="text-sm text-green-700">{aviso}</p> : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {mesas.map((mesa) =>
@@ -184,6 +212,18 @@ export default function AdminMesasPage() {
                 </button>
               </div>
             </form>
+          ) : !mesa.activa ? (
+            <div
+              key={mesa.id}
+              className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-border p-3 text-center opacity-60"
+            >
+              <p className="text-lg font-bold">Mesa {mesa.numero}</p>
+              <p className="text-xs text-muted-foreground">{mesa.capacidad} puestos</p>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">Desactivada</span>
+              <button onClick={() => handleReactivar(mesa)} className="mt-1 text-xs font-semibold text-accent">
+                Reactivar
+              </button>
+            </div>
           ) : (
             <div key={mesa.id} className="relative flex flex-col items-center gap-1 rounded-xl border border-border p-3 text-center">
               {mesa.estado === "OCUPADA" ? (
@@ -244,9 +284,11 @@ export default function AdminMesasPage() {
                 <button onClick={() => setEditingId(mesa.id)} className="text-xs font-semibold text-accent">
                   Editar
                 </button>
-                <button onClick={() => handleDelete(mesa.id)} className="text-xs font-semibold text-red-600">
-                  Eliminar
-                </button>
+                {mesa.estado === "LIBRE" ? (
+                  <button onClick={() => handleDelete(mesa)} className="text-xs font-semibold text-red-600">
+                    Quitar
+                  </button>
+                ) : null}
               </div>
             </div>
           )

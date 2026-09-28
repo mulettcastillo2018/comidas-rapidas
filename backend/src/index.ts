@@ -4,6 +4,8 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
+import multer from "multer";
+import { Prisma } from "@prisma/client";
 
 import { createRealtimeServer } from "./realtime/socket";
 import { authRouter } from "./routes/auth.routes";
@@ -21,9 +23,15 @@ import { solicitudesRouter } from "./routes/solicitudes.routes";
 import { allowedOrigins } from "./lib/corsOrigins";
 import { ErrorDeNegocio } from "./lib/errores";
 import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
+import { iniciarLimpiezaPeriodica } from "./services/limpieza";
 
 const app = express();
 const port = process.env.PORT ?? 4001;
+
+// Detrás de un proxy (Nginx, Render, Railway...) todas las peticiones llegan
+// desde la IP del proxy; esto hace que req.ip sea la del cliente real, que es
+// la que usan los límites de pedidos por dispositivo.
+if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
 
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
@@ -46,12 +54,29 @@ app.use("/carta", cartaRouter);
 app.use("/notificaciones", notificacionesRouter);
 app.use("/solicitudes", solicitudesRouter);
 
+// Errores de Prisma que son culpa de la petición (dato repetido, registro que
+// ya no existe o que otros registros usan), no fallas del servidor.
+const ERRORES_PRISMA: Record<string, { status: number; mensaje: string }> = {
+  P2002: { status: 409, mensaje: "Ya existe un registro con esos datos." },
+  P2003: { status: 409, mensaje: "No se puede completar: hay otros registros que dependen de este." },
+  P2025: { status: 404, mensaje: "El registro no existe o ya fue eliminado." },
+};
+
 // Manejador de errores global: cualquier error no atrapado en las rutas termina
 // aquí en vez de tumbar el proceso completo.
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;
   if (err instanceof ErrorDeNegocio) {
     res.status(err.status).json({ error: err.message });
+    return;
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError && ERRORES_PRISMA[err.code]) {
+    const { status, mensaje } = ERRORES_PRISMA[err.code];
+    res.status(status).json({ error: mensaje });
+    return;
+  }
+  if (err instanceof multer.MulterError) {
+    res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "La imagen supera el máximo de 5 MB." : "No se pudo subir el archivo." });
     return;
   }
   console.error(err);
@@ -70,3 +95,4 @@ httpServer.listen(port, () => {
 });
 
 iniciarRevisionRetrasos();
+iniciarLimpiezaPeriodica();

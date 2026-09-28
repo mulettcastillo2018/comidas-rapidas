@@ -73,6 +73,9 @@ model Mesa {
   // en null, la mesa está "libre" y cualquier mesero puede atenderla.
   meseroAsignadoId String?
   meseroAsignado   User?        @relation("MesaAsignada", fields: [meseroAsignadoId], references: [id])
+  // Una mesa con historial no se borra (sus sesiones y facturas la
+  // referencian): se desactiva y deja de aparecer para meseros y QR.
+  activa           Boolean      @default(true)
   sesiones         MesaSesion[]
   solicitudes      SolicitudPedido[]
 }

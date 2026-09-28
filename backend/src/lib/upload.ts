@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import multer from "multer";
+import { ErrorDeNegocio } from "./errores";
 
 const uploadsDir = path.join(__dirname, "..", "..", "uploads", "productos");
 fs.mkdirSync(uploadsDir, { recursive: true });
@@ -20,7 +21,7 @@ export const uploadImagenProducto = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!TIPOS_PERMITIDOS.has(file.mimetype)) {
-      cb(new Error("Formato de imagen no soportado (usa JPG, PNG, WEBP o GIF)"));
+      cb(new ErrorDeNegocio("Formato de imagen no soportado (usa JPG, PNG, WEBP o GIF)", 400));
       return;
     }
     cb(null, true);
