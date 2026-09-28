@@ -163,6 +163,10 @@ cajaRouter.delete(
   requireAuth,
   requireAdmin,
   catchAsync(async (req, res) => {
+    // El pago de un gasto se borra junto con el gasto, desde Gastos.
+    if (await prisma.gasto.findUnique({ where: { movimientoCajaId: req.params.id } })) {
+      throw new ErrorDeNegocio("Esta salida es el pago de un gasto: bórrala desde Gastos", 409);
+    }
     const borrado = await prisma.movimientoCaja.deleteMany({ where: { id: req.params.id, cierreCajaId: null } });
     if (borrado.count === 0) throw new ErrorDeNegocio("Ese movimiento no existe o ya pertenece a un cierre de caja", 409);
     res.status(204).send();

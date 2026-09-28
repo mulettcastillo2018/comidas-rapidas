@@ -13,6 +13,7 @@ import { probarControl } from "./control.e2e";
 import { probarExperiencia } from "./experiencia.e2e";
 import { probarOfertas } from "./ofertas.e2e";
 import { probarDomicilios } from "./domicilios.e2e";
+import { probarGestion } from "./gestion.e2e";
 
 const PRUEBAS: [string, () => Promise<void>][] = [
   ["Integridad y sesiones", probarIntegridad],
@@ -26,6 +27,7 @@ const PRUEBAS: [string, () => Promise<void>][] = [
   ["Experiencia del cliente y demanda", probarExperiencia],
   ["Ofertas: adiciones, combos, promociones y descuentos", probarOfertas],
   ["Domicilios y apps", probarDomicilios],
+  ["Gestión: gastos, resultados, turnos y propinas", probarGestion],
 ];
 
 async function main() {

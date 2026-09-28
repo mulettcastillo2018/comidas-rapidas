@@ -14,6 +14,8 @@ export interface Creados {
   adiciones: string[];
   promociones: string[];
   plataformas: string[];
+  gastos: string[];
+  turnos: string[];
   // Texto que identifica notificaciones de la prueba (p. ej. el nombre del
   // cliente de mostrador de prueba).
   textos: string[];
@@ -31,6 +33,8 @@ export function registroDeCreados(prefijoMesas: string): Creados {
     adiciones: [],
     promociones: [],
     plataformas: [],
+    gastos: [],
+    turnos: [],
     textos: [prefijoMesas],
   };
 }
@@ -40,7 +44,12 @@ export async function limpiar(c: Creados) {
   // que tomó vuelven a quedar pendientes de cerrar.
   await prisma.factura.updateMany({ where: { cierreCajaId: { in: c.cierres } }, data: { cierreCajaId: null } });
   await prisma.movimientoCaja.updateMany({ where: { cierreCajaId: { in: c.cierres } }, data: { cierreCajaId: null } });
-  await prisma.movimientoCaja.deleteMany({ where: { id: { in: c.movimientosCaja } } });
+  const deGastos = (await prisma.gasto.findMany({ where: { id: { in: c.gastos } }, select: { movimientoCajaId: true } }))
+    .map((g) => g.movimientoCajaId)
+    .filter((id): id is string => Boolean(id));
+  await prisma.gasto.deleteMany({ where: { id: { in: c.gastos } } });
+  await prisma.movimientoCaja.deleteMany({ where: { id: { in: [...c.movimientosCaja, ...deGastos] } } });
+  await prisma.turno.deleteMany({ where: { OR: [{ id: { in: c.turnos } }, { userId: { in: c.usuarios } }] } });
   await prisma.cierreCaja.deleteMany({ where: { id: { in: c.cierres } } });
 
   const deMesasDePrueba = { mesa: { numero: { startsWith: c.prefijoMesas } } };

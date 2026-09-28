@@ -44,6 +44,9 @@ model User {
   cierresCaja        CierreCaja[]
   entregasCaja       MovimientoCaja[]  @relation("EntregasMesero")
   movimientosCaja    MovimientoCaja[]  @relation("MovimientosRegistrados")
+  gastosRegistrados  Gasto[]           @relation("GastosRegistrados")
+  turnos             Turno[]           @relation("TurnosDelUsuario")
+  turnosEditados     Turno[]           @relation("TurnosEditados")
 }
 
 model Categoria {
@@ -483,8 +486,77 @@ model MovimientoCaja {
   creadoEn        DateTime           @default(now())
   cierreCajaId    String?
   cierreCaja      CierreCaja?        @relation(fields: [cierreCajaId], references: [id])
+  // Si es el pago de un gasto con plata de la caja.
+  gasto           Gasto?
 
   @@index([cierreCajaId])
+}
+
+enum CategoriaGasto {
+  // Carne, pan, papas, gaseosas para la venta, empaques...
+  INSUMOS
+  NOMINA
+  ARRIENDO
+  // Luz, agua, gas, internet.
+  SERVICIOS
+  MANTENIMIENTO
+  PUBLICIDAD
+  IMPUESTOS
+  OTROS
+}
+
+// Lo que se paga para operar, para saber cuánto queda de verdad (estado de
+// resultados) y cuánto hay que vender para no perder (punto de equilibrio).
+model Gasto {
+  id               String          @id @default(cuid())
+  // Día al que corresponde (hora de Colombia, guardado a mediodía).
+  fecha            DateTime
+  categoria        CategoriaGasto
+  concepto         String
+  monto            Int
+  // Fijo: se paga igual se venda o no (arriendo, nómina base, servicios).
+  esFijo           Boolean         @default(false)
+  // Pagado con efectivo de la caja: queda como salida en el turno.
+  movimientoCajaId String?         @unique
+  movimientoCaja   MovimientoCaja? @relation(fields: [movimientoCajaId], references: [id])
+  registradoPorId  String
+  registradoPor    User            @relation("GastosRegistrados", fields: [registradoPorId], references: [id])
+  creadoEn         DateTime        @default(now())
+
+  @@index([fecha])
+}
+
+// Entrada y salida de cada persona, para repartir las propinas según las
+// horas trabajadas.
+model Turno {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation("TurnosDelUsuario", fields: [userId], references: [id])
+  entrada      DateTime  @default(now())
+  // null = sigue trabajando.
+  salida       DateTime?
+  // Admin que lo corrigió (p. ej. se le olvidó marcar la salida).
+  editadoPorId String?
+  editadoPor   User?     @relation("TurnosEditados", fields: [editadoPorId], references: [id])
+
+  @@index([userId, entrada])
+  @@index([entrada])
+}
+
+enum ModoPropina {
+  // Cada mesero se queda con las propinas de sus mesas.
+  PROPIAS
+  // Las propinas del salón se juntan y se reparten por horas trabajadas.
+  POZO
+}
+
+// Ajustes del negocio (una sola fila, id "unica").
+model Configuracion {
+  id               String      @id @default("unica")
+  // Parte de las propinas que va para cocina (se reparte entre la gente de
+  // cocina según sus horas).
+  propinaPctCocina Int         @default(0)
+  propinaModo      ModoPropina @default(PROPIAS)
 }
 
 enum NotificacionTipo {

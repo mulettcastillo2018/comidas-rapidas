@@ -5,9 +5,11 @@ import { useAuthStore } from "@/store/auth.store";
 import { ReporteVentasVista } from "@/components/reportes/ReporteVentasVista";
 import { ReporteTiemposCocina } from "@/components/reportes/ReporteTiemposCocina";
 import { ReporteOpiniones } from "@/components/reportes/ReporteOpiniones";
+import { ReporteResultados } from "@/components/reportes/ReporteResultados";
 
 const VISTAS = [
   { id: "ventas", label: "Ventas" },
+  { id: "resultados", label: "Resultados" },
   { id: "opiniones", label: "Opiniones" },
   { id: "tiempos", label: "Tiempos de cocina" },
 ] as const;
@@ -33,6 +35,8 @@ export default function AdminReportesPage() {
       </div>
       {vista === "ventas" ? (
         <ReporteVentasVista token={token} />
+      ) : vista === "resultados" ? (
+        <ReporteResultados token={token} />
       ) : vista === "opiniones" ? (
         <ReporteOpiniones token={token} />
       ) : (

@@ -29,6 +29,9 @@ import { adicionesRouter } from "./routes/adiciones.routes";
 import { promocionesRouter } from "./routes/promociones.routes";
 import { domiciliosRouter } from "./routes/domicilios.routes";
 import { plataformasRouter } from "./routes/plataformas.routes";
+import { gastosRouter } from "./routes/gastos.routes";
+import { turnosRouter } from "./routes/turnos.routes";
+import { configuracionRouter, reportesGestionRouter } from "./routes/gestion.routes";
 import { allowedOrigins } from "./lib/corsOrigins";
 import { ErrorDeNegocio } from "./lib/errores";
 import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
@@ -71,6 +74,10 @@ app.use("/adiciones", adicionesRouter);
 app.use("/promociones", promocionesRouter);
 app.use("/domicilios", domiciliosRouter);
 app.use("/plataformas", plataformasRouter);
+app.use("/gastos", gastosRouter);
+app.use("/turnos", turnosRouter);
+app.use("/reportes", reportesGestionRouter);
+app.use("/configuracion", configuracionRouter);
 
 // Errores de Prisma que son culpa de la petición (dato repetido, registro que
 // ya no existe o que otros registros usan), no fallas del servidor.
