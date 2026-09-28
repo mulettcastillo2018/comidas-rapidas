@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -39,10 +40,14 @@ const crearSolicitudSchema = z
     mesaId: z.string().min(1).nullable().optional(),
     nombreCliente: z.string().trim().min(1).nullable().optional(),
     telefonoCliente: z.string().trim().min(1).nullable().optional(),
+    aceptaDatos: z.boolean().optional(),
     items: z.array(solicitudItemSchema).min(1),
   })
   .refine((data) => data.mesaId || (data.nombreCliente && data.telefonoCliente), {
     message: "Sin mesa, el nombre y el teléfono del cliente son obligatorios",
+  })
+  .refine((data) => data.mesaId || data.aceptaDatos === true, {
+    message: "Debes autorizar el uso de tu nombre y teléfono para que podamos avisarte de tu pedido",
   });
 
 // Público (sin auth): el cliente arma su pedido desde la carta pública, ya
@@ -55,7 +60,9 @@ solicitudesRouter.post(
   catchAsync(async (req, res) => {
     const parsed = crearSolicitudSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.flatten() });
+      // Mensaje legible: esto lo ve el cliente en la carta pública.
+      const { formErrors } = parsed.error.flatten();
+      res.status(400).json({ error: formErrors[0] ?? "Revisa tu pedido: faltan datos o hay algo inválido." });
       return;
     }
     const { mesaId, nombreCliente, telefonoCliente, items } = parsed.data;
@@ -101,7 +108,9 @@ solicitudesRouter.post(
       data: {
         mesaId: mesaId ?? null,
         nombreCliente: nombreCliente ?? null,
-        telefonoCliente: telefonoCliente ?? null,
+        telefonoCliente: mesaId ? null : (telefonoCliente ?? null),
+        codigoSeguimiento: randomBytes(9).toString("base64url"),
+        datosAutorizadosEn: mesaId ? null : new Date(),
         items: {
           create: items.map((item) => ({
             productoId: item.productoId,

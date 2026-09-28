@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
+import { estimarListoEn, formatoHora } from "@/lib/tiempoEstimado";
 import { useAuthStore } from "@/store/auth.store";
 import type { MetodoPago, Pedido, SolicitudPedido } from "@/lib/types";
 
@@ -139,6 +140,10 @@ export default function AdminMostradorPage() {
                   <p className="mt-2 text-sm font-bold">
                     Total: {new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP" }).format(total)}
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    Dile al cliente: estará listo en unos {Math.max(0, ...solicitud.items.map((i) => i.producto?.tiempoPreparacionMinutos ?? 0))} min
+                    después de pagar. Puede seguirlo desde su celular.
+                  </p>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <select
                       value={metodoPago}
@@ -179,8 +184,17 @@ export default function AdminMostradorPage() {
           <div className="mt-3 space-y-3">
             {pedidos.map((pedido) => (
               <div key={pedido.id} className="rounded-xl border border-border p-4">
-                <p className="font-semibold">{pedido.nombreCliente}</p>
-                <p className="text-xs text-muted-foreground">Tel: {pedido.telefonoCliente}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold">{pedido.nombreCliente}</p>
+                    <p className="text-xs text-muted-foreground">Tel: {pedido.telefonoCliente}</p>
+                  </div>
+                  {estimarListoEn(pedido) ? (
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
+                      Listo aprox. {formatoHora(estimarListoEn(pedido)!)}
+                    </span>
+                  ) : null}
+                </div>
                 <ul className="mt-2 space-y-1 text-sm">
                   {pedido.items
                     .filter((i) => i.estado !== "CANCELADO")

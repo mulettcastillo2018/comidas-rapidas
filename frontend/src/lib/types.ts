@@ -270,6 +270,7 @@ export interface SolicitudPedido {
   resueltaEn: string | null;
   resueltaPor?: PersonaBasica | null;
   pedidoId: string | null;
+  codigoSeguimiento: string | null;
 }
 
 export type NotificacionTipo =

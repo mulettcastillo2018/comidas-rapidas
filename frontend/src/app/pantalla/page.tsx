@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
-import { nombreCompleto } from "@/lib/nombre";
+import { nombreCompleto, nombreCorto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import type { Pedido } from "@/lib/types";
 
@@ -92,7 +92,7 @@ export default function PantallaPage() {
                   {pedido.origenCliente ? "📱 Pedido por QR" : "🧑‍🍳 Tomado por mesero"}
                 </span>
               </div>
-              <p className="mt-1 font-semibold">{pedido.mesaSesion?.nombreResponsable ?? pedido.nombreCliente ?? "—"}</p>
+              <p className="mt-1 font-semibold">{nombreCorto(pedido.mesaSesion?.nombreResponsable ?? pedido.nombreCliente) || "—"}</p>
               <p className="text-xs text-muted-foreground">
                 {pedido.mesaSesion ? `Mesero: ${nombreCompleto(pedido.mesaSesion.mesero) || "—"}` : "Atendido en caja"} · hace{" "}
                 {minutosTranscurridos(pedido, ahora)} min

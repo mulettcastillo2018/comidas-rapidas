@@ -1,15 +1,39 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Minus, Plus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { resolverImagenUrl } from "@/lib/images";
-import type { CategoriaConCarta } from "@/lib/types";
+import { unlockAudio } from "@/lib/notificationSound";
+import type { CategoriaConCarta, SolicitudPedido } from "@/lib/types";
 
 function formatCOP(amount: number) {
   return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP" }).format(amount);
+}
+
+// Último pedido enviado desde este celular, para poder volver a su página de
+// seguimiento si el cliente cerró la pestaña. Solo en este dispositivo.
+const CLAVE_PEDIDO_RECIENTE = "comidas-pedido-reciente";
+const VIGENCIA_PEDIDO_RECIENTE_MS = 6 * 60 * 60_000;
+
+function leerPedidoReciente(): string | null {
+  try {
+    const guardado = JSON.parse(localStorage.getItem(CLAVE_PEDIDO_RECIENTE) ?? "null") as { codigo: string; en: number } | null;
+    return guardado && Date.now() - guardado.en < VIGENCIA_PEDIDO_RECIENTE_MS ? guardado.codigo : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarPedidoReciente(codigo: string) {
+  try {
+    localStorage.setItem(CLAVE_PEDIDO_RECIENTE, JSON.stringify({ codigo, en: Date.now() }));
+  } catch {
+    // Sin almacenamiento (modo privado, etc.): igual se redirige al seguimiento.
+  }
 }
 
 interface CartItem {
@@ -22,6 +46,7 @@ interface CartItem {
 }
 
 function CartaContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const mesaId = searchParams.get("mesa");
   const esRecoger = searchParams.get("recoger") === "1";
@@ -30,16 +55,17 @@ function CartaContent() {
   const [carrito, setCarrito] = useState<CartItem[]>([]);
   const [nombreCliente, setNombreCliente] = useState("");
   const [telefonoCliente, setTelefonoCliente] = useState("");
+  const [aceptaDatos, setAceptaDatos] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [enviado, setEnviado] = useState(false);
+  const [pedidoReciente, setPedidoReciente] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<CategoriaConCarta[]>("/carta").then(setCategorias);
+    setPedidoReciente(leerPedidoReciente());
   }, []);
 
   function agregarAlCarrito(producto: { id: string; nombre: string; precio: number }) {
-    setEnviado(false);
     setCarrito((prev) => {
       const existente = prev.find((i) => i.productoId === producto.id);
       if (existente) {
@@ -74,15 +100,23 @@ function CartaContent() {
       setError("Para un pedido de mostrador necesitamos tu nombre y tu teléfono, así te avisamos cuando esté listo.");
       return;
     }
+    if (esRecoger && !aceptaDatos) {
+      setError("Para continuar, autoriza el uso de tu nombre y teléfono para este pedido.");
+      return;
+    }
+    // Este toque del cliente habilita el sonido de "listo" en la página de
+    // seguimiento (los navegadores bloquean el audio sin un gesto previo).
+    unlockAudio();
     setError(null);
     setEnviando(true);
     try {
-      await apiFetch("/solicitudes", {
+      const solicitud = await apiFetch<SolicitudPedido>("/solicitudes", {
         method: "POST",
         body: JSON.stringify({
           mesaId: mesaId ?? null,
           nombreCliente: nombreCliente.trim() || null,
           telefonoCliente: esRecoger ? telefonoCliente.trim() : null,
+          aceptaDatos: esRecoger ? aceptaDatos : undefined,
           items: carrito.map((i) => ({
             productoId: i.productoId,
             cantidad: i.cantidad,
@@ -91,8 +125,11 @@ function CartaContent() {
           })),
         }),
       });
-      setEnviado(true);
       setCarrito([]);
+      if (solicitud.codigoSeguimiento) {
+        guardarPedidoReciente(solicitud.codigoSeguimiento);
+        router.push(`/seguimiento/${solicitud.codigoSeguimiento}`);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo enviar tu pedido. Intenta de nuevo.");
     } finally {
@@ -105,28 +142,21 @@ function CartaContent() {
       <h1 className="brand-gradient-text text-center text-3xl font-extrabold tracking-tight">Comidas Rápidas</h1>
       <p className="mt-2 text-center text-muted-foreground">Nuestra carta</p>
 
+      {puedeOrdenar && pedidoReciente ? (
+        <Link
+          href={`/seguimiento/${pedidoReciente}`}
+          className="mt-6 block rounded-xl border border-accent bg-accent/5 p-3 text-center text-sm font-semibold text-accent"
+        >
+          Tienes un pedido en curso → ver cómo va
+        </Link>
+      ) : null}
+
       {puedeOrdenar ? (
-        enviado ? (
-          <div className="mt-6 rounded-xl border border-accent bg-accent/5 p-4 text-center text-sm">
-            <p className="font-semibold text-accent">
-              {esRecoger ? "¡Listo! Tu pedido quedará esperando en caja." : "¡Listo! Tu pedido quedará esperando a tu mesero."}
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              {esRecoger
-                ? "Te lo confirmarán en caja. Puedes ver en la pantalla del local cuando esté listo para recoger."
-                : "Apenas llegue, lo confirmará y lo enviará a cocina."}
-            </p>
-            <button onClick={() => setEnviado(false)} className="mt-3 text-xs font-semibold text-accent">
-              Hacer otro pedido
-            </button>
-          </div>
-        ) : (
-          <p className="mt-4 rounded-xl bg-muted p-3 text-center text-sm text-muted-foreground">
-            {esRecoger
-              ? "Arma tu pedido para recoger. Cuando termines, acércate a caja para confirmarlo y pagarlo."
-              : "¿Ya sabes qué vas a pedir? Agrégalo aquí abajo y quedará listo para cuando llegue tu mesero."}
-          </p>
-        )
+        <p className="mt-4 rounded-xl bg-muted p-3 text-center text-sm text-muted-foreground">
+          {esRecoger
+            ? "Arma tu pedido para recoger. Cuando termines, acércate a caja para confirmarlo y pagarlo."
+            : "¿Ya sabes qué vas a pedir? Agrégalo aquí abajo y quedará listo para cuando llegue tu mesero."}
+        </p>
       ) : null}
 
       {!categorias ? (
@@ -232,8 +262,18 @@ function CartaContent() {
                 value={telefonoCliente}
                 onChange={(e) => setTelefonoCliente(e.target.value)}
                 placeholder="Tu teléfono (para avisarte)"
+                inputMode="tel"
                 className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
+            ) : null}
+            {esRecoger ? (
+              <label className="mt-2 flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
+                <input type="checkbox" checked={aceptaDatos} onChange={(e) => setAceptaDatos(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Autorizo el uso de mi nombre y teléfono solo para gestionar este pedido y avisarme cuando esté listo. El
+                  teléfono se borra a los 30 días (Ley 1581 de 2012).
+                </span>
+              </label>
             ) : null}
             {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
             <button

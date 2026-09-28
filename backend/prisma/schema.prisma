@@ -271,6 +271,13 @@ model SolicitudPedido {
   resueltaPor   User?                 @relation(fields: [resueltaPorId], references: [id])
   pedidoId      String?               @unique
   pedido        Pedido?               @relation(fields: [pedidoId], references: [id])
+  // Código aleatorio de la página pública /seguimiento/<código>, donde el
+  // cliente ve el estado de su pedido sin cuenta ni login. Aleatorio (no el
+  // id) para que no se puedan adivinar pedidos ajenos.
+  codigoSeguimiento String?           @unique
+  // Cuándo autorizó el cliente usar su nombre y teléfono (Ley 1581 de 2012);
+  // obligatorio en pedidos de mostrador, que son los que piden esos datos.
+  datosAutorizadosEn DateTime?
 }
 
 model SolicitudPedidoItem {
