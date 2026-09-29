@@ -5,7 +5,13 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash("29bc41aa", 10);
+  // La contraseña del administrador inicial no va en el código (el
+  // repositorio es público): se toma del .env. Solo se usa al crearlo.
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!adminPassword || adminPassword.length < 8) {
+    throw new Error("Define SEED_ADMIN_PASSWORD (mínimo 8 caracteres) en el .env antes de correr el seed.");
+  }
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@comidasrapidas.test" },
@@ -60,7 +66,7 @@ async function main() {
   }
 
   console.log("Seed completado:");
-  console.log("  Admin:", admin.email, "(password: 29bc41aa)");
+  console.log("  Admin:", admin.email, "(contraseña: la de SEED_ADMIN_PASSWORD)");
   console.log("  Categorías:", categorias.length);
   console.log("  Productos:", productos.length);
   console.log("  Mesas:", mesas.length);
