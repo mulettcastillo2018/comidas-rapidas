@@ -7,6 +7,7 @@ import { nombreCompleto } from "@/lib/nombre";
 import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
 import { useAuthStore } from "@/store/auth.store";
 import type { Mesa, MesaSesion, UserRole } from "@/lib/types";
+import { useSedes } from "@/lib/sedes";
 
 interface UsuarioBasico {
   id: string;
@@ -14,6 +15,7 @@ interface UsuarioBasico {
   apellido: string;
   role: UserRole;
   isActive: boolean;
+  sedeId: string | null;
 }
 
 export default function AdminMesasPage() {
@@ -27,6 +29,9 @@ export default function AdminMesasPage() {
   const [saving, setSaving] = useState(false);
   const [reasignandoId, setReasignandoId] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  // Solo se asignan meseros de la sede en la que se está.
+  const sedes = useSedes();
+  const meserosDeSede = meseros.filter((m) => !sedes || m.sedeId === sedes.actual);
 
   async function loadData() {
     if (!token) return;
@@ -244,7 +249,7 @@ export default function AdminMesasPage() {
                 className="mt-1 w-full rounded-lg border border-border px-2 py-1 text-xs"
               >
                 <option value="">Sin asignar (libre)</option>
-                {meseros.map((m) => (
+                {meserosDeSede.map((m) => (
                   <option key={m.id} value={m.id}>
                     {nombreCompleto(m)}
                   </option>
@@ -264,7 +269,7 @@ export default function AdminMesasPage() {
                     className="mt-1 w-full rounded-lg border border-border px-2 py-1 text-[11px]"
                   >
                     <option value="">Reasignar a otro mesero…</option>
-                    {meseros
+                    {meserosDeSede
                       .filter((m) => m.id !== sesionDeMesa(mesa.id)?.meseroId)
                       .map((m) => (
                         <option key={m.id} value={m.id}>

@@ -1,4 +1,5 @@
 import { cerrarSesionForzada } from "@/lib/sesion";
+import { sedeElegida } from "@/lib/sedeElegida";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
@@ -9,6 +10,12 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+// El administrador general trabaja en la sede que eligió (ver SelectorSede).
+function encabezadoSede(token: string | null | undefined): Record<string, string> {
+  const sede = token ? sedeElegida() : null;
+  return sede ? { "X-Sede": sede } : {};
 }
 
 // Un 401 con token significa que la sesión ya no es válida (cuenta
@@ -33,6 +40,7 @@ export async function apiFetch<T>(
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...encabezadoSede(token),
       ...headers,
     },
   });
@@ -51,7 +59,7 @@ export async function uploadFile<T>(path: string, file: File, fieldName: string,
 
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...encabezadoSede(token) },
     body: formData,
   });
 

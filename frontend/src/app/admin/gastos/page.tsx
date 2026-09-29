@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { activas, conAlcance, nombreActual, useSedes, useVerTodas } from "@/lib/sedes";
+import { AlcanceSedes } from "@/components/SelectorSede";
 import { formatoPesos, hoyLocal } from "@/lib/formato";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
@@ -22,6 +24,11 @@ export default function AdminGastosPage() {
   const [hasta, setHasta] = useState(hoy);
   const [lista, setLista] = useState<ListaGastos | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const todas = useVerTodas();
+  const sedes = useSedes();
+  const variasSedes = activas(sedes).length > 1;
+  // Solo el administrador general registra gastos del negocio en general.
+  const [general, setGeneral] = useState(false);
 
   const [dia, setDia] = useState(hoy);
   const [categoria, setCategoria] = useState<CategoriaGasto>("INSUMOS");
@@ -33,10 +40,10 @@ export default function AdminGastosPage() {
 
   const cargar = useCallback(() => {
     if (!token) return;
-    apiFetch<ListaGastos>(`/gastos?desde=${desde}&hasta=${hasta}`, { token })
+    apiFetch<ListaGastos>(conAlcance(`/gastos?desde=${desde}&hasta=${hasta}`, todas), { token })
       .then(setLista)
       .catch((err) => setError(err instanceof ApiError ? err.message : "No se pudieron cargar los gastos."));
-  }, [token, desde, hasta]);
+  }, [token, desde, hasta, todas]);
 
   useEffect(cargar, [cargar]);
 
@@ -51,7 +58,7 @@ export default function AdminGastosPage() {
     setError(null);
     setGuardando(true);
     try {
-      await apiFetch("/gastos", { method: "POST", token, body: JSON.stringify({ dia, categoria, concepto: concepto.trim(), monto, esFijo, desdeCaja }) });
+      await apiFetch("/gastos", { method: "POST", token, body: JSON.stringify({ dia, categoria, concepto: concepto.trim(), monto, esFijo, desdeCaja, general }) });
       showToast(desdeCaja ? "Gasto registrado y descontado de la caja" : "Gasto registrado");
       setConcepto("");
       setMonto(null);
@@ -84,7 +91,9 @@ export default function AdminGastosPage() {
       </p>
 
       <form onSubmit={guardar} className="space-y-3 rounded-xl border border-border p-4">
-        <h2 className="text-sm font-bold">Registrar un gasto</h2>
+        <h2 className="text-sm font-bold">
+          Registrar un gasto{variasSedes ? (general ? " del negocio en general" : ` de ${nombreActual(sedes)}`) : ""}
+        </h2>
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="text-sm">
             <span className="font-semibold">Categoría</span>
@@ -127,9 +136,22 @@ export default function AdminGastosPage() {
             Es fijo (se paga igual se venda o no)
           </label>
           <label className="flex items-center gap-2">
-            <input type="checkbox" checked={desdeCaja} disabled={dia !== hoy} onChange={(e) => setDesdeCaja(e.target.checked)} />
+            <input type="checkbox" checked={desdeCaja} disabled={dia !== hoy || general} onChange={(e) => setDesdeCaja(e.target.checked)} />
             Se pagó con efectivo de la caja{dia !== hoy ? " (solo gastos de hoy)" : ""}
           </label>
+          {variasSedes && sedes?.puedeCambiar ? (
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={general}
+                onChange={(e) => {
+                  setGeneral(e.target.checked);
+                  if (e.target.checked) setDesdeCaja(false);
+                }}
+              />
+              Es del negocio en general, no de una sede (p. ej. contador, publicidad de la marca)
+            </label>
+          ) : null}
         </div>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <button disabled={guardando || !monto || concepto.trim().length < 3} className="btn-primary rounded-full px-5 py-2 text-sm disabled:opacity-50">
@@ -138,6 +160,7 @@ export default function AdminGastosPage() {
       </form>
 
       <section className="space-y-4">
+        <AlcanceSedes />
         <SelectorRango
           desde={desde}
           hasta={hasta}
@@ -187,7 +210,7 @@ export default function AdminGastosPage() {
                       <td className="py-1.5 pr-4">
                         {g.concepto}
                         <span className="block text-[11px] text-muted-foreground">
-                          {[g.esFijo ? "fijo" : null, g.desdeCaja ? "salió de la caja" : null, `registró ${g.registradoPor}`].filter(Boolean).join(" · ")}
+                          {[todas ? (g.sede ?? "general") : null, g.esFijo ? "fijo" : null, g.desdeCaja ? "salió de la caja" : null, `registró ${g.registradoPor}`].filter(Boolean).join(" · ")}
                         </span>
                       </td>
                       <td className="py-1.5 pr-4 text-xs">{CATEGORIA_GASTO_LABEL[g.categoria]}</td>

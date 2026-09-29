@@ -1,4 +1,5 @@
-import { Router, type Response } from "express";
+import { Router, type Request, type Response } from "express";
+import { exigirMismaSede } from "../services/sedes";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
@@ -84,6 +85,7 @@ domiciliosRouter.post(
 
     const pedidoId = await prisma.$transaction(async (tx) => {
       const id = await crearPedidoEnTx(tx, {
+        sedeId: req.sedeId,
         canal: datos.canal,
         meseroId: req.user!.userId,
         nombreCliente: datos.nombreCliente ?? null,
@@ -112,6 +114,7 @@ domiciliosRouter.post(
         }
         const factura = await tx.factura.create({
           data: {
+            sedeId: req.sedeId,
             pedidoId: id,
             subtotal,
             envioMonto: datos.envio,
@@ -124,6 +127,7 @@ domiciliosRouter.post(
       } else {
         const factura = await tx.factura.create({
           data: {
+            sedeId: req.sedeId,
             pedidoId: id,
             subtotal,
             total: subtotal,
@@ -151,9 +155,10 @@ domiciliosRouter.post(
 // En cocina, listos para salir o en camino.
 domiciliosRouter.get(
   "/activos",
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const pedidos = await prisma.pedido.findMany({
       where: {
+        sedeId: req.sedeId,
         canal: { in: ["DOMICILIO", "PLATAFORMA"] },
         OR: [{ estado: { in: ["RECIBIDO", "EN_PREPARACION", "LISTO"] } }, { domicilio: { estado: "EN_CAMINO" } }],
       },
@@ -167,9 +172,9 @@ domiciliosRouter.get(
 // Nombres usados en los últimos 60 días, para sugerirlos al despachar.
 domiciliosRouter.get(
   "/domiciliarios",
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const recientes = await prisma.domicilio.findMany({
-      where: { domiciliario: { not: null }, salioEn: { gte: new Date(Date.now() - 60 * 86_400_000) } },
+      where: { domiciliario: { not: null }, salioEn: { gte: new Date(Date.now() - 60 * 86_400_000) }, pedido: { sedeId: req.sedeId } },
       select: { domiciliario: true },
       distinct: ["domiciliario"],
     });
@@ -177,9 +182,10 @@ domiciliosRouter.get(
   })
 );
 
-async function pedidoDeDomicilio(pedidoId: string) {
+async function pedidoDeDomicilio(req: Request, pedidoId: string) {
   const pedido = await prisma.pedido.findUnique({ where: { id: pedidoId }, include: { items: true, domicilio: true, factura: true } });
   if (!pedido || (pedido.canal !== "DOMICILIO" && pedido.canal !== "PLATAFORMA")) throw new ErrorDeNegocio("Pedido a domicilio no encontrado", 404);
+  exigirMismaSede(req, pedido.sedeId, "Ese domicilio");
   return pedido;
 }
 
@@ -199,7 +205,7 @@ domiciliosRouter.put(
   "/:id/despachar",
   catchAsync(async (req, res) => {
     const domiciliario = typeof req.body?.domiciliario === "string" ? req.body.domiciliario.trim().slice(0, 60) || null : null;
-    const pedido = await pedidoDeDomicilio(req.params.id);
+    const pedido = await pedidoDeDomicilio(req, req.params.id);
     const enCurso = pedido.items.filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO");
     if (pedido.estado !== "LISTO" || enCurso.some((i) => i.estado !== "LISTO")) {
       throw new ErrorDeNegocio("Todavía hay productos en cocina: espera a que todo esté listo para despacharlo.", 409);
@@ -226,7 +232,7 @@ domiciliosRouter.put(
 domiciliosRouter.put(
   "/:id/entregado",
   catchAsync(async (req, res) => {
-    const pedido = await pedidoDeDomicilio(req.params.id);
+    const pedido = await pedidoDeDomicilio(req, req.params.id);
     if (!pedido.domicilio || pedido.domicilio.estado !== "EN_CAMINO") throw new ErrorDeNegocio("Este domicilio no está en camino", 409);
     const factura = pedido.factura;
     const pendiente = factura?.estado === "PENDIENTE";
@@ -269,11 +275,11 @@ domiciliosRouter.put(
   catchAsync(async (req, res) => {
     const motivo = typeof req.body?.motivo === "string" ? req.body.motivo.trim().slice(0, 200) : "";
     if (motivo.length < 3) throw new ErrorDeNegocio("Escribe qué pasó con la entrega", 400);
-    const pedido = await pedidoDeDomicilio(req.params.id);
+    const pedido = await pedidoDeDomicilio(req, req.params.id);
     if (!pedido.domicilio || pedido.domicilio.estado !== "EN_CAMINO") throw new ErrorDeNegocio("Este domicilio no está en camino", 409);
     const pin = typeof req.body?.pin === "string" ? req.body.pin : undefined;
     const pendiente = pedido.factura?.estado === "PENDIENTE";
-    const autorizadaPorId = pendiente ? await exigirAutorizacion(req.user!, pin, "Registrar un domicilio que no se pudo cobrar") : null;
+    const autorizadaPorId = pendiente ? await exigirAutorizacion(req.user!, pin, "Registrar un domicilio que no se pudo cobrar", pedido.sedeId) : null;
 
     await prisma.$transaction(async (tx) => {
       const tomado = await tx.domicilio.updateMany({
@@ -291,7 +297,8 @@ domiciliosRouter.put(
     if (autorizadaPorId) {
       await avisarAutorizacion(
         autorizadaPorId,
-        `Domicilio de ${pedido.nombreCliente ?? "cliente"} no se pudo entregar (${motivo}): ${pedido.factura!.total.toLocaleString("es-CO")} quedó como pérdida.`
+        `Domicilio de ${pedido.nombreCliente ?? "cliente"} no se pudo entregar (${motivo}): ${pedido.factura!.total.toLocaleString("es-CO")} quedó como pérdida.`,
+        pedido.sedeId
       );
     }
     await responder(res, pedido.id);

@@ -8,15 +8,19 @@ import { useImpresion, ZonaImpresion } from "@/lib/impresion";
 import { ordenarMesas } from "@/lib/mesas";
 import { esDireccionLocal, urlPublica } from "@/lib/urlPublica";
 import { useAuthStore } from "@/store/auth.store";
+import { activas, nombreActual, useSedes } from "@/lib/sedes";
 import type { Mesa } from "@/lib/types";
 
 // Los QR impresos deben apuntar a la dirección pública definitiva: si
 // apuntan a localhost o a la IP del wifi, dejan de funcionar al publicar el
 // sitio y habría que reimprimirlos todos.
-function urlCarta(base: string, seleccion: string): string {
-  if (seleccion === "mostrador") return `${base}/carta?recoger=1`;
+// El de mostrador y el general llevan la sede (con varias sedes, cada una
+// tiene su QR de mostrador y su carta con lo que hay disponible allí).
+function urlCarta(base: string, seleccion: string, sede: string | null): string {
+  const deSede = sede ? `sede=${sede}` : "";
+  if (seleccion === "mostrador") return `${base}/carta?recoger=1${deSede ? `&${deSede}` : ""}`;
   if (seleccion) return `${base}/carta?mesa=${seleccion}`;
-  return `${base}/carta`;
+  return `${base}/carta${deSede ? `?${deSede}` : ""}`;
 }
 
 interface QrImprimible {
@@ -32,6 +36,10 @@ export default function AdminCartaQrPage() {
   const [seleccion, setSeleccion] = useState<string>("");
   const [base, setBase] = useState("");
   const [imprimiendo, setImprimiendo] = useImpresion<QrImprimible[]>();
+  const sedes = useSedes();
+  // Con una sola sede los QR no la necesitan (y siguen sirviendo si luego se abren más).
+  const sede = activas(sedes).length > 1 ? (sedes?.actual ?? null) : null;
+  const nombreSede = sede ? nombreActual(sedes) : null;
 
   useEffect(() => {
     setBase(urlPublica());
@@ -39,7 +47,7 @@ export default function AdminCartaQrPage() {
     apiFetch<Mesa[]>("/mesas", { token }).then((data) => setMesas(ordenarMesas(data)));
   }, [token]);
 
-  const url = base ? urlCarta(base, seleccion) : "";
+  const url = base ? urlCarta(base, seleccion, sede) : "";
 
   useEffect(() => {
     if (url && canvasRef.current) QRCode.toCanvas(canvasRef.current, url, { width: 220, margin: 1 });
@@ -48,7 +56,7 @@ export default function AdminCartaQrPage() {
   // Una hoja con el QR de cada mesa (y el de mostrador) para recortar.
   async function imprimirTodos() {
     const opciones = [
-      { titulo: "Pedidos para recoger", subtitulo: "Escanea, pide y paga en caja", seleccion: "mostrador" },
+      { titulo: nombreSede ? `Para recoger · ${nombreSede}` : "Pedidos para recoger", subtitulo: "Escanea, pide y paga en caja", seleccion: "mostrador" },
       ...mesas.map((m) => ({ titulo: `Mesa ${m.numero}`, subtitulo: "Escanea para ver la carta y dejar tu pedido", seleccion: m.id })),
     ];
     setImprimiendo(
@@ -56,7 +64,7 @@ export default function AdminCartaQrPage() {
         opciones.map(async (o) => ({
           titulo: o.titulo,
           subtitulo: o.subtitulo,
-          imagen: await QRCode.toDataURL(urlCarta(base, o.seleccion), { width: 400, margin: 1 }),
+          imagen: await QRCode.toDataURL(urlCarta(base, o.seleccion, sede), { width: 400, margin: 1 }),
         }))
       )
     );
@@ -83,6 +91,7 @@ export default function AdminCartaQrPage() {
         Genera un código QR por mesa: además de ver la carta, el cliente puede dejar armado su pedido para que el
         mesero lo confirme apenas llegue. Imprime uno distinto para cada mesa y déjalo puesto en ella. El QR de
         mostrador es para clientes sin mesa que quieren pedir para recoger — se confirma y se cobra en caja.
+        {nombreSede ? ` Estos QR son de ${nombreSede}: para otra sede, elígela en la barra de arriba.` : ""}
       </p>
 
       {base && esDireccionLocal(base) ? (

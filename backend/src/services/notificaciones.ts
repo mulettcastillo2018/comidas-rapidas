@@ -42,6 +42,9 @@ export async function notificarUsuarios(params: NotificarUsuariosParams) {
 
 interface NotificarPorRolParams {
   rol: Role;
+  // De qué sede es el aviso: le llega al personal de esa sede (y, si es para
+  // administradores, también a los generales). Sin sede: a todos los del rol.
+  sedeId: string | null;
   tipo: NotificacionTipo;
   mensaje: string;
   pedidoId?: string;
@@ -49,11 +52,18 @@ interface NotificarPorRolParams {
   enlace?: string;
 }
 
+// Filtro de usuarios de una sede: los de esa sede y, para administradores,
+// los generales (sin sede), que ven todas.
+export function deLaSede(sedeId: string | null, rol: Role) {
+  if (!sedeId) return {};
+  return rol === "ADMIN" ? { OR: [{ sedeId }, { sedeId: null }] } : { sedeId };
+}
+
 // Difunde a todo el personal activo de un rol (p. ej. toda la cocina cuando
 // llega un pedido nuevo) — cada uno recibe su propia fila para poder marcarla
 // leída de forma independiente.
 export async function notificarPorRol(params: NotificarPorRolParams) {
-  const { rol, ...resto } = params;
-  const usuarios = await prisma.user.findMany({ where: { role: rol, isActive: true }, select: { id: true } });
+  const { rol, sedeId, ...resto } = params;
+  const usuarios = await prisma.user.findMany({ where: { role: rol, isActive: true, ...deLaSede(sedeId, rol) }, select: { id: true } });
   await notificarUsuarios({ userIds: usuarios.map((u) => u.id), ...resto });
 }

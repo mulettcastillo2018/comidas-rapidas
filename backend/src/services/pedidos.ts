@@ -24,6 +24,8 @@ export const pedidoInclude = {
 };
 
 interface CrearPedidoParams {
+  // Sede donde se prepara (la de la mesa, o la del mostrador/domicilio).
+  sedeId: string;
   // Por defecto: MESA si trae mesa, MOSTRADOR si no.
   canal?: CanalPedido;
   plataformaId?: string | null;
@@ -48,18 +50,19 @@ interface CrearPedidoParams {
 // No avisa a nadie: eso lo hace anunciarPedidoNuevo() una vez confirmada la
 // transacción, para no anunciar un pedido que al final se revirtió.
 export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: CrearPedidoParams): Promise<string> {
-  const { mesaSesionId = null, nombreCliente = null, telefonoCliente = null, meseroId, notasGenerales, items, origenCliente = false } = params;
+  const { sedeId, mesaSesionId = null, nombreCliente = null, telefonoCliente = null, meseroId, notasGenerales, items, origenCliente = false } = params;
   const canal = params.canal ?? (mesaSesionId ? "MESA" : "MOSTRADOR");
 
   // Precios (adiciones, promociones, combos), disponibilidad y costos. Lo que
   // no requiere cocina (bebidas, empacados) nace listo para llevar a la mesa;
   // el pedido toma el estado de su producto menos avanzado.
-  const itemsData = await construirLineas(tx, items);
+  const itemsData = await construirLineas(tx, items, sedeId);
   const ahora = new Date();
   const estadoInicial = calcularEstadoPedido(itemsData.map((i) => ({ estado: i.estado ?? "RECIBIDO" })));
 
   const created = await tx.pedido.create({
     data: {
+      sedeId,
       canal,
       mesaSesionId,
       nombreCliente,
@@ -79,7 +82,8 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
   await descontarStock(
     tx,
     created.items.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })),
-    meseroId
+    meseroId,
+    sedeId
   );
   // Ingredientes según la receta de cada producto (y de sus adiciones).
   await consumirInsumos(
@@ -90,7 +94,8 @@ export async function crearPedidoEnTx(tx: Prisma.TransactionClient, params: Crea
       cantidad: i.cantidad,
       adicionIds: i.adiciones.flatMap((a) => (a.adicionId ? [a.adicionId] : [])),
     })),
-    meseroId
+    meseroId,
+    sedeId
   );
   return created.id;
 }
@@ -99,13 +104,14 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
   const pedidoCompleto = await prisma.pedido.findUnique({ where: { id: pedidoId }, include: pedidoInclude });
   if (pedidoCompleto) {
     emitPedidoNuevo(pedidoCompleto);
-    await revisarStock(pedidoCompleto.items.map((i) => i.productoId));
+    await revisarStock(pedidoCompleto.items.map((i) => i.productoId), pedidoCompleto.sedeId);
     const adicionIds = await prisma.pedidoItemAdicion.findMany({ where: { pedidoItem: { pedidoId } }, select: { adicionId: true } });
     await revisarInsumos(
       await insumosDe(
         pedidoCompleto.items.map((i) => i.productoId),
         adicionIds.flatMap((a) => (a.adicionId ? [a.adicionId] : []))
-      )
+      ),
+      pedidoCompleto.sedeId
     );
     const ubicacion = ubicacionDe(pedidoCompleto);
     // Si todo es de los que no pasan por cocina (p. ej. solo gaseosas), no
@@ -114,6 +120,7 @@ export async function anunciarPedidoNuevo(pedidoId: string) {
     if (paraCocina > 0) {
       await notificarPorRol({
         rol: "COCINA",
+        sedeId: pedidoCompleto.sedeId,
         tipo: "PEDIDO_NUEVO",
         mensaje: `Nuevo pedido en ${ubicacion} — ${paraCocina} producto(s)`,
         pedidoId: pedidoCompleto.id,

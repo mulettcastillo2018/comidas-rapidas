@@ -14,6 +14,8 @@ export interface AuthUser {
   apellido: string;
   email: string;
   role: UserRole;
+  // null = administrador general (elige la sede en la barra).
+  sede?: { id: string; nombre: string } | null;
 }
 
 export interface Categoria {
@@ -319,6 +321,10 @@ export interface ReporteVentas {
   };
   porMetodo: { metodo: MetodoPago; ventas: number; cuentas: number }[];
   porCanal: Record<CanalPedido, { ventas: number; cuentas: number }>;
+  // Nombre de la sede del reporte (null = todas) y la comparación entre sedes
+  // (solo viendo todas).
+  sede: string | null;
+  porSede: { sedeId: string; nombre: string; ventas: number; cuentas: number; propinas: number }[];
   porMesero: { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }[];
   porProducto: ProductoReporte[];
   porCombo: { nombre: string; vendidos: number; ventas: number }[];

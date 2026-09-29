@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
+import { AlcanceSedes } from "@/components/SelectorSede";
 import { formatoPesos, hoyLocal } from "@/lib/formato";
 import { SelectorRango } from "@/components/reportes/SelectorRango";
 import { formatoCantidad, type ConsumoInsumos as Consumo } from "@/lib/insumos";
@@ -14,19 +16,21 @@ export function ConsumoInsumos({ token }: { token: string }) {
   const [hasta, setHasta] = useState(hoy);
   const [datos, setDatos] = useState<Consumo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const todas = useVerTodas();
 
   useEffect(() => {
     let vigente = true;
-    apiFetch<Consumo>(`/insumos/consumo?desde=${desde}&hasta=${hasta}`, { token })
+    apiFetch<Consumo>(conAlcance(`/insumos/consumo?desde=${desde}&hasta=${hasta}`, todas), { token })
       .then((d) => vigente && setDatos(d))
       .catch((err) => vigente && setError(err instanceof ApiError ? err.message : "No se pudo cargar el consumo."));
     return () => {
       vigente = false;
     };
-  }, [token, desde, hasta]);
+  }, [token, desde, hasta, todas]);
 
   return (
     <div className="space-y-4">
+      <AlcanceSedes />
       <SelectorRango
         desde={desde}
         hasta={hasta}

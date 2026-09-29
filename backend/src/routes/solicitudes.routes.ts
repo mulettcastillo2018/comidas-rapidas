@@ -15,6 +15,8 @@ import { incluirCatalogo } from "../services/catalogo";
 import { adquirienteDelCobro, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
 import { programarProcesamiento } from "../services/facturacion/servicio";
 import { acumularPuntos, asignarCliente, clienteDelCobro } from "../services/fidelizacion";
+import { estadosEnSede } from "../services/disponibilidad";
+import { exigirMismaSede, sedeDeLaCarta } from "../services/sedes";
 import { cobroSchema, pagosDelCobro, registrarPagos } from "../services/pagos";
 import { enlaces, notificarPorRol, notificarUsuarios } from "../services/notificaciones";
 import { emitSolicitudNueva, emitSolicitudActualizada } from "../realtime/socket";
@@ -43,15 +45,26 @@ async function conDetalle(solicitudes: SolicitudCompleta[]) {
   const adiciones = ids.length > 0 ? await prisma.adicion.findMany({ where: { id: { in: ids } }, select: { id: true, nombre: true, precio: true } }) : [];
   const porId = new Map(adiciones.map((a) => [a.id, a]));
   const vigentes = await promocionesVigentes();
-  return solicitudes.map((s) => ({
-    ...s,
-    items: s.items.map((item) => {
-      const elegidas = item.adicionIds.flatMap((id) => (porId.has(id) ? [porId.get(id)!] : []));
-      const promocion = mejorPromocion(item.producto, vigentes);
-      const base = promocion ? precioConDescuento(item.producto.precio, promocion.descuentoPct) : item.producto.precio;
-      return { ...item, adiciones: elegidas.map(({ nombre, precio }) => ({ nombre, precio })), precioEstimado: base + elegidas.reduce((t, a) => t + a.precio, 0) };
-    }),
-  }));
+  return Promise.all(
+    solicitudes.map(async (s) => {
+      // Si algo se agotó en esa sede, quien la confirma lo ve de una vez.
+      const estados = await estadosEnSede(prisma, s.items.map((i) => i.productoId), s.sedeId);
+      return {
+        ...s,
+        items: s.items.map((item) => {
+          const elegidas = item.adicionIds.flatMap((id) => (porId.has(id) ? [porId.get(id)!] : []));
+          const promocion = mejorPromocion(item.producto, vigentes);
+          const base = promocion ? precioConDescuento(item.producto.precio, promocion.descuentoPct) : item.producto.precio;
+          return {
+            ...item,
+            producto: { ...item.producto, disponible: estados.get(item.productoId)?.disponible ?? true },
+            adiciones: elegidas.map(({ nombre, precio }) => ({ nombre, precio })),
+            precioEstimado: base + elegidas.reduce((t, a) => t + a.precio, 0),
+          };
+        }),
+      };
+    })
+  );
 }
 
 async function solicitudConDetalle(id: string) {
@@ -77,6 +90,8 @@ const crearSolicitudSchema = z
     nombreCliente: z.string().trim().min(1).nullable().optional(),
     telefonoCliente: z.string().trim().min(1).nullable().optional(),
     aceptaDatos: z.boolean().optional(),
+    // Del QR de mostrador de una sede (con mesa, la sede es la de la mesa).
+    sedeId: z.string().min(1).nullable().optional(),
     items: z.array(solicitudItemSchema).min(1),
   })
   .refine((data) => data.mesaId || (data.nombreCliente && data.telefonoCliente), {
@@ -114,11 +129,12 @@ solicitudesRouter.post(
       res.status(404).json({ error: "Este código QR ya no corresponde a una mesa en servicio. Pídele al mesero que tome tu pedido." });
       return;
     }
+    const sedeId = mesa?.sedeId ?? (await sedeDeLaCarta(null, parsed.data.sedeId));
 
     // Protección principal contra pedidos falsos: un tope de solicitudes sin
-    // confirmar por mesa (o en caja). No depende de la IP, que en el wifi del
-    // local puede ser la misma para todos los clientes.
-    const pendientes = await prisma.solicitudPedido.count({ where: { mesaId: mesaId ?? null, estado: "PENDIENTE" } });
+    // confirmar por mesa (o en la caja de esa sede). No depende de la IP, que
+    // en el wifi del local puede ser la misma para todos los clientes.
+    const pendientes = await prisma.solicitudPedido.count({ where: { mesaId: mesaId ?? null, sedeId, estado: "PENDIENTE" } });
     const tope = mesaId ? MAX_PENDIENTES_POR_MESA : MAX_PENDIENTES_MOSTRADOR;
     if (pendientes >= tope) {
       res.status(429).json({
@@ -132,10 +148,11 @@ solicitudesRouter.post(
 
     // Misma validación que al confirmarlo (productos, agotados, adiciones,
     // combos), para avisarle al cliente de una vez y no cuando ya se fue.
-    await construirLineas(prisma, items);
+    await construirLineas(prisma, items, sedeId);
 
     const creada = await prisma.solicitudPedido.create({
       data: {
+        sedeId,
         mesaId: mesaId ?? null,
         nombreCliente: nombreCliente ?? null,
         telefonoCliente: mesaId ? null : (telefonoCliente ?? null),
@@ -175,13 +192,14 @@ solicitudesRouter.post(
         if (mesa.meseroAsignadoId) {
           await notificarUsuarios({ userIds: [mesa.meseroAsignadoId], tipo, mensaje, enlace });
         } else {
-          await notificarPorRol({ rol: "MESERO", tipo, mensaje, enlace });
+          await notificarPorRol({ rol: "MESERO", sedeId, tipo, mensaje, enlace });
         }
       }
     } else {
-      // Pedido de mostrador: lo atiende el admin en caja.
+      // Pedido de mostrador: lo atiende el admin en la caja de esa sede.
       await notificarPorRol({
         rol: "ADMIN",
+        sedeId,
         tipo: "SOLICITUD_PEDIDO_CLIENTE",
         mensaje: `Pedido de mostrador de ${nombreCliente} esperando en caja.`,
         enlace: enlaces.mostrador(solicitud.id),
@@ -205,7 +223,7 @@ solicitudesRouter.get(
     const mesaId = typeof req.query.mesaId === "string" ? req.query.mesaId : undefined;
 
     const solicitudes = await prisma.solicitudPedido.findMany({
-      where: { estado, ...(mesaId ? { mesaId } : {}) },
+      where: { estado, sedeId: req.sedeId, ...(mesaId ? { mesaId } : {}) },
       include: solicitudInclude,
       orderBy: { creadaEn: "asc" },
     });
@@ -238,6 +256,7 @@ solicitudesRouter.put(
     const pedidoId = await prisma.$transaction(async (tx) => {
       const solicitud = await tx.solicitudPedido.findUnique({ where: { id: req.params.id }, include: { items: true } });
       if (!solicitud) throw new ErrorDeNegocio("Solicitud no encontrada", 404);
+      exigirMismaSede(req, solicitud.sedeId, "Ese pedido");
       if (!solicitud.mesaId) {
         throw new ErrorDeNegocio("Esta es una solicitud de mostrador — usa PUT /:id/confirmar-recogida", 400);
       }
@@ -250,6 +269,7 @@ solicitudesRouter.put(
 
       await tomarSolicitudPendiente(tx, solicitud.id, "CONFIRMADA", req.user!.userId);
       const nuevoPedidoId = await crearPedidoEnTx(tx, {
+        sedeId: solicitud.sedeId,
         mesaSesionId: sesion.id,
         meseroId: req.user!.userId,
         items: solicitud.items.map((item) => ({
@@ -294,10 +314,12 @@ solicitudesRouter.put(
     const { pedidoId, facturaId } = await prisma.$transaction(async (tx) => {
       const solicitud = await tx.solicitudPedido.findUnique({ where: { id: req.params.id }, include: { items: true } });
       if (!solicitud) throw new ErrorDeNegocio("Solicitud no encontrada", 404);
+      exigirMismaSede(req, solicitud.sedeId, "Ese pedido");
       if (solicitud.mesaId) throw new ErrorDeNegocio("Esta solicitud es de una mesa — usa PUT /:id/confirmar", 400);
 
       await tomarSolicitudPendiente(tx, solicitud.id, "CONFIRMADA", req.user!.userId);
       const nuevoPedidoId = await crearPedidoEnTx(tx, {
+        sedeId: solicitud.sedeId,
         meseroId: req.user!.userId,
         nombreCliente: solicitud.nombreCliente,
         telefonoCliente: solicitud.telefonoCliente,
@@ -315,6 +337,7 @@ solicitudesRouter.put(
       const pagos = pagosDelCobro(parsed.data, subtotal);
       const factura = await tx.factura.create({
         data: {
+          sedeId: solicitud.sedeId,
           pedidoId: nuevoPedidoId,
           subtotal,
           total: subtotal,
@@ -351,6 +374,7 @@ solicitudesRouter.put(
       res.status(404).json({ error: "Solicitud no encontrada" });
       return;
     }
+    exigirMismaSede(req, solicitud.sedeId, "Ese pedido");
     await prisma.$transaction((tx) => tomarSolicitudPendiente(tx, solicitud.id, "DESCARTADA", req.user!.userId));
     const actualizada = await solicitudConDetalle(solicitud.id);
     emitSolicitudActualizada(actualizada);

@@ -53,6 +53,9 @@ function CartaContent() {
   const searchParams = useSearchParams();
   const mesaId = searchParams.get("mesa");
   const esRecoger = searchParams.get("recoger") === "1";
+  // El QR de mostrador de cada sede lleva su sede (el de una mesa ya la tiene).
+  const sedeId = searchParams.get("sede");
+  const [sedeNombre, setSedeNombre] = useState<string | null>(null);
   const puedeOrdenar = Boolean(mesaId) || esRecoger;
   const [categorias, setCategorias] = useState<CategoriaConCarta[] | null>(null);
   const [carrito, setCarrito] = useState<CartItem[]>([]);
@@ -66,9 +69,16 @@ function CartaContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<CategoriaConCarta[]>("/carta").then(setCategorias);
+    const filtro = new URLSearchParams();
+    if (mesaId) filtro.set("mesa", mesaId);
+    if (sedeId) filtro.set("sede", sedeId);
+    apiFetch<CategoriaConCarta[]>(`/carta${filtro.size ? `?${filtro}` : ""}`).then(setCategorias);
     setPedidoReciente(leerPedidoReciente());
-  }, []);
+    if (sedeId)
+      apiFetch<{ nombre: string }>(`/sedes/publica/${encodeURIComponent(sedeId)}`)
+        .then((s) => setSedeNombre(s.nombre))
+        .catch(() => setSedeNombre(null));
+  }, [mesaId, sedeId]);
 
   function alternarAdicion(productoId: string, adicionId: string) {
     setAdicionesElegidas((prev) => {
@@ -136,6 +146,7 @@ function CartaContent() {
         method: "POST",
         body: JSON.stringify({
           mesaId: mesaId ?? null,
+          sedeId: mesaId ? undefined : (sedeId ?? undefined),
           nombreCliente: nombreCliente.trim() || null,
           telefonoCliente: esRecoger ? telefonoCliente.trim() : null,
           aceptaDatos: esRecoger ? aceptaDatos : undefined,
@@ -183,7 +194,7 @@ function CartaContent() {
       {puedeOrdenar ? (
         <p className="mt-4 rounded-xl bg-muted p-3 text-center text-sm text-muted-foreground">
           {esRecoger
-            ? "Arma tu pedido para recoger. Cuando termines, acércate a caja para confirmarlo y pagarlo."
+            ? `Arma tu pedido para recoger${sedeNombre ? ` en ${sedeNombre}` : ""}. Cuando termines, acércate a caja para confirmarlo y pagarlo.`
             : "¿Ya sabes qué vas a pedir? Agrégalo aquí abajo y quedará listo para cuando llegue tu mesero."}
         </p>
       ) : null}

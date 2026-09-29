@@ -1,5 +1,6 @@
 import { io, type Socket } from "socket.io-client";
 import { cerrarSesionForzada } from "@/lib/sesion";
+import { sedeElegida } from "@/lib/sedeElegida";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
@@ -8,11 +9,12 @@ type Manejador = (payload: never) => void;
 
 function crearConexion(token: string): Socket {
   const socket = io(API_URL, {
-    auth: { token },
+    // La sede decide qué cocina, meseros y pantalla escucha.
+    auth: { token, sede: sedeElegida() },
     transports: ["websocket"],
   });
   // El servidor solo corta la conexión a propósito cuando la sesión dejó de
-  // ser válida (usuario desactivado o con otro rol); una caída de red o un
+  // ser válida (usuario desactivado, con otro rol o de otra sede); una caída de red o un
   // reinicio del servidor llegan con otro motivo y se reconectan solos.
   socket.on("disconnect", (reason) => {
     if (reason === "io server disconnect") cerrarSesionForzada("Tu sesión fue cerrada por un administrador.");

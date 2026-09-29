@@ -7,6 +7,7 @@ import { ErrorDeNegocio } from "../lib/errores";
 import { nombreCompleto } from "../lib/nombre";
 import { esDiaValido, rangoDeDias } from "../lib/fechas";
 import { horasEnRango } from "../services/propinas";
+import { filtroSedes, sedesDelReporte } from "../services/sedes";
 
 export const turnosRouter = Router();
 turnosRouter.use(requireAuth);
@@ -36,7 +37,8 @@ turnosRouter.post(
       await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${req.user!.userId} FOR UPDATE`;
       const abierto = await tx.turno.findFirst({ where: { userId: req.user!.userId, salida: null } });
       if (abierto) throw new ErrorDeNegocio("Ya tienes un turno abierto", 409);
-      return tx.turno.create({ data: { userId: req.user!.userId } });
+      // En la sede donde trabaja (o la que eligió el administrador general).
+      return tx.turno.create({ data: { userId: req.user!.userId, sedeId: req.sedeId } });
     });
     res.status(201).json(turno);
   })
@@ -66,7 +68,7 @@ turnosRouter.get(
     if (!parsed.success) throw new ErrorDeNegocio("Indica un rango de fechas válido (desde y hasta, formato AAAA-MM-DD)", 400);
     const { inicio, fin } = rangoDeDias(parsed.data.desde, parsed.data.hasta);
     const turnos = await prisma.turno.findMany({
-      where: { entrada: { lt: fin }, OR: [{ salida: null }, { salida: { gt: inicio } }] },
+      where: { entrada: { lt: fin }, OR: [{ salida: null }, { salida: { gt: inicio } }], ...filtroSedes(sedesDelReporte(req)) },
       include: { user: { select: { id: true, nombre: true, apellido: true, role: true } } },
       orderBy: { entrada: "desc" },
     });
@@ -110,6 +112,7 @@ turnosRouter.put(
     }
     const turno = await prisma.turno.findUnique({ where: { id: req.params.id } });
     if (!turno) throw new ErrorDeNegocio("Turno no encontrado", 404);
+    if (req.sedeFija && turno.sedeId !== req.sedeId) throw new ErrorDeNegocio("Ese turno es de otra sede", 403);
     // No puede quedar montado sobre otro turno de la misma persona.
     const cruce = await prisma.turno.findFirst({
       where: { id: { not: turno.id }, userId: turno.userId, entrada: { lt: salida ?? new Date(8.64e15) }, OR: [{ salida: null }, { salida: { gt: entrada } }] },

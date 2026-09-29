@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
+import { AlcanceSedes } from "@/components/SelectorSede";
 import { formatoFechaHora, formatoPesos, hoyLocal } from "@/lib/formato";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
@@ -58,8 +60,11 @@ function EditorTurno({ turno, token, onGuardado }: { turno: Turno; token: string
 
 export default function AdminPersonalPage() {
   const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.show);
   const hoy = hoyLocal();
+  // Las reglas del reparto son de todo el negocio: las cambia el administrador general.
+  const reglasFijas = Boolean(user?.sede);
   const [desde, setDesde] = useState(hoyLocal(-6));
   const [hasta, setHasta] = useState(hoy);
   const [turnos, setTurnos] = useState<ListaTurnos | null>(null);
@@ -67,15 +72,16 @@ export default function AdminPersonalPage() {
   const [config, setConfig] = useState<Configuracion | null>(null);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const todas = useVerTodas();
 
   const cargar = useCallback(() => {
     if (!token) return;
     setError(null);
     Promise.all([
-      apiFetch<ListaTurnos>(`/turnos?desde=${desde}&hasta=${hasta}`, { token }).then(setTurnos),
-      apiFetch<RepartoPropinas>(`/reportes/propinas?desde=${desde}&hasta=${hasta}`, { token }).then(setReparto),
+      apiFetch<ListaTurnos>(conAlcance(`/turnos?desde=${desde}&hasta=${hasta}`, todas), { token }).then(setTurnos),
+      apiFetch<RepartoPropinas>(conAlcance(`/reportes/propinas?desde=${desde}&hasta=${hasta}`, todas), { token }).then(setReparto),
     ]).catch((err) => setError(err instanceof ApiError ? err.message : "No se pudo cargar la información del personal."));
-  }, [token, desde, hasta]);
+  }, [token, desde, hasta, todas]);
 
   useEffect(cargar, [cargar]);
   useEffect(() => {
@@ -101,6 +107,7 @@ export default function AdminPersonalPage() {
       <p className="text-sm text-muted-foreground">
         Cada persona marca su entrada y su salida con el botón del reloj (arriba). Con esas horas se reparten las propinas.
       </p>
+      <AlcanceSedes />
       <SelectorRango
         desde={desde}
         hasta={hasta}
@@ -119,6 +126,7 @@ export default function AdminPersonalPage() {
               Para cocina:
               <select
                 value={config.propinaPctCocina}
+                disabled={reglasFijas}
                 onChange={(e) => guardarConfig({ propinaPctCocina: Number(e.target.value) })}
                 className="rounded-lg border border-border px-2 py-1"
               >
@@ -133,6 +141,7 @@ export default function AdminPersonalPage() {
               Salón:
               <select
                 value={config.propinaModo}
+                disabled={reglasFijas}
                 onChange={(e) => guardarConfig({ propinaModo: e.target.value as Configuracion["propinaModo"] })}
                 className="rounded-lg border border-border px-2 py-1"
               >

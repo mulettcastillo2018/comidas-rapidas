@@ -17,6 +17,7 @@ import { probarGestion } from "./gestion.e2e";
 import { probarFacturacion } from "./facturacion.e2e";
 import { probarInsumos } from "./insumos.e2e";
 import { probarClientes } from "./clientes.e2e";
+import { probarSedes } from "./sedes.e2e";
 
 const PRUEBAS: [string, () => Promise<void>][] = [
   ["Integridad y sesiones", probarIntegridad],
@@ -34,6 +35,7 @@ const PRUEBAS: [string, () => Promise<void>][] = [
   ["Facturación electrónica (Alanube simulado)", probarFacturacion],
   ["Insumos y recetas", probarInsumos],
   ["Clientes frecuentes y puntos", probarClientes],
+  ["Varias sedes", probarSedes],
 ];
 
 async function main() {

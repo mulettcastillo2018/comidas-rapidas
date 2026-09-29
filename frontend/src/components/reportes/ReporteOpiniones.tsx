@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
 import { formatoFechaHora, hoyLocal } from "@/lib/formato";
 import type { ReporteSatisfaccion } from "@/lib/types";
 
@@ -23,16 +24,17 @@ export function ReporteOpiniones({ token }: { token: string }) {
   const [hasta, setHasta] = useState(hoyLocal());
   const [reporte, setReporte] = useState<ReporteSatisfaccion | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const todas = useVerTodas();
 
   useEffect(() => {
     let vigente = true;
-    apiFetch<ReporteSatisfaccion>(`/reportes/satisfaccion?desde=${desde}&hasta=${hasta}`, { token })
+    apiFetch<ReporteSatisfaccion>(conAlcance(`/reportes/satisfaccion?desde=${desde}&hasta=${hasta}`, todas), { token })
       .then((data) => vigente && setReporte(data))
       .catch((err) => vigente && setError(err instanceof ApiError ? err.message : "No se pudo cargar."));
     return () => {
       vigente = false;
     };
-  }, [token, desde, hasta]);
+  }, [token, desde, hasta, todas]);
 
   return (
     <div className="space-y-6">

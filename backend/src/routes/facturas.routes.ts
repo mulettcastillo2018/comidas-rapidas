@@ -1,4 +1,5 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
+import { exigirMismaSede } from "../services/sedes";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { cobroSchema, pagosDelCobro, registrarPagos, type Cobro } from "../services/pagos";
@@ -47,17 +48,19 @@ facturasRouter.post(
     if (cliente && !(await prisma.cliente.findFirst({ where: { id: cliente.clienteId, eliminadoEn: null } }))) throw new ErrorDeNegocio("Cliente no encontrado", 404);
     if (descuento?.tipo === "PORCENTAJE" && descuento.valor > 100) throw new ErrorDeNegocio("El descuento no puede pasar del 100%", 400);
 
-    const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId } });
+    const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId }, include: { mesa: { select: { sedeId: true, numero: true } } } });
     if (!sesion) {
       res.status(404).json({ error: "Sesión de mesa no encontrada" });
       return;
     }
+    exigirMismaSede(req, sesion.mesa.sedeId, "Esa mesa");
     if (sesion.meseroId !== req.user!.userId && req.user!.role !== "ADMIN") {
       res.status(403).json({ error: "Esta mesa la está atendiendo otro mesero" });
       return;
     }
+    const sedeId = sesion.mesa.sedeId;
     // Un descuento o cortesía lo autoriza un admin con su clave.
-    const autorizadoPorId = descuento ? await exigirAutorizacion(req.user!, parsed.data.pin, "Aplicar un descuento o una cortesía") : null;
+    const autorizadoPorId = descuento ? await exigirAutorizacion(req.user!, parsed.data.pin, "Aplicar un descuento o una cortesía", sedeId) : null;
 
     const factura = await prisma.$transaction(async (tx) => {
       // Pasar la mesa a "cuenta solicitada" solo si sigue abierta, en una
@@ -97,6 +100,7 @@ facturasRouter.post(
 
       const creada = await tx.factura.create({
         data: {
+          sedeId,
           mesaSesionId,
           subtotal,
           descuentoMonto,
@@ -123,10 +127,10 @@ facturasRouter.post(
     });
 
     if (descuento && autorizadoPorId && req.user!.role !== "ADMIN") {
-      const mesa = await prisma.mesa.findUnique({ where: { id: sesion.mesaId }, select: { numero: true } });
       await avisarAutorizacion(
         autorizadoPorId,
-        `Descuento de ${factura.descuentoMonto.toLocaleString("es-CO")} en la Mesa ${mesa?.numero} (${descuento.motivo}).`,
+        `Descuento de ${factura.descuentoMonto.toLocaleString("es-CO")} en la Mesa ${sesion.mesa.numero} (${descuento.motivo}).`,
+        sedeId,
         enlaces.mesaAbierta(sesion.id)
       );
     }
@@ -139,12 +143,14 @@ facturasRouter.post(
 // misma operación que la actualiza, para que "pagar" y "se fue sin pagar"
 // no puedan aplicarse los dos a la vez sobre la misma cuenta.
 async function resolverCuentaDeMesa(
+  req: Request,
   facturaId: string,
   usuario: { userId: string; role: string },
   resultado: { estado: "PAGADA"; cobro: Cobro; adquiriente?: Adquiriente; clienteId?: string } | { estado: "PERDIDA"; autorizadaPorId: string }
 ) {
   const factura = await prisma.factura.findUnique({ where: { id: facturaId }, include: { mesaSesion: true } });
   if (!factura) throw new ErrorDeNegocio("Factura no encontrada", 404);
+  exigirMismaSede(req, factura.sedeId, "Esa cuenta");
   const sesion = factura.mesaSesion;
   if (!sesion) throw new ErrorDeNegocio("Esta factura es de un pedido de mostrador, no de una mesa", 400);
   if (sesion.meseroId !== usuario.userId && usuario.role !== "ADMIN") {
@@ -173,7 +179,7 @@ async function resolverCuentaDeMesa(
     await tx.mesa.update({ where: { id: sesion.mesaId }, data: { estado: "LIBRE" } });
   });
 
-  emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id });
+  emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id, sedeId: factura.sedeId });
   if (resultado.estado === "PAGADA") {
     await acumularPuntos(factura.id);
     programarProcesamiento();
@@ -197,7 +203,7 @@ facturasRouter.put(
     // Si el cliente pide la factura electrónica a su nombre.
     const adquiriente = adquirienteDelCobro(req.body);
     if (adquiriente === "invalido") throw new ErrorDeNegocio(MENSAJE_ADQUIRIENTE, 400);
-    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data, adquiriente, clienteId: clienteDelCobro(req.body) });
+    const factura = await resolverCuentaDeMesa(req, req.params.id, req.user!, { estado: "PAGADA", cobro: parsed.data, adquiriente, clienteId: clienteDelCobro(req.body) });
     res.json(factura);
   })
 );
@@ -213,8 +219,10 @@ facturasRouter.put(
   requireMesero,
   catchAsync(async (req, res) => {
     const pin = typeof req.body?.pin === "string" ? req.body.pin : undefined;
-    const autorizadaPorId = await exigirAutorizacion(req.user!, pin, "Registrar que el cliente se fue sin pagar");
-    const factura = await resolverCuentaDeMesa(req.params.id, req.user!, { estado: "PERDIDA", autorizadaPorId });
+    // La clave se revisa contra los admins de la sede de la cuenta.
+    const sedeId = (await prisma.factura.findUnique({ where: { id: req.params.id }, select: { sedeId: true } }))?.sedeId ?? req.sedeId;
+    const autorizadaPorId = await exigirAutorizacion(req.user!, pin, "Registrar que el cliente se fue sin pagar", sedeId);
+    const factura = await resolverCuentaDeMesa(req, req.params.id, req.user!, { estado: "PERDIDA", autorizadaPorId });
 
     const detalle = await prisma.factura.findUnique({
       where: { id: req.params.id },
@@ -228,6 +236,7 @@ facturasRouter.put(
       await avisarAutorizacion(
         autorizadaPorId,
         `${nombreCompleto(detalle.cerradaPor)} registró la Mesa ${detalle.mesaSesion.mesa.numero} como "se fue sin pagar" (${detalle.total.toLocaleString("es-CO")}). Autorizó: ${nombreCompleto(detalle.autorizadaPor)}.`,
+        detalle.sedeId,
         enlaces.mesaAbierta(detalle.mesaSesion.id)
       );
     }

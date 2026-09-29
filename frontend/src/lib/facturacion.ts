@@ -73,6 +73,7 @@ export interface DocumentoFiscalResumen {
   creadoEn: string;
   facturaId: string;
   ubicacion: string;
+  sede: string;
   anula: string | null;
   anuladoPor: { numeroCompleto: string; estado: EstadoDocumentoFiscal } | null;
 }
@@ -110,17 +111,10 @@ export interface ConfiguracionFiscal {
   feFechaFin: string | null;
   feClaveTecnica: string | null;
   feSiguiente: number | null;
-  posResolucion: string | null;
-  posPrefijo: string | null;
-  posDesde: number | null;
-  posHasta: number | null;
-  posFechaInicio: string | null;
-  posFechaFin: string | null;
-  posSiguiente: number | null;
   notaPrefijo: string;
   ajustePrefijo: string;
-  cajaPlaca: string | null;
-  cajaUbicacion: string | null;
+  // La sede en la que se está: la numeración POS y la caja son de cada sede.
+  sede: { id: string; nombre: string } | null;
   faltantes: { FACTURA: string[]; POS: string[] };
   avisos: string[];
 }

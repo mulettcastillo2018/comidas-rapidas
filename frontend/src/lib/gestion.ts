@@ -30,6 +30,8 @@ export interface Gasto {
   // Esa salida ya entró en un cierre de caja: no se puede borrar.
   enCierre: boolean;
   registradoPor: string;
+  // null = gasto general del negocio (no de una sede).
+  sede: string | null;
 }
 
 export interface ListaGastos {
@@ -54,7 +56,14 @@ export interface EstadoResultados {
   productosSinCosto: string[];
   comisiones: number;
   utilidadBruta: number;
-  gastos: { total: number; fijos: number; variables: number; porCategoria: { categoria: CategoriaGasto; total: number }[] };
+  gastos: {
+    total: number;
+    fijos: number;
+    variables: number;
+    porCategoria: { categoria: CategoriaGasto; total: number }[];
+    // Gastos generales del negocio que no entran al ver una sede sola.
+    generalesExcluidos: number;
+  };
   utilidadNeta: number;
   margenNetoPct: number | null;
   puntoEquilibrio: {

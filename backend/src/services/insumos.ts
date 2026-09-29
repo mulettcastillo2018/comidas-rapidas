@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { notificarPorRol } from "./notificaciones";
+import { nombreSede, sedes } from "./sedes";
 
 // Inventario por ingrediente: cada producto tiene su receta (120 g de carne,
 // 1 pan, 15 ml de salsa...) y cada venta descuenta lo que usó. A diferencia
@@ -19,8 +20,21 @@ export interface ItemVendido {
 
 const redondear = (n: number) => Math.round(n * 1000) / 1000;
 
-// Descuenta los insumos de lo vendido, dentro de la transacción del pedido.
-export async function consumirInsumos(tx: Prisma.TransactionClient, items: ItemVendido[], userId: string) {
+// Suma (o resta) al stock de un insumo en una sede, creando la fila si no
+// existía. Devuelve el stock resultante.
+export async function moverStock(tx: Prisma.TransactionClient, insumoId: string, sedeId: string, cantidad: number) {
+  const { stock } = await tx.insumoSede.upsert({
+    where: { insumoId_sedeId: { insumoId, sedeId } },
+    create: { insumoId, sedeId, stock: cantidad },
+    update: { stock: { increment: cantidad } },
+    select: { stock: true },
+  });
+  return stock;
+}
+
+// Descuenta los insumos de lo vendido en esa sede, dentro de la transacción
+// del pedido.
+export async function consumirInsumos(tx: Prisma.TransactionClient, items: ItemVendido[], userId: string, sedeId: string) {
   if (items.length === 0) return;
   const [recetas, deAdiciones] = await Promise.all([
     tx.recetaItem.findMany({ where: { productoId: { in: [...new Set(items.map((i) => i.productoId))] } } }),
@@ -40,12 +54,17 @@ export async function consumirInsumos(tx: Prisma.TransactionClient, items: ItemV
   const totales = new Map<string, number>();
   for (const c of consumos) totales.set(c.insumoId, (totales.get(c.insumoId) ?? 0) + c.cantidad);
   const resultantes = new Map<string, number>();
-  for (const [insumoId, total] of totales) {
-    const { stock } = await tx.insumo.update({ where: { id: insumoId }, data: { stock: { decrement: total } }, select: { stock: true } });
-    resultantes.set(insumoId, stock);
-  }
+  for (const [insumoId, total] of totales) resultantes.set(insumoId, await moverStock(tx, insumoId, sedeId, -total));
   await tx.movimientoInsumo.createMany({
-    data: consumos.map((c) => ({ insumoId: c.insumoId, tipo: "CONSUMO" as const, cantidad: -c.cantidad, stockResultante: resultantes.get(c.insumoId)!, pedidoItemId: c.pedidoItemId, userId })),
+    data: consumos.map((c) => ({
+      insumoId: c.insumoId,
+      sedeId,
+      tipo: "CONSUMO" as const,
+      cantidad: -c.cantidad,
+      stockResultante: resultantes.get(c.insumoId)!,
+      pedidoItemId: c.pedidoItemId,
+      userId,
+    })),
   });
 }
 
@@ -53,19 +72,29 @@ export async function consumirInsumos(tx: Prisma.TransactionClient, items: ItemV
 export async function devolverInsumos(tx: Prisma.TransactionClient, pedidoItemIds: string[], userId: string) {
   if (pedidoItemIds.length === 0) return [];
   const movimientos = await tx.movimientoInsumo.findMany({ where: { pedidoItemId: { in: pedidoItemIds }, tipo: { in: ["CONSUMO", "DEVOLUCION"] } } });
-  // Neto por producto e insumo (por si ya se devolvió algo antes).
-  const netos = new Map<string, { pedidoItemId: string; insumoId: string; cantidad: number }>();
+  // Neto por producto e insumo (por si ya se devolvió algo antes). Vuelve a
+  // la sede donde se consumió.
+  const netos = new Map<string, { pedidoItemId: string; insumoId: string; sedeId: string; cantidad: number }>();
   for (const m of movimientos) {
     const clave = `${m.pedidoItemId}|${m.insumoId}`;
-    const n = netos.get(clave) ?? { pedidoItemId: m.pedidoItemId!, insumoId: m.insumoId, cantidad: 0 };
+    const n = netos.get(clave) ?? { pedidoItemId: m.pedidoItemId!, insumoId: m.insumoId, sedeId: m.sedeId, cantidad: 0 };
     n.cantidad += -m.cantidad;
     netos.set(clave, n);
   }
   const devoluciones = [...netos.values()].filter((n) => n.cantidad > 0.0005);
   for (const d of devoluciones) {
-    const { stock } = await tx.insumo.update({ where: { id: d.insumoId }, data: { stock: { increment: d.cantidad } }, select: { stock: true } });
+    const stock = await moverStock(tx, d.insumoId, d.sedeId, d.cantidad);
     await tx.movimientoInsumo.create({
-      data: { insumoId: d.insumoId, tipo: "DEVOLUCION", cantidad: redondear(d.cantidad), stockResultante: stock, pedidoItemId: d.pedidoItemId, userId, nota: "Cancelado antes de prepararse" },
+      data: {
+        insumoId: d.insumoId,
+        sedeId: d.sedeId,
+        tipo: "DEVOLUCION",
+        cantidad: redondear(d.cantidad),
+        stockResultante: stock,
+        pedidoItemId: d.pedidoItemId,
+        userId,
+        nota: "Cancelado antes de prepararse",
+      },
     });
   }
   return [...new Set(devoluciones.map((d) => d.insumoId))];
@@ -80,19 +109,27 @@ export async function insumosDe(productoIds: string[], adicionIds: string[] = []
   return [...new Set([...r, ...a].map((x) => x.insumoId))];
 }
 
-// Avisa una sola vez cuando un insumo baja del mínimo.
-export async function revisarInsumos(insumoIds: string[]) {
+// Avisa una sola vez cuando un insumo baja del mínimo en una sede.
+export async function revisarInsumos(insumoIds: string[], sedeId: string) {
   if (insumoIds.length === 0) return;
-  const insumos = await prisma.insumo.findMany({ where: { id: { in: insumoIds }, activo: true } });
-  for (const i of insumos) {
-    if (i.stock <= i.stockMinimo && !i.alertaStockBajo) {
-      const marcado = await prisma.insumo.updateMany({ where: { id: i.id, alertaStockBajo: false }, data: { alertaStockBajo: true } });
+  const filas = await prisma.insumoSede.findMany({ where: { sedeId, insumoId: { in: insumoIds }, insumo: { activo: true } }, include: { insumo: true } });
+  const enSede = (await sedes()).length > 1 ? ` en ${await nombreSede(sedeId)}` : "";
+  for (const f of filas) {
+    const clave = { insumoId_sedeId: { insumoId: f.insumoId, sedeId } };
+    if (f.stock <= f.stockMinimo && !f.alertaStockBajo) {
+      const marcado = await prisma.insumoSede.updateMany({ where: { insumoId: f.insumoId, sedeId, alertaStockBajo: false }, data: { alertaStockBajo: true } });
       if (marcado.count > 0) {
-        const quedan = i.stock <= 0 ? "Se acabó" : `Quedan ${formatoCantidad(i.stock, i.unidad)} de`;
-        await notificarPorRol({ rol: "ADMIN", tipo: "STOCK", mensaje: `${quedan} ${i.nombre} según las recetas (mínimo ${formatoCantidad(i.stockMinimo, i.unidad)}).`, enlace: ENLACE });
+        const quedan = f.stock <= 0 ? "Se acabó" : `Quedan ${formatoCantidad(f.stock, f.insumo.unidad)} de`;
+        await notificarPorRol({
+          rol: "ADMIN",
+          sedeId,
+          tipo: "STOCK",
+          mensaje: `${quedan} ${f.insumo.nombre}${enSede} según las recetas (mínimo ${formatoCantidad(f.stockMinimo, f.insumo.unidad)}).`,
+          enlace: ENLACE,
+        });
       }
-    } else if (i.stock > i.stockMinimo && i.alertaStockBajo) {
-      await prisma.insumo.update({ where: { id: i.id }, data: { alertaStockBajo: false } });
+    } else if (f.stock > f.stockMinimo && f.alertaStockBajo) {
+      await prisma.insumoSede.update({ where: clave, data: { alertaStockBajo: false } });
     }
   }
 }

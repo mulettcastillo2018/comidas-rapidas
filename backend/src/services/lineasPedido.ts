@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { ErrorDeNegocio } from "../lib/errores";
 import { mejorPromocion, precioConDescuento, promocionesVigentes } from "./promociones";
+import { estadosEnSede } from "./disponibilidad";
 
 export interface ItemPedido {
   productoId: string;
@@ -35,13 +36,16 @@ export function repartirProporcional(total: number, pesos: number[]): number[] {
 // - Combo: se registran sus partes (una línea por unidad, para que cocina e
 //   inventario las manejen como siempre) y el precio del combo se reparte
 //   entre ellas según el precio normal de cada una.
-// Valida disponibilidad y adiciones; no escribe nada.
-export async function construirLineas(tx: Prisma.TransactionClient, items: ItemPedido[]) {
+// Valida disponibilidad (en esa sede) y adiciones; no escribe nada.
+export async function construirLineas(tx: Prisma.TransactionClient, items: ItemPedido[], sedeId: string) {
   const productos = await tx.producto.findMany({
     where: { id: { in: items.map((i) => i.productoId) } },
     include: { componentes: { include: { producto: true } }, adiciones: { select: { adicionId: true } } },
   });
   const porId = new Map(productos.map((p) => [p.id, p]));
+  const idsConPartes = [...new Set(productos.flatMap((p) => [p.id, ...p.componentes.map((c) => c.productoId)]))];
+  const estados = await estadosEnSede(tx, idsConPartes, sedeId);
+  const disponible = (id: string) => estados.get(id)?.disponible ?? true;
   const adiciones = await tx.adicion.findMany({ where: { id: { in: items.flatMap((i) => i.adicionIds ?? []) }, activa: true } });
   const adicionPorId = new Map(adiciones.map((a) => [a.id, a]));
   const vigentes = await promocionesVigentes();
@@ -55,7 +59,7 @@ export async function construirLineas(tx: Prisma.TransactionClient, items: ItemP
     if (!producto || !producto.isActive) throw new ErrorDeNegocio("Uno de los productos seleccionados ya no está en la carta", 400);
     // Se revisa aquí (y no solo en la pantalla) porque un pedido del cliente
     // por QR puede confirmarse un buen rato después de armado.
-    if (!producto.disponible) throw new ErrorDeNegocio(`${producto.nombre} está agotado en este momento. Quítalo del pedido o cámbialo por otro.`, 409);
+    if (!disponible(producto.id)) throw new ErrorDeNegocio(`${producto.nombre} está agotado en este momento. Quítalo del pedido o cámbialo por otro.`, 409);
     const promocion = mejorPromocion(producto, vigentes);
     const comunes = {
       comensal: item.comensalId ? { connect: { id: item.comensalId } } : undefined,
@@ -66,7 +70,7 @@ export async function construirLineas(tx: Prisma.TransactionClient, items: ItemP
     if (producto.esCombo) {
       if (producto.componentes.length === 0) throw new ErrorDeNegocio(`El combo ${producto.nombre} no tiene productos configurados`, 400);
       if ((item.adicionIds ?? []).length > 0) throw new ErrorDeNegocio("Las adiciones van en cada producto, no en el combo", 400);
-      const faltante = producto.componentes.find((c) => !c.producto.isActive || !c.producto.disponible);
+      const faltante = producto.componentes.find((c) => !c.producto.isActive || !disponible(c.productoId));
       if (faltante) throw new ErrorDeNegocio(`El combo ${producto.nombre} no se puede pedir: ${faltante.producto.nombre} está agotado.`, 409);
       const precioCombo = promocion ? precioConDescuento(producto.precio, promocion.descuentoPct) : producto.precio;
       const unidades = producto.componentes.flatMap((c) => Array.from({ length: c.cantidad }, () => c.producto));

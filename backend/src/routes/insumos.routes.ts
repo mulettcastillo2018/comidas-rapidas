@@ -7,7 +7,8 @@ import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { diaLocal, esDiaValido, rangoDeDias } from "../lib/fechas";
 import { nombreCompleto } from "../lib/nombre";
-import { costoDeReceta, recalcularCostos, revisarInsumos } from "../services/insumos";
+import { costoDeReceta, moverStock, recalcularCostos, revisarInsumos } from "../services/insumos";
+import { filtroSedes, sedesDelReporte } from "../services/sedes";
 import { mediodiaDe } from "./gastos.routes";
 
 // Insumos (ingredientes) y recetas: solo admin.
@@ -21,15 +22,26 @@ function nombreRepetido(err: unknown): never {
   throw err;
 }
 
+// El insumo con su stock en la sede de trabajo (0 si nunca ha tenido).
+async function conStockDeSede<I extends { id: string; costoUnitario: number }>(insumos: I[], sedeId: string) {
+  const filas = await prisma.insumoSede.findMany({ where: { sedeId, insumoId: { in: insumos.map((i) => i.id) } } });
+  const porId = new Map(filas.map((f) => [f.insumoId, f]));
+  return insumos.map((i) => {
+    const f = porId.get(i.id);
+    return { ...i, stock: f?.stock ?? 0, stockMinimo: f?.stockMinimo ?? 0, alertaStockBajo: f?.alertaStockBajo ?? false };
+  });
+}
+
 insumosRouter.get(
   "/",
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const insumos = await prisma.insumo.findMany({
       orderBy: [{ activo: "desc" }, { nombre: "asc" }],
       include: { recetas: { select: { producto: { select: { nombre: true } } } }, _count: { select: { adiciones: true } } },
     });
+    const conStock = await conStockDeSede(insumos, req.sedeId);
     res.json(
-      insumos.map(({ recetas, _count, ...i }) => ({
+      conStock.map(({ recetas, _count, ...i }) => ({
         ...i,
         valorEnInventario: Math.round(Math.max(0, i.stock) * i.costoUnitario),
         usadoEn: recetas.map((r) => r.producto.nombre),
@@ -38,6 +50,11 @@ insumosRouter.get(
     );
   })
 );
+
+async function insumoEnSede(insumoId: string, sedeId: string) {
+  const insumo = await prisma.insumo.findUniqueOrThrow({ where: { id: insumoId } });
+  return (await conStockDeSede([insumo], sedeId))[0];
+}
 
 const nuevoSchema = z.object({
   nombre: z.string().trim().min(2).max(80),
@@ -53,15 +70,19 @@ insumosRouter.post(
   catchAsync(async (req, res) => {
     const parsed = nuevoSchema.safeParse(req.body);
     if (!parsed.success) throw new ErrorDeNegocio("Revisa el insumo: nombre, unidad, cantidad actual, mínimo y costo", 400);
-    const { stockInicial, ...datos } = parsed.data;
+    const { stockInicial, stockMinimo, ...datos } = parsed.data;
     const insumo = await prisma
       .$transaction(async (tx) => {
-        const creado = await tx.insumo.create({ data: { ...datos, stock: stockInicial } });
-        await tx.movimientoInsumo.create({ data: { insumoId: creado.id, tipo: "AJUSTE", cantidad: stockInicial, stockResultante: stockInicial, nota: "Conteo inicial", userId: req.user!.userId } });
+        const creado = await tx.insumo.create({ data: datos });
+        // Lo que hay ahora es de la sede donde se está trabajando.
+        await tx.insumoSede.create({ data: { insumoId: creado.id, sedeId: req.sedeId, stock: stockInicial, stockMinimo } });
+        await tx.movimientoInsumo.create({
+          data: { insumoId: creado.id, sedeId: req.sedeId, tipo: "AJUSTE", cantidad: stockInicial, stockResultante: stockInicial, nota: "Conteo inicial", userId: req.user!.userId },
+        });
         return creado;
       })
       .catch(nombreRepetido);
-    res.status(201).json(insumo);
+    res.status(201).json(await insumoEnSede(insumo.id, req.sedeId));
   })
 );
 
@@ -75,10 +96,19 @@ insumosRouter.put(
     if (!parsed.success) throw new ErrorDeNegocio("Revisa los datos del insumo", 400);
     const actual = await prisma.insumo.findUnique({ where: { id: req.params.id } });
     if (!actual) throw new ErrorDeNegocio("Insumo no encontrado", 404);
-    const insumo = await prisma.insumo.update({ where: { id: actual.id }, data: { ...parsed.data, alertaStockBajo: false } }).catch(nombreRepetido);
-    if (parsed.data.costoUnitario !== undefined) await recalcularCostos([insumo.id]);
-    await revisarInsumos([insumo.id]);
-    res.json(insumo);
+    const { stockMinimo, ...datos } = parsed.data;
+    await prisma.insumo.update({ where: { id: actual.id }, data: datos }).catch(nombreRepetido);
+    // El mínimo es de cada sede.
+    if (stockMinimo !== undefined) {
+      await prisma.insumoSede.upsert({
+        where: { insumoId_sedeId: { insumoId: actual.id, sedeId: req.sedeId } },
+        create: { insumoId: actual.id, sedeId: req.sedeId, stockMinimo },
+        update: { stockMinimo, alertaStockBajo: false },
+      });
+    }
+    if (datos.costoUnitario !== undefined) await recalcularCostos([actual.id]);
+    await revisarInsumos([actual.id], req.sedeId);
+    res.json(await insumoEnSede(actual.id, req.sedeId));
   })
 );
 
@@ -102,31 +132,35 @@ insumosRouter.post(
     const { cantidad, costoTotal, registrarGasto = false, desdeCaja = false, nota } = parsed.data;
     const hoy = diaLocal(new Date());
 
-    const insumo = await prisma.$transaction(async (tx) => {
+    const sedeId = req.sedeId;
+    const insumoId = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Insumo" WHERE id = ${req.params.id} FOR UPDATE`;
       const actual = await tx.insumo.findUnique({ where: { id: req.params.id } });
       if (!actual) throw new ErrorDeNegocio("Insumo no encontrado", 404);
-      // Promedio ponderado entre lo que había (si había) y lo que llegó.
-      const existente = Math.max(0, actual.stock);
+      // Promedio ponderado entre lo que había en la sede (si había) y lo que
+      // llegó; el costo es uno solo para todo el negocio.
+      const enSede = await tx.insumoSede.findUnique({ where: { insumoId_sedeId: { insumoId: actual.id, sedeId } } });
+      const existente = Math.max(0, enSede?.stock ?? 0);
       const costoUnitario = costoTotal > 0 ? (existente * actual.costoUnitario + costoTotal) / (existente + cantidad) : actual.costoUnitario;
-      const actualizado = await tx.insumo.update({ where: { id: actual.id }, data: { stock: { increment: cantidad }, costoUnitario } });
+      await tx.insumo.update({ where: { id: actual.id }, data: { costoUnitario } });
+      const stock = await moverStock(tx, actual.id, sedeId, cantidad);
       await tx.movimientoInsumo.create({
-        data: { insumoId: actual.id, tipo: "COMPRA", cantidad, stockResultante: actualizado.stock, costoTotal, nota: nota || null, userId: req.user!.userId },
+        data: { insumoId: actual.id, sedeId, tipo: "COMPRA", cantidad, stockResultante: stock, costoTotal, nota: nota || null, userId: req.user!.userId },
       });
       if (registrarGasto && costoTotal > 0) {
         const concepto = `Compra de ${actual.nombre}${nota ? ` (${nota})` : ""}`.slice(0, 200);
         const movimiento = desdeCaja
-          ? await tx.movimientoCaja.create({ data: { tipo: "SALIDA", monto: costoTotal, concepto: `Gasto: ${concepto}`, registradoPorId: req.user!.userId } })
+          ? await tx.movimientoCaja.create({ data: { sedeId, tipo: "SALIDA", monto: costoTotal, concepto: `Gasto: ${concepto}`, registradoPorId: req.user!.userId } })
           : null;
         await tx.gasto.create({
-          data: { fecha: mediodiaDe(hoy), categoria: "INSUMOS", concepto, monto: costoTotal, movimientoCajaId: movimiento?.id ?? null, registradoPorId: req.user!.userId },
+          data: { sedeId, fecha: mediodiaDe(hoy), categoria: "INSUMOS", concepto, monto: costoTotal, movimientoCajaId: movimiento?.id ?? null, registradoPorId: req.user!.userId },
         });
       }
-      return actualizado;
+      return actual.id;
     });
-    await recalcularCostos([insumo.id]);
-    await revisarInsumos([insumo.id]);
-    res.status(201).json(insumo);
+    await recalcularCostos([insumoId]);
+    await revisarInsumos([insumoId], sedeId);
+    res.status(201).json(await insumoEnSede(insumoId, sedeId));
   })
 );
 
@@ -137,18 +171,24 @@ insumosRouter.post(
   catchAsync(async (req, res) => {
     const parsed = z.object({ stockReal: z.number().min(0).max(10_000_000), nota: z.string().trim().max(200).optional() }).safeParse(req.body);
     if (!parsed.success) throw new ErrorDeNegocio("Indica cuánto hay de verdad", 400);
-    const insumo = await prisma.$transaction(async (tx) => {
+    const sedeId = req.sedeId;
+    const insumoId = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Insumo" WHERE id = ${req.params.id} FOR UPDATE`;
       const actual = await tx.insumo.findUnique({ where: { id: req.params.id } });
       if (!actual) throw new ErrorDeNegocio("Insumo no encontrado", 404);
-      const actualizado = await tx.insumo.update({ where: { id: actual.id }, data: { stock: parsed.data.stockReal } });
-      await tx.movimientoInsumo.create({
-        data: { insumoId: actual.id, tipo: "AJUSTE", cantidad: parsed.data.stockReal - actual.stock, stockResultante: parsed.data.stockReal, nota: parsed.data.nota || "Conteo físico", userId: req.user!.userId },
+      const antes = (await tx.insumoSede.findUnique({ where: { insumoId_sedeId: { insumoId: actual.id, sedeId } } }))?.stock ?? 0;
+      await tx.insumoSede.upsert({
+        where: { insumoId_sedeId: { insumoId: actual.id, sedeId } },
+        create: { insumoId: actual.id, sedeId, stock: parsed.data.stockReal },
+        update: { stock: parsed.data.stockReal },
       });
-      return actualizado;
+      await tx.movimientoInsumo.create({
+        data: { insumoId: actual.id, sedeId, tipo: "AJUSTE", cantidad: parsed.data.stockReal - antes, stockResultante: parsed.data.stockReal, nota: parsed.data.nota || "Conteo físico", userId: req.user!.userId },
+      });
+      return actual.id;
     });
-    await revisarInsumos([insumo.id]);
-    res.status(201).json(insumo);
+    await revisarInsumos([insumoId], sedeId);
+    res.status(201).json(await insumoEnSede(insumoId, sedeId));
   })
 );
 
@@ -156,7 +196,7 @@ insumosRouter.get(
   "/:id/movimientos",
   catchAsync(async (req, res) => {
     const movimientos = await prisma.movimientoInsumo.findMany({
-      where: { insumoId: req.params.id },
+      where: { insumoId: req.params.id, sedeId: req.sedeId },
       orderBy: { creadoEn: "desc" },
       take: 60,
       include: { user: { select: { nombre: true, apellido: true } } },
@@ -247,7 +287,7 @@ insumosRouter.get(
       prisma.insumo.findMany({ select: { id: true, nombre: true, unidad: true, costoUnitario: true } }),
       prisma.movimientoInsumo.groupBy({
         by: ["insumoId", "tipo"],
-        where: { creadoEn: { gte: inicio, lt: fin }, NOT: { tipo: "AJUSTE", nota: "Conteo inicial" } },
+        where: { creadoEn: { gte: inicio, lt: fin }, ...filtroSedes(sedesDelReporte(req)), NOT: { tipo: "AJUSTE", nota: "Conteo inicial" } },
         _sum: { cantidad: true, costoTotal: true },
       }),
     ]);

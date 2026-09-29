@@ -97,7 +97,7 @@ export async function probarOperacion() {
   } finally {
     for (const s of sockets) s.close();
     // Un producto real marcado agotado por la prueba se restaura pase lo que pase.
-    if (productoAgotadoId) await prisma.producto.update({ where: { id: productoAgotadoId }, data: { disponible: true } });
+    if (productoAgotadoId) await prisma.productoSede.updateMany({ where: { productoId: productoAgotadoId, sede: { esPrincipal: true } }, data: { disponible: true } });
     await limpiar(creados);
   }
 }

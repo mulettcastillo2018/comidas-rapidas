@@ -8,6 +8,8 @@ import { ErrorDeNegocio } from "../lib/errores";
 import { OMITIR_ITEM, productoPublico } from "../lib/datosInternos";
 import { emitMesaSesionCerrada, emitMesaSesionNueva, emitPedidoActualizado } from "../realtime/socket";
 import { pedidoInclude } from "../services/pedidos";
+import { exigirMismaSede } from "../services/sedes";
+import type { Request } from "express";
 
 export const mesaSesionesRouter = Router();
 
@@ -34,7 +36,7 @@ mesaSesionesRouter.get(
   catchAsync(async (req, res) => {
     const soloActivas = req.query.activas !== "false";
     const sesiones = await prisma.mesaSesion.findMany({
-      where: soloActivas ? { estado: { not: "CERRADA" } } : undefined,
+      where: { mesa: { sedeId: req.sedeId }, ...(soloActivas ? { estado: { not: "CERRADA" as const } } : {}) },
       include: sesionInclude,
       orderBy: { abiertaEn: "desc" },
     });
@@ -54,6 +56,7 @@ mesaSesionesRouter.get(
       res.status(404).json({ error: "Sesión de mesa no encontrada" });
       return;
     }
+    exigirMismaSede(req, sesion.mesa.sedeId, "Esa mesa");
     res.json(sesion);
   })
 );
@@ -82,6 +85,7 @@ mesaSesionesRouter.post(
       res.status(404).json({ error: "Mesa no encontrada" });
       return;
     }
+    exigirMismaSede(req, mesa.sedeId, "Esa mesa");
     if (mesa.estado !== "LIBRE") {
       res.status(409).json({ error: "La mesa ya está ocupada" });
       return;
@@ -133,9 +137,10 @@ mesaSesionesRouter.post(
 // Solo el mesero que atiende la mesa (o el admin) la modifica, y solo
 // mientras no se haya generado la cuenta: después, la cuenta ya está hecha
 // con esos comensales y esa mesa.
-async function sesionModificable(sesionId: string, usuario: { userId: string; role: string }) {
+async function sesionModificable(req: Request, sesionId: string, usuario: { userId: string; role: string }) {
   const sesion = await prisma.mesaSesion.findUnique({ where: { id: sesionId }, include: { mesa: true, _count: { select: { comensales: true } } } });
   if (!sesion) throw new ErrorDeNegocio("Sesión de mesa no encontrada", 404);
+  exigirMismaSede(req, sesion.mesa.sedeId, "Esa mesa");
   if (sesion.meseroId !== usuario.userId && usuario.role !== "ADMIN") throw new ErrorDeNegocio("Esta mesa la está atendiendo otro mesero", 403);
   if (sesion.estado !== "ABIERTA") throw new ErrorDeNegocio("La cuenta de esta mesa ya se generó; no se puede modificar", 409);
   return sesion;
@@ -159,7 +164,7 @@ mesaSesionesRouter.post(
       res.status(400).json({ error: "Escribe el nombre del comensal" });
       return;
     }
-    const sesion = await sesionModificable(req.params.id, req.user!);
+    const sesion = await sesionModificable(req, req.params.id, req.user!);
     const total = sesion._count.comensales + 1;
     const sillasAdicionales = Math.max(0, total - sesion.mesa.capacidad);
     if (sillasAdicionales > sesion.sillasAdicionales && !parsed.data.confirmaSillaExtra) {
@@ -195,9 +200,10 @@ mesaSesionesRouter.put(
       res.status(400).json({ error: "Indica a qué mesa se cambian" });
       return;
     }
-    const sesion = await sesionModificable(req.params.id, req.user!);
+    const sesion = await sesionModificable(req, req.params.id, req.user!);
     const destino = await prisma.mesa.findUnique({ where: { id: parsed.data.mesaId } });
     if (!destino || !destino.activa) throw new ErrorDeNegocio("Mesa no encontrada", 404);
+    if (destino.sedeId !== sesion.mesa.sedeId) throw new ErrorDeNegocio("No se puede pasar a una mesa de otra sede", 400);
     if (destino.id === sesion.mesaId) throw new ErrorDeNegocio("Ya están en esa mesa", 400);
     if (destino.meseroAsignadoId && destino.meseroAsignadoId !== sesion.meseroId && req.user!.role !== "ADMIN") {
       throw new ErrorDeNegocio(`La Mesa ${destino.numero} está asignada a otro mesero`, 403);
@@ -229,7 +235,7 @@ mesaSesionesRouter.put(
 
     // Grillas: la mesa vieja se libera y la sesión aparece en la nueva.
     // Cocina y pantalla: sus pedidos en curso ahora dicen la mesa nueva.
-    emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id });
+    emitMesaSesionCerrada({ mesaId: sesion.mesaId, sesionId: sesion.id, sedeId: sesion.mesa.sedeId });
     const sesionCompleta = await prisma.mesaSesion.findUnique({ where: { id: sesion.id }, include: sesionInclude });
     emitMesaSesionNueva(sesionCompleta);
     const enCurso = await prisma.pedido.findMany({
@@ -256,18 +262,19 @@ mesaSesionesRouter.put(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const sesion = await prisma.mesaSesion.findUnique({ where: { id: req.params.id } });
+    const sesion = await prisma.mesaSesion.findUnique({ where: { id: req.params.id }, include: { mesa: { select: { sedeId: true } } } });
     if (!sesion) {
       res.status(404).json({ error: "Sesión de mesa no encontrada" });
       return;
     }
+    exigirMismaSede(req, sesion.mesa.sedeId, "Esa mesa");
     if (sesion.estado === "CERRADA") {
       res.status(409).json({ error: "Esta mesa ya está cerrada" });
       return;
     }
     const nuevoMesero = await prisma.user.findUnique({ where: { id: parsed.data.meseroId } });
-    if (!nuevoMesero || nuevoMesero.role !== "MESERO" || !nuevoMesero.isActive) {
-      res.status(400).json({ error: "El usuario indicado no es un mesero activo" });
+    if (!nuevoMesero || nuevoMesero.role !== "MESERO" || !nuevoMesero.isActive || nuevoMesero.sedeId !== sesion.mesa.sedeId) {
+      res.status(400).json({ error: "El usuario indicado no es un mesero activo de esta sede" });
       return;
     }
 

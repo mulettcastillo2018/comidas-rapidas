@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
 import { formatoPesos, hoyLocal } from "@/lib/formato";
 import { CATEGORIA_GASTO_LABEL, type EstadoResultados } from "@/lib/gestion";
 import { SelectorRango } from "./SelectorRango";
@@ -27,17 +28,18 @@ export function ReporteResultados({ token }: { token: string }) {
   const [hasta, setHasta] = useState(hoy);
   const [r, setR] = useState<EstadoResultados | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const todas = useVerTodas();
 
   useEffect(() => {
     let vigente = true;
     setError(null);
-    apiFetch<EstadoResultados>(`/reportes/resultados?desde=${desde}&hasta=${hasta}`, { token })
+    apiFetch<EstadoResultados>(conAlcance(`/reportes/resultados?desde=${desde}&hasta=${hasta}`, todas), { token })
       .then((data) => vigente && setR(data))
       .catch((err) => vigente && setError(err instanceof ApiError ? err.message : "No se pudo cargar el estado de resultados."));
     return () => {
       vigente = false;
     };
-  }, [token, desde, hasta]);
+  }, [token, desde, hasta, todas]);
 
   return (
     <div className="space-y-6">
@@ -99,6 +101,11 @@ export function ReporteResultados({ token }: { token: string }) {
               </p>
             ) : null}
             <Linea label="Utilidad neta" valor={r.utilidadNeta} fuerte />
+            {r.gastos.generalesExcluidos > 0 ? (
+              <p className="pt-1 text-xs text-muted-foreground">
+                No incluye {formatoPesos(r.gastos.generalesExcluidos)} de gastos generales del negocio (no son de una sede): se restan viendo todas las sedes.
+              </p>
+            ) : null}
           </section>
 
           {r.fuenteCosto === "PRODUCTOS" && r.comprasInsumos > 0 ? (

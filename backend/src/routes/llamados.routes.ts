@@ -45,9 +45,9 @@ llamadosRouter.post(
     } else if (mesa.meseroAsignadoId) {
       await notificarUsuarios({ userIds: [mesa.meseroAsignadoId], tipo: "LLAMADO_MESA", mensaje, enlace: enlaces.grillaMesas(mesaId) });
     } else {
-      await notificarPorRol({ rol: "MESERO", tipo: "LLAMADO_MESA", mensaje, enlace: enlaces.grillaMesas(mesaId) });
+      await notificarPorRol({ rol: "MESERO", sedeId: mesa.sedeId, tipo: "LLAMADO_MESA", mensaje, enlace: enlaces.grillaMesas(mesaId) });
     }
-    emitLlamadoMesa({ mesaId, tipo });
+    emitLlamadoMesa({ mesaId, tipo, sedeId: mesa.sedeId });
     res.status(201).json({ ok: true });
   })
 );

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { digitoVerificacion, URL_PRODUCCION, URL_SANDBOX, type ConfiguracionFiscal } from "@/lib/facturacion";
 
-type Campos = Omit<ConfiguracionFiscal, "activadaEn" | "esSandbox" | "token" | "faltantes" | "avisos">;
+type Campos = Omit<ConfiguracionFiscal, "activadaEn" | "esSandbox" | "token" | "faltantes" | "avisos" | "sede">;
 
-const NUMERICOS = ["feDesde", "feHasta", "feSiguiente", "posDesde", "posHasta", "posSiguiente", "impuestoPct"] as const;
+const NUMERICOS = ["feDesde", "feHasta", "feSiguiente", "impuestoPct"] as const;
 
 function Campo({ label, ayuda, children }: { label: string; ayuda?: string; children: ReactNode }) {
   return (
@@ -25,14 +26,17 @@ export function ConfiguracionFacturacion({
   config,
   onCambio,
   onAviso,
+  soloLectura,
 }: {
   token: string;
   config: ConfiguracionFiscal;
   onCambio: (c: ConfiguracionFiscal) => void;
   onAviso: (mensaje: string) => void;
+  // El administrador de una sede la ve pero no la cambia (es del negocio).
+  soloLectura: boolean;
 }) {
   const inicial = Object.fromEntries(
-    Object.entries(config).filter(([k]) => !["activadaEn", "esSandbox", "token", "faltantes", "avisos", "id"].includes(k))
+    Object.entries(config).filter(([k]) => !["activadaEn", "esSandbox", "token", "faltantes", "avisos", "id", "sede"].includes(k))
   ) as unknown as Campos;
   const [campos, setCampos] = useState<Campos>(inicial);
   const [nuevoToken, setNuevoToken] = useState("");
@@ -88,6 +92,16 @@ export function ConfiguracionFacturacion({
 
   return (
     <form onSubmit={guardar} className="space-y-5">
+      {soloLectura ? (
+        <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+          La configuración de facturación es de todo el negocio: la cambia el administrador general. La numeración POS y la caja de tu sede están en{" "}
+          <Link href="/admin/sedes" className="font-semibold text-accent">
+            Sedes
+          </Link>
+          .
+        </p>
+      ) : null}
+      <fieldset disabled={soloLectura} className="space-y-5">
       <label className="flex items-center gap-2 rounded-xl border border-border p-3 text-sm font-semibold">
         <input type="checkbox" checked={campos.activa} onChange={(e) => set("activa", e.target.checked)} />
         Facturar electrónicamente cada cuenta cobrada
@@ -208,40 +222,16 @@ export function ConfiguracionFacturacion({
         ) : null}
       </fieldset>
 
-      <fieldset className="space-y-3 rounded-xl border border-border p-3">
-        <legend className="px-1 text-sm font-bold">Documento equivalente POS (si lo usas)</legend>
-        <div className="grid gap-3 sm:grid-cols-4">
-          <Campo label="Resolución">
-            <input {...texto("posResolucion")} className={entrada} />
-          </Campo>
-          <Campo label="Prefijo">
-            <input {...texto("posPrefijo")} className={entrada} />
-          </Campo>
-          <Campo label="Desde">
-            <input {...texto("posDesde")} inputMode="numeric" className={entrada} />
-          </Campo>
-          <Campo label="Hasta">
-            <input {...texto("posHasta")} inputMode="numeric" className={entrada} />
-          </Campo>
-          <Campo label="Vigente desde">
-            <input type="date" {...texto("posFechaInicio")} className={entrada} />
-          </Campo>
-          <Campo label="Vigente hasta">
-            <input type="date" {...texto("posFechaFin")} className={entrada} />
-          </Campo>
-          <Campo label="Siguiente número" ayuda="Vacío: continúa donde iba">
-            <input {...texto("posSiguiente")} inputMode="numeric" className={entrada} />
-          </Campo>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Campo label="Caja: placa o serial" ayuda="Obligatorio en el documento POS">
-            <input {...texto("cajaPlaca")} className={entrada} />
-          </Campo>
-          <Campo label="Caja: ubicación">
-            <input {...texto("cajaUbicacion")} className={entrada} />
-          </Campo>
-        </div>
-      </fieldset>
+      <div className="rounded-xl border border-border p-3 text-sm">
+        <p className="font-bold">Documento equivalente POS (si lo usas)</p>
+        <p className="mt-1 text-muted-foreground">
+          Cada sede tiene su caja y su propia resolución de numeración POS: se configuran en{" "}
+          <Link href="/admin/sedes" className="font-semibold text-accent">
+            Sedes
+          </Link>
+          .{config.sede && config.faltantes.POS.length > 0 ? ` A ${config.sede.nombre} le falta: ${config.faltantes.POS.join(", ")}.` : ""}
+        </p>
+      </div>
 
       <fieldset className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2">
         <legend className="px-1 text-sm font-bold">Notas para anular</legend>
@@ -254,9 +244,12 @@ export function ConfiguracionFacturacion({
       </fieldset>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <button disabled={guardando} className="btn-primary rounded-full px-6 py-2 text-sm disabled:opacity-50">
-        {guardando ? "Guardando…" : "Guardar configuración"}
-      </button>
+      {soloLectura ? null : (
+        <button disabled={guardando} className="btn-primary rounded-full px-6 py-2 text-sm disabled:opacity-50">
+          {guardando ? "Guardando…" : "Guardar configuración"}
+        </button>
+      )}
+      </fieldset>
     </form>
   );
 }

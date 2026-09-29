@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
 import { formatoFechaHora } from "@/lib/formato";
 import type { ReporteTiempos } from "@/lib/types";
 
 export function ReporteTiemposCocina({ token }: { token: string }) {
   const [reporte, setReporte] = useState<ReporteTiempos | null>(null);
+  const todas = useVerTodas();
 
   useEffect(() => {
-    apiFetch<ReporteTiempos>("/reportes/tiempos", { token }).then(setReporte);
-  }, [token]);
+    apiFetch<ReporteTiempos>(conAlcance("/reportes/tiempos", todas), { token }).then(setReporte);
+  }, [token, todas]);
 
   if (!reporte) return <p className="text-sm text-muted-foreground">Cargando…</p>;
 

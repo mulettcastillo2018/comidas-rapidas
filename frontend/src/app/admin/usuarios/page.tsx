@@ -6,6 +6,7 @@ import { nombreCompleto } from "@/lib/nombre";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { MiClaveSupervisor } from "@/components/admin/MiClaveSupervisor";
+import { activas, useSedes } from "@/lib/sedes";
 import type { UserRole } from "@/lib/types";
 
 interface AdminUser {
@@ -17,6 +18,9 @@ interface AdminUser {
   isActive: boolean;
   createdAt: string;
   tienePin: boolean;
+  // null = administrador general.
+  sedeId: string | null;
+  sede: string | null;
 }
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -43,6 +47,13 @@ export default function AdminUsuariosPage() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  const sedes = useSedes();
+  const listaSedes = activas(sedes);
+  // Con una sola sede no hace falta elegir: todos trabajan en ella.
+  const eligeSede = Boolean(sedes?.puedeCambiar) && listaSedes.length > 1;
+  const [rolNuevo, setRolNuevo] = useState<UserRole>("MESERO");
+  // null = la sede en la que se está; "GENERAL" = administrador general.
+  const [sedeNueva, setSedeNueva] = useState<string | null>(null);
 
   async function loadUsuarios() {
     if (!token) return;
@@ -72,6 +83,7 @@ export default function AdminUsuariosPage() {
           email: field("email"),
           password: field("password"),
           role: field("role"),
+          ...(eligeSede ? { sedeId: sedeNueva === "GENERAL" ? (rolNuevo === "ADMIN" ? null : sedes!.actual) : (sedeNueva ?? sedes!.actual) } : {}),
         }),
       });
       form.reset();
@@ -94,6 +106,22 @@ export default function AdminUsuariosPage() {
       await loadUsuarios();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo cambiar el rol.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleChangeSede(user: AdminUser, sedeId: string) {
+    if (!token || sedeId === (user.sedeId ?? "")) return;
+    const destino = sedeId ? listaSedes.find((s) => s.id === sedeId)?.nombre : "todas las sedes (administrador general)";
+    if (!confirm(`¿Pasar a ${nombreCompleto(user)} a ${destino}? Se cerrará su sesión para que entre ya en su nueva sede.`)) return;
+    setError(null);
+    setUpdatingId(user.id);
+    try {
+      await apiFetch(`/usuarios/${user.id}/sede`, { method: "PUT", token, body: JSON.stringify({ sedeId: sedeId || null }) });
+      await loadUsuarios();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo cambiar la sede.");
     } finally {
       setUpdatingId(null);
     }
@@ -191,6 +219,7 @@ export default function AdminUsuariosPage() {
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {user.email} · Desde {formatDate(user.createdAt)}
+                  {listaSedes.length > 1 ? ` · ${user.sede ?? "Todas las sedes"}` : null}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -216,6 +245,22 @@ export default function AdminUsuariosPage() {
                   <span className="text-xs text-muted-foreground">(tú)</span>
                 ) : (
                   <>
+                    {eligeSede ? (
+                      <select
+                        value={user.sedeId ?? ""}
+                        onChange={(e) => handleChangeSede(user, e.target.value)}
+                        disabled={updatingId === user.id}
+                        title="Sede donde trabaja"
+                        className="rounded-lg border border-border px-2 py-1 text-sm"
+                      >
+                        {listaSedes.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.nombre}
+                          </option>
+                        ))}
+                        {user.role === "ADMIN" ? <option value="">Todas (general)</option> : null}
+                      </select>
+                    ) : null}
                     <select
                       value={user.role}
                       onChange={(e) => handleChangeRole(user, e.target.value as UserRole)}
@@ -286,13 +331,32 @@ export default function AdminUsuariosPage() {
           </div>
           <input name="email" type="email" placeholder="Correo" required className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
           <input name="password" type="password" placeholder="Contraseña" required minLength={8} className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-          <select name="role" required defaultValue="MESERO" className="w-full rounded-lg border border-border px-3 py-2 text-sm">
+          <select
+            name="role"
+            required
+            value={rolNuevo}
+            onChange={(e) => setRolNuevo(e.target.value as UserRole)}
+            className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+          >
             {Object.entries(ROLE_LABELS).map(([role, label]) => (
               <option key={role} value={role}>
                 {label}
               </option>
             ))}
           </select>
+          {eligeSede ? (
+            <label className="block text-xs font-semibold text-muted-foreground">
+              Sede donde trabaja
+              <select value={sedeNueva === "GENERAL" && rolNuevo !== "ADMIN" ? sedes?.actual : (sedeNueva ?? sedes?.actual)} onChange={(e) => setSedeNueva(e.target.value)} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm">
+                {listaSedes.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre}
+                  </option>
+                ))}
+                {rolNuevo === "ADMIN" ? <option value="GENERAL">Todas las sedes (administrador general)</option> : null}
+              </select>
+            </label>
+          ) : null}
           <div className="flex gap-2">
             <button type="submit" disabled={saving} className="btn-primary flex-1 rounded-full px-6 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? "Creando…" : "Crear usuario"}

@@ -49,9 +49,14 @@ async function main() {
     if (!existing) await prisma.producto.create({ data: producto });
   }
 
+  // La sede principal la crea la migración; en una base nueva, aquí.
+  const sede =
+    (await prisma.sede.findFirst({ where: { esPrincipal: true } })) ??
+    (await prisma.sede.create({ data: { id: "sede-principal", nombre: "Principal", esPrincipal: true } }));
+
   const mesas = ["1", "2", "3", "4", "5", "6"];
   for (const numero of mesas) {
-    await prisma.mesa.upsert({ where: { numero }, update: {}, create: { numero, capacidad: 4 } });
+    await prisma.mesa.upsert({ where: { sedeId_numero: { sedeId: sede.id, numero } }, update: {}, create: { numero, capacidad: 4, sedeId: sede.id } });
   }
 
   console.log("Seed completado:");

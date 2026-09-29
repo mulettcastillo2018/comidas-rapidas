@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma";
 import { rangoDeDias } from "../lib/fechas";
 import { nombreCompleto } from "../lib/nombre";
 import { repartirProporcional } from "./lineasPedido";
+import { sedes } from "./sedes";
 
 const redondear2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -25,24 +26,55 @@ interface Persona {
   monto: number;
 }
 
-// Reparto sugerido de las propinas cobradas en el rango:
+// Reparto sugerido de las propinas cobradas en el rango, sede por sede (las
+// propinas de una sede son de la gente que trabajó en ella):
 // - Cocina se lleva el porcentaje configurado, repartido por horas trabajadas.
 // - El resto (salón): cada mesero lo de sus mesas (PROPIAS), o todo junto
 //   repartido por horas entre los meseros (POZO).
 // Siempre reparte exactamente el total, sin perder ni inventar pesos.
-export async function repartoDePropinas(desde: string, hasta: string) {
-  const { inicio, fin } = rangoDeDias(desde, hasta);
+export async function repartoDePropinas(desde: string, hasta: string, sedesIds: string[] | null = null) {
   const config = await obtenerConfiguracion();
+  const lista = await sedes();
+  const ids = sedesIds ?? lista.map((s) => s.id);
+  const partes = await Promise.all(ids.map((id) => repartoDeSede(desde, hasta, id, config)));
+  // Juntar las sedes (alguien que cambió de sede en el rango suma en ambas).
+  const reparto = new Map<string, Persona>();
+  for (const p of partes.flatMap((r) => r.reparto)) {
+    const antes = reparto.get(p.userId);
+    reparto.set(
+      p.userId,
+      antes
+        ? { ...antes, horas: redondear2(antes.horas + p.horas), propiasGeneradas: antes.propiasGeneradas + p.propiasGeneradas, monto: antes.monto + p.monto }
+        : p
+    );
+  }
+  const varias = ids.length > 1;
+  const nombre = (id: string) => lista.find((s) => s.id === id)?.nombre ?? "";
+  return {
+    desde,
+    hasta,
+    total: partes.reduce((s, r) => s + r.total, 0),
+    modo: config.propinaModo,
+    pctCocina: config.propinaPctCocina,
+    paraCocina: partes.reduce((s, r) => s + r.paraCocina, 0),
+    paraSalon: partes.reduce((s, r) => s + r.paraSalon, 0),
+    reparto: [...reparto.values()].sort((a, b) => b.monto - a.monto),
+    avisos: partes.flatMap((r, i) => r.avisos.map((a) => (varias ? `${nombre(ids[i])}: ${a}` : a))),
+  };
+}
+
+async function repartoDeSede(desde: string, hasta: string, sedeId: string, config: Awaited<ReturnType<typeof obtenerConfiguracion>>) {
+  const { inicio, fin } = rangoDeDias(desde, hasta);
   const [facturas, turnos, cocinaActiva] = await Promise.all([
     prisma.factura.findMany({
-      where: { estado: "PAGADA", pagadaEn: { gte: inicio, lt: fin }, propinaMonto: { gt: 0 } },
+      where: { estado: "PAGADA", pagadaEn: { gte: inicio, lt: fin }, propinaMonto: { gt: 0 }, sedeId },
       select: { propinaMonto: true, mesaSesion: { select: { meseroId: true } }, pedido: { select: { meseroId: true } } },
     }),
     prisma.turno.findMany({
-      where: { entrada: { lt: fin }, OR: [{ salida: null }, { salida: { gt: inicio } }] },
+      where: { entrada: { lt: fin }, OR: [{ salida: null }, { salida: { gt: inicio } }], sedeId },
       select: { userId: true, entrada: true, salida: true },
     }),
-    prisma.user.findMany({ where: { role: "COCINA", isActive: true }, select: { id: true } }),
+    prisma.user.findMany({ where: { role: "COCINA", isActive: true, sedeId }, select: { id: true } }),
   ]);
 
   const total = facturas.reduce((s, f) => s + f.propinaMonto, 0);
@@ -99,14 +131,10 @@ export async function repartoDePropinas(desde: string, hasta: string) {
   }
 
   return {
-    desde,
-    hasta,
     total,
-    modo: config.propinaModo,
-    pctCocina: config.propinaPctCocina,
     paraCocina,
     paraSalon,
-    reparto: [...personas.values()].filter((p) => p.monto > 0 || p.horas > 0 || p.propiasGeneradas > 0).sort((a, b) => b.monto - a.monto),
+    reparto: [...personas.values()].filter((p) => p.monto > 0 || p.horas > 0 || p.propiasGeneradas > 0),
     avisos,
   };
 }

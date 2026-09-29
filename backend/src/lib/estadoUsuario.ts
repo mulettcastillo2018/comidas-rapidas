@@ -4,6 +4,8 @@ import { prisma } from "./prisma";
 interface EstadoUsuario {
   isActive: boolean;
   role: Role;
+  // null = administrador general (todas las sedes).
+  sedeId: string | null;
   expira: number;
 }
 
@@ -18,7 +20,7 @@ export async function obtenerEstadoUsuario(userId: string): Promise<EstadoUsuari
   const enCache = cache.get(userId);
   if (enCache && enCache.expira > Date.now()) return enCache;
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, role: true } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, role: true, sedeId: true } });
   if (!user) {
     cache.delete(userId);
     return null;

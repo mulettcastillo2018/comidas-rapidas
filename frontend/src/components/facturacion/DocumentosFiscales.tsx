@@ -18,6 +18,7 @@ import {
 } from "@/lib/facturacion";
 import { ADQUIRIENTE_VACIO, DatosFacturacion } from "@/components/DatosFacturacion";
 import { RepresentacionGrafica } from "./RepresentacionGrafica";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
 
 const COLOR_ESTADO: Record<EstadoDocumentoFiscal, string> = {
   PENDIENTE: "bg-amber-100 text-amber-800",
@@ -68,12 +69,13 @@ export function DocumentosFiscales({ token, onAviso }: { token: string; onAviso:
   const [error, setError] = useState<string | null>(null);
   const [imprimiendo, setImprimiendo] = useImpresion<{ doc: DocumentoFiscalDetalle; qr: string | null }>();
   const [resaltado, lectorResaltado] = useResaltado(["documento"]);
+  const todas = useVerTodas();
 
   const cargar = useCallback(() => {
-    apiFetch<ListaDocumentos>(`/facturacion/documentos${filtro ? `?estado=${filtro}` : ""}`, { token })
+    apiFetch<ListaDocumentos>(conAlcance(`/facturacion/documentos${filtro ? `?estado=${filtro}` : ""}`, todas), { token })
       .then(setDatos)
       .catch((err) => setError(err instanceof ApiError ? err.message : "No se pudieron cargar los documentos."));
-  }, [token, filtro]);
+  }, [token, filtro, todas]);
 
   useEffect(cargar, [cargar]);
   // Mientras haya documentos en trámite, se refresca solo.
@@ -152,7 +154,7 @@ export function DocumentosFiscales({ token, onAviso }: { token: string; onAviso:
                     {d.anula ? <span className="ml-1 text-xs font-normal text-muted-foreground">anula {d.anula}</span> : null}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatoFechaHora(d.creadoEn)} · {d.ubicacion} · {d.clienteNombre} ({d.clienteIdentificacion}) · {formatoPesos(d.total)}
+                    {formatoFechaHora(d.creadoEn)} · {todas ? `${d.sede} · ` : ""}{d.ubicacion} · {d.clienteNombre} ({d.clienteIdentificacion}) · {formatoPesos(d.total)}
                   </p>
                   {d.anuladoPor ? (
                     <p className="text-xs text-muted-foreground">

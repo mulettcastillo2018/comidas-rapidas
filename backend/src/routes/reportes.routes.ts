@@ -7,6 +7,7 @@ import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { nombreCompleto } from "../lib/nombre";
 import { diaLocal, diaSemanaLocal, esDiaValido, horaLocal, rangoDeDias } from "../lib/fechas";
+import { filtroSedes, sedes, sedesDelReporte } from "../services/sedes";
 
 const NOMBRES_DIA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
@@ -70,9 +71,12 @@ reportesRouter.get(
       return;
     }
 
-    const [facturas, cancelados, pedidosDelRango, visitas, mesasActivas] = await Promise.all([
+    // De la sede en la que se está (o de todas, para el administrador general).
+    const sedesIds = sedesDelReporte(req);
+    const deLaSede = filtroSedes(sedesIds);
+    const [facturas, cancelados, pedidosDelRango, visitas, mesasActivas, listaSedes] = await Promise.all([
       prisma.factura.findMany({
-        where: { estado: { in: ["PAGADA", "PERDIDA"] }, pagadaEn: { gte: inicio, lt: fin } },
+        where: { estado: { in: ["PAGADA", "PERDIDA"] }, pagadaEn: { gte: inicio, lt: fin }, ...deLaSede },
         include: {
           cerradaPor: personaSelect,
           autorizadaPor: personaSelect,
@@ -84,7 +88,7 @@ reportesRouter.get(
         orderBy: { pagadaEn: "asc" },
       }),
       prisma.pedidoItemStatusLog.findMany({
-        where: { aEstado: "CANCELADO", cambiadoEn: { gte: inicio, lt: fin } },
+        where: { aEstado: "CANCELADO", cambiadoEn: { gte: inicio, lt: fin }, pedidoItem: { pedido: deLaSede } },
         include: {
           cambiadoPor: personaSelect,
           autorizadoPor: personaSelect,
@@ -94,12 +98,12 @@ reportesRouter.get(
       }),
       // Demanda: cuándo llegan los pedidos (no cuándo se cobran).
       prisma.pedido.findMany({
-        where: { creadoEn: { gte: inicio, lt: fin } },
+        where: { creadoEn: { gte: inicio, lt: fin }, ...deLaSede },
         select: { creadoEn: true, items: { select: { cantidad: true, precioUnitario: true, estado: true } } },
       }),
       // Rotación: visitas a mesas que terminaron en el rango.
       prisma.mesaSesion.findMany({
-        where: { estado: "CERRADA", cerradaEn: { gte: inicio, lt: fin } },
+        where: { estado: "CERRADA", cerradaEn: { gte: inicio, lt: fin }, mesa: deLaSede },
         select: {
           abiertaEn: true,
           cerradaEn: true,
@@ -108,13 +112,17 @@ reportesRouter.get(
           factura: { select: { estado: true, total: true } },
         },
       }),
-      prisma.mesa.count({ where: { activa: true } }),
+      prisma.mesa.count({ where: { activa: true, ...deLaSede } }),
+      sedes(),
     ]);
+    const nombreDeSede = (id: string) => listaSedes.find((s) => s.id === id)?.nombre ?? "";
 
     const cuentas = facturas.map((f) => {
       const esMesa = Boolean(f.mesaSesion);
       return {
         id: f.id,
+        sedeId: f.sedeId,
+        sede: nombreDeSede(f.sedeId),
         fecha: f.pagadaEn!,
         dia: diaLocal(f.pagadaEn!),
         canal: esMesa ? ("MESA" as const) : (f.pedido?.canal ?? "MOSTRADOR"),
@@ -155,6 +163,8 @@ reportesRouter.get(
       PLATAFORMA: { ventas: 0, cuentas: 0 },
     };
     const porMesero = new Map<string, { meseroId: string; nombre: string; ventas: number; cuentas: number; propinas: number }>();
+    // Para comparar sedes (solo tiene sentido viendo todas).
+    const porSede = new Map<string, { sedeId: string; nombre: string; ventas: number; cuentas: number; propinas: number }>();
     // La ganancia se calcula solo sobre lo vendido con costo conocido (el
     // costo se guarda al vender; lo vendido antes de configurarlo no cuenta).
     const porProducto = new Map<
@@ -175,6 +185,11 @@ reportesRouter.get(
       for (const metodo of new Set(c.pagos.map((p) => p.metodo))) porMetodo.get(metodo)!.cuentas++;
       porCanal[c.canal].ventas += c.total;
       porCanal[c.canal].cuentas++;
+      const s = porSede.get(c.sedeId) ?? { sedeId: c.sedeId, nombre: c.sede, ventas: 0, cuentas: 0, propinas: 0 };
+      s.ventas += c.total;
+      s.cuentas++;
+      s.propinas += c.propina;
+      porSede.set(c.sedeId, s);
       if (c.canal === "MESA" && c.atendidoPor) {
         const p = porMesero.get(c.atendidoPor.id) ?? { meseroId: c.atendidoPor.id, nombre: nombreCompleto(c.atendidoPor), ventas: 0, cuentas: 0, propinas: 0 };
         p.ventas += c.total;
@@ -296,6 +311,8 @@ reportesRouter.get(
     res.json({
       desde,
       hasta,
+      // null = todas las sedes.
+      sede: sedesIds ? nombreDeSede(sedesIds[0]) : null,
       resumen: {
         ventas,
         cuentas: pagadas.length,
@@ -332,6 +349,7 @@ reportesRouter.get(
       rotacion,
       porMetodo: Array.from(porMetodo.values()).sort((a, b) => b.ventas - a.ventas),
       porCanal,
+      porSede: sedesIds ? [] : Array.from(porSede.values()).sort((a, b) => b.ventas - a.ventas),
       porMesero: Array.from(porMesero.values()).sort((a, b) => b.ventas - a.ventas),
       porProducto: productos.sort((a, b) => b.ventas - a.ventas),
       porCombo: Array.from(combos.values())
@@ -358,8 +376,12 @@ reportesRouter.get(
       return;
     }
     const { inicio, fin } = rangoDeDias(parsed.data.desde, parsed.data.hasta);
+    const sedesIds = sedesDelReporte(req);
     const encuestas = await prisma.encuesta.findMany({
-      where: { creadaEn: { gte: inicio, lt: fin } },
+      where: {
+        creadaEn: { gte: inicio, lt: fin },
+        ...(sedesIds ? { OR: [{ mesaSesion: { mesa: filtroSedes(sedesIds) } }, { solicitud: filtroSedes(sedesIds) }] } : {}),
+      },
       include: {
         mesero: { select: { id: true, nombre: true, apellido: true, role: true } },
         mesaSesion: { select: { mesa: { select: { numero: true } } } },
@@ -408,9 +430,9 @@ reportesRouter.get(
   "/tiempos",
   requireAuth,
   requireAdmin,
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const items = await prisma.pedidoItem.findMany({
-      where: { iniciadoEn: { not: null }, listoEn: { not: null } },
+      where: { iniciadoEn: { not: null }, listoEn: { not: null }, pedido: filtroSedes(sedesDelReporte(req)) },
       include: {
         producto: true,
         pedido: {

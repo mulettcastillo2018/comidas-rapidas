@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { NotificationBell } from "@/components/NotificationBell";
 import { BotonTurno } from "@/components/BotonTurno";
+import { SelectorSede } from "@/components/SelectorSede";
 import { nombreCompleto } from "@/lib/nombre";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -58,6 +59,7 @@ export function Navbar() {
           ) : null}
           {user ? (
             <>
+              <SelectorSede />
               <BotonTurno />
               <NotificationBell />
               <span className="flex items-center gap-1.5">

@@ -10,6 +10,8 @@ export async function probarFacturacion() {
   const t = await sesiones();
   const inicio = new Date();
   const original = await prisma.configuracionFiscal.findUnique({ where: { id: "unica" } });
+  // La numeración POS y la caja son de la sede (aquí, la principal).
+  const principal = await prisma.sede.findFirstOrThrow({ where: { esPrincipal: true } });
   const alanube = await iniciarAlanubeFalso();
   try {
     // Deja que el ciclo en segundo plano termine lo que tenga y procesa ya.
@@ -55,17 +57,8 @@ export async function probarFacturacion() {
           feFechaFin: null,
           feClaveTecnica: null,
           feSiguiente: null,
-          posResolucion: "18764000000001",
-          posPrefijo: "POSE",
-          posDesde: 1,
-          posHasta: 5000,
-          posFechaInicio: "2026-01-01",
-          posFechaFin: "2027-12-31",
-          posSiguiente: null,
           notaPrefijo: "NC",
           ajustePrefijo: "NA",
-          cajaPlaca: "CAJA-E2E",
-          cajaUbicacion: "Local principal",
           ...cambios,
         },
         t.admin
@@ -73,6 +66,27 @@ export async function probarFacturacion() {
     verificar((await configurar({ dv: "5" })).status === 400, "un NIT con dígito de verificación equivocado se rechaza");
     verificar((await configurar({ alanubeUrl: "https://otro-servidor.com/api" })).status === 400, "solo se permite la dirección de Alegra (o local en pruebas)");
     const guardada = exigir(await configurar({}), "Configurar");
+    verificar(guardada.faltantes.POS.some((f: string) => f.includes("resolución de numeración POS")), "la numeración POS se pide por sede");
+    const cajaPos = (cambios: object = {}) =>
+      req(
+        "PUT",
+        `/sedes/${principal.id}`,
+        {
+          posResolucion: "18764000000001",
+          posPrefijo: "POSE",
+          posDesde: 1,
+          posHasta: 5000,
+          posFechaInicio: "2026-01-01",
+          posFechaFin: "2027-12-31",
+          posSiguiente: null,
+          cajaPlaca: "CAJA-E2E",
+          cajaUbicacion: "Local principal",
+          ...cambios,
+        },
+        t.admin
+      );
+    verificar((await cajaPos({ posDesde: 10, posHasta: 5 })).status === 400, "un rango POS al revés se rechaza");
+    exigir(await cajaPos(), "Numeración POS de la sede");
     verificar(guardada.token.configurado && guardada.token.final === TOKEN_PRUEBA.slice(-4) && !JSON.stringify(guardada).includes(TOKEN_PRUEBA), "el token se guarda pero nunca se devuelve completo");
     verificar(guardada.faltantes.FACTURA.includes("la compañía en Alanube"), `avisa lo que falta: ${guardada.faltantes.FACTURA.join(", ")}`);
     const conCompania = exigir(await req("POST", "/facturacion/configuracion/compania", undefined, t.admin), "Crear compañía");
@@ -154,11 +168,8 @@ export async function probarFacturacion() {
     verificar(reenviada?.estado === "ACEPTADO" && reenviada.numero === rechazada?.numero, "corregido y reenviado con el mismo número: aceptado");
 
     console.log("\n[facturación] Numeración");
-    const siguientePos = (await prisma.configuracionFiscal.findUniqueOrThrow({ where: { id: "unica" } })).posSiguiente!;
-    exigir(
-      await configurar({ alanubeCompanyId: "compania-e2e", ...soloFe(conNumeracion), feSiguiente: null, documentoPorDefecto: "POS", posHasta: siguientePos - 1, posSiguiente: siguientePos }),
-      "Agotar POS"
-    );
+    const siguientePos = (await prisma.sede.findUniqueOrThrow({ where: { id: principal.id } })).posSiguiente!;
+    exigir(await cajaPos({ posHasta: siguientePos - 1, posSiguiente: siguientePos }), "Agotar POS");
     const { cuenta: c5, pago: p5 } = await cobrarMesa({ metodoPago: "EFECTIVO" });
     verificar(p5.status === 200, "con la numeración agotada, el cobro igual se registra");
     await procesar();
@@ -178,6 +189,8 @@ export async function probarFacturacion() {
     } else {
       await prisma.configuracionFiscal.deleteMany({ where: { id: "unica" } });
     }
+    const { id: _sede, creadoEn: _creado, ...sede } = principal;
+    await prisma.sede.update({ where: { id: principal.id }, data: sede });
     await prisma.notificacion.deleteMany({ where: { tipo: "FACTURACION", creadaEn: { gte: inicio } } });
     await limpiar(creados);
   }

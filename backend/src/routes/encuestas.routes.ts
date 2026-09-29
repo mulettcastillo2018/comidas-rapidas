@@ -15,7 +15,13 @@ const porIp = crearLimitador(30, 10 * 60_000);
 async function buscarPorCodigo(codigo: string) {
   const sesion = await prisma.mesaSesion.findUnique({ where: { codigoEncuesta: codigo }, include: { mesa: true, encuesta: true } });
   if (sesion) {
-    return { contexto: `Mesa ${sesion.mesa.numero}`, meseroId: sesion.meseroId, yaRespondida: Boolean(sesion.encuesta), destino: { mesaSesionId: sesion.id } };
+    return {
+      contexto: `Mesa ${sesion.mesa.numero}`,
+      meseroId: sesion.meseroId,
+      sedeId: sesion.mesa.sedeId,
+      yaRespondida: Boolean(sesion.encuesta),
+      destino: { mesaSesionId: sesion.id },
+    };
   }
   const solicitud = await prisma.solicitudPedido.findUnique({
     where: { codigoSeguimiento: codigo },
@@ -25,6 +31,7 @@ async function buscarPorCodigo(codigo: string) {
     return {
       contexto: solicitud.mesa ? `Mesa ${solicitud.mesa.numero}` : "Pedido para recoger",
       meseroId: solicitud.pedido?.meseroId ?? null,
+      sedeId: solicitud.sedeId,
       yaRespondida: Boolean(solicitud.encuesta),
       destino: { solicitudId: solicitud.id },
     };
@@ -68,6 +75,7 @@ encuestasRouter.post(
     if (calificacion <= 2) {
       await notificarPorRol({
         rol: "ADMIN",
+        sedeId: encuesta.sedeId,
         tipo: "OPINION",
         mensaje: `${encuesta.contexto} calificó con ${calificacion}★${comentario ? `: "${comentario.slice(0, 120)}"` : ""}`,
         enlace: "/admin/reportes",

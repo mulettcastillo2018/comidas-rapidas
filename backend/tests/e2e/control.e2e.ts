@@ -75,7 +75,8 @@ export async function probarControl() {
     creados.productos.push(gaseosa.id);
     verificar((await req("GET", "/inventario", undefined, t.mesero)).status === 403, "un mesero no ve el inventario");
     exigir(await req("POST", `/inventario/${gaseosa.id}/activar`, { stockInicial: 3, stockMinimo: 1 }, t.admin), "Activar inventario");
-    const stock = async () => prisma.producto.findUniqueOrThrow({ where: { id: gaseosa.id } });
+    // El inventario es de la sede (la principal: la del admin general sin elegir otra).
+    const stock = async () => prisma.productoSede.findFirstOrThrow({ where: { productoId: gaseosa.id, sede: { esPrincipal: true } } });
     const sesion3 = await abrir((await crearMesa("3")).id);
 
     exigir(await pedir(sesion3.id, [{ productoId: gaseosa.id, cantidad: 2 }]), "Vender 2");

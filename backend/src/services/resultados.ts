@@ -15,13 +15,16 @@ const itemsVendidos = {
 
 // Estado de resultados del rango (hora de Colombia): ingresos, costo de lo
 // vendido, comisiones de apps, gastos y utilidad; y punto de equilibrio.
-// Las propinas no son del negocio: se informan aparte.
-export async function estadoDeResultados(desde: string, hasta: string) {
+// Las propinas no son del negocio: se informan aparte. De unas sedes (sus
+// ventas y sus gastos) o de todo el negocio (null: también los gastos
+// generales, que no son de ninguna sede).
+export async function estadoDeResultados(desde: string, hasta: string, sedesIds: string[] | null = null) {
   const { inicio, fin } = rangoDeDias(desde, hasta);
   const dias = Math.round((fin.getTime() - inicio.getTime()) / 86_400_000);
-  const [facturas, gastos] = await Promise.all([
+  const deLaSede = sedesIds ? { sedeId: { in: sedesIds } } : {};
+  const [facturas, gastos, generales] = await Promise.all([
     prisma.factura.findMany({
-      where: { estado: "PAGADA", pagadaEn: { gte: inicio, lt: fin } },
+      where: { estado: "PAGADA", pagadaEn: { gte: inicio, lt: fin }, ...deLaSede },
       select: {
         subtotal: true,
         descuentoMonto: true,
@@ -32,7 +35,9 @@ export async function estadoDeResultados(desde: string, hasta: string) {
         pedido: { select: { items: itemsVendidos } },
       },
     }),
-    prisma.gasto.findMany({ where: { fecha: { gte: inicio, lt: fin } }, select: { categoria: true, monto: true, esFijo: true } }),
+    prisma.gasto.findMany({ where: { fecha: { gte: inicio, lt: fin }, ...deLaSede }, select: { categoria: true, monto: true, esFijo: true } }),
+    // Lo que queda por fuera al ver una sede sola.
+    sedesIds ? prisma.gasto.aggregate({ where: { fecha: { gte: inicio, lt: fin }, sedeId: null }, _sum: { monto: true } }) : null,
   ]);
 
   const items = facturas.flatMap((f) => (f.mesaSesion ? f.mesaSesion.pedidos.flatMap((p) => p.items) : (f.pedido?.items ?? [])));
@@ -83,6 +88,7 @@ export async function estadoDeResultados(desde: string, hasta: string) {
       fijos,
       variables,
       porCategoria: Array.from(porCategoria, ([categoria, total]) => ({ categoria, total })).sort((a, b) => b.total - a.total),
+      generalesExcluidos: generales?._sum.monto ?? 0,
     },
     utilidadNeta,
     margenNetoPct: ingresos > 0 ? redondear1((utilidadNeta / ingresos) * 100) : null,

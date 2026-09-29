@@ -16,12 +16,53 @@ enum Role {
   PANTALLA
 }
 
+// Local del negocio. Mesas, pedidos, cocina, caja, inventario, gastos y
+// turnos son de una sede; la carta, los precios, los clientes y la
+// facturación electrónica (mismo NIT) son de todo el negocio.
+model Sede {
+  id             String          @id @default(cuid())
+  nombre         String          @unique
+  direccion      String?
+  activa         Boolean         @default(true)
+  // La que se usa cuando no se indica otra (y la de los datos anteriores a
+  // tener varias sedes). Siempre hay exactamente una.
+  esPrincipal    Boolean         @default(false)
+  creadoEn       DateTime        @default(now())
+  // Documento equivalente POS: cada caja tiene su propia numeración.
+  posResolucion  String?
+  posPrefijo     String?
+  posDesde       Int?
+  posHasta       Int?
+  posFechaInicio String?
+  posFechaFin    String?
+  posSiguiente   Int?
+  cajaPlaca      String?
+  cajaUbicacion  String?
+  usuarios       User[]
+  mesas          Mesa[]
+  pedidos        Pedido[]
+  facturas       Factura[]
+  solicitudes    SolicitudPedido[]
+  cierresCaja    CierreCaja[]
+  movimientosCaja MovimientoCaja[]
+  gastos         Gasto[]
+  turnos         Turno[]
+  productos      ProductoSede[]
+  insumos        InsumoSede[]
+  movimientosInventario MovimientoInventario[]
+  movimientosInsumo MovimientoInsumo[]
+}
+
 model User {
   id                 String        @id @default(cuid())
   nombre             String        @default("")
   apellido           String        @default("")
   email              String        @unique
   passwordHash       String
+  // Sede donde trabaja. Solo un administrador puede no tener sede: es el
+  // administrador general, que elige en qué sede trabajar y ve todas.
+  sedeId             String?
+  sede               Sede?         @relation(fields: [sedeId], references: [id])
   // Clave de supervisor (solo admins): autoriza en el celular del mesero lo
   // que no debe hacer solo, como registrar que un cliente se fue sin pagar.
   pinHash            String?
@@ -74,18 +115,9 @@ model Producto {
   // Lo que le cuesta al negocio una unidad (insumos + empaque), para saber
   // cuánto deja cada venta. null = todavía no se ha configurado.
   costo                  Int?
-  // Inventario por unidades (bebidas, empacados): cada venta descuenta y al
-  // llegar a cero el producto se marca agotado solo.
-  controlaStock          Boolean      @default(false)
-  stock                  Int          @default(0)
-  stockMinimo            Int          @default(0)
-  // Se agotó por llegar a cero (no porque alguien lo marcara): al volver a
-  // entrar mercancía se reactiva solo.
-  agotadoPorStock        Boolean      @default(false)
-  // Ya se avisó que está por debajo del mínimo (para no repetir el aviso).
-  alertaStockBajo        Boolean      @default(false)
   movimientosInventario  MovimientoInventario[]
-  disponible             Boolean      @default(true)
+  // Disponibilidad ("agotado") e inventario por unidades: por sede.
+  enSedes                ProductoSede[]
   isActive               Boolean      @default(true)
   createdAt              DateTime     @default(now())
   pedidoItems            PedidoItem[]
@@ -122,21 +154,32 @@ enum TipoMovimientoInsumo {
 }
 
 // Ingrediente con que se prepara (carne, pan, papa, queso...). El stock y el
-// costo van en la unidad base: gramos, mililitros o unidades.
+// costo van en la unidad base: gramos, mililitros o unidades. El stock es de
+// cada sede; el costo, de todo el negocio.
 model Insumo {
   id              String             @id @default(cuid())
   nombre          String             @unique
   unidad          UnidadInsumo
-  stock           Float              @default(0)
-  stockMinimo     Float              @default(0)
   // Pesos por unidad base (promedio ponderado de las compras).
   costoUnitario   Float              @default(0)
-  alertaStockBajo Boolean            @default(false)
   activo          Boolean            @default(true)
   creadoEn        DateTime           @default(now())
   recetas         RecetaItem[]
   adiciones       AdicionInsumo[]
   movimientos     MovimientoInsumo[]
+  enSedes         InsumoSede[]
+}
+
+model InsumoSede {
+  insumoId        String
+  insumo          Insumo  @relation(fields: [insumoId], references: [id])
+  sedeId          String
+  sede            Sede    @relation(fields: [sedeId], references: [id])
+  stock           Float   @default(0)
+  stockMinimo     Float   @default(0)
+  alertaStockBajo Boolean @default(false)
+
+  @@id([insumoId, sedeId])
 }
 
 model RecetaItem {
@@ -165,6 +208,8 @@ model MovimientoInsumo {
   id              String               @id @default(cuid())
   insumoId        String
   insumo          Insumo               @relation(fields: [insumoId], references: [id])
+  sedeId          String
+  sede            Sede                 @relation(fields: [sedeId], references: [id])
   tipo            TipoMovimientoInsumo
   // Con signo: + entra, − sale.
   cantidad        Float
@@ -179,6 +224,28 @@ model MovimientoInsumo {
 
   @@index([insumoId, creadoEn])
   @@index([pedidoItemId])
+}
+
+// Cómo está un producto en una sede. Sin fila = disponible y sin control de
+// inventario (lo normal para lo que se prepara).
+model ProductoSede {
+  productoId      String
+  producto        Producto @relation(fields: [productoId], references: [id])
+  sedeId          String
+  sede            Sede     @relation(fields: [sedeId], references: [id])
+  disponible      Boolean  @default(true)
+  // Inventario por unidades (bebidas, empacados): cada venta descuenta y al
+  // llegar a cero el producto se marca agotado solo.
+  controlaStock   Boolean  @default(false)
+  stock           Int      @default(0)
+  stockMinimo     Int      @default(0)
+  // Se agotó por llegar a cero (no porque alguien lo marcara): al volver a
+  // entrar mercancía se reactiva solo.
+  agotadoPorStock Boolean  @default(false)
+  // Ya se avisó que está por debajo del mínimo (para no repetir el aviso).
+  alertaStockBajo Boolean  @default(false)
+
+  @@id([productoId, sedeId])
 }
 
 model ComboComponente {
@@ -254,7 +321,10 @@ enum MesaEstado {
 
 model Mesa {
   id               String       @id @default(cuid())
-  numero           String       @unique
+  sedeId           String
+  sede             Sede         @relation(fields: [sedeId], references: [id])
+  // Único dentro de la sede (cada local tiene su "Mesa 1").
+  numero           String
   capacidad        Int
   estado           MesaEstado   @default(LIBRE)
   // Si se asigna, solo ese mesero (o el Admin) puede abrir esta mesa. Si queda
@@ -266,6 +336,8 @@ model Mesa {
   activa           Boolean      @default(true)
   sesiones         MesaSesion[]
   solicitudes      SolicitudPedido[]
+
+  @@unique([sedeId, numero])
 }
 
 enum MesaSesionEstado {
@@ -347,6 +419,8 @@ model Pedido {
   // mesaSesionId queda null y se usan nombreCliente/telefonoCliente en su
   // lugar para identificar a quién pertenece.
   id             String            @id @default(cuid())
+  sedeId         String
+  sede           Sede              @relation(fields: [sedeId], references: [id])
   canal          CanalPedido       @default(MOSTRADOR)
   mesaSesionId   String?
   mesaSesion     MesaSesion?       @relation(fields: [mesaSesionId], references: [id])
@@ -535,6 +609,8 @@ model MovimientoInventario {
   id              String                   @id @default(cuid())
   productoId      String
   producto        Producto                 @relation(fields: [productoId], references: [id])
+  sedeId          String
+  sede            Sede                     @relation(fields: [sedeId], references: [id])
   tipo            TipoMovimientoInventario
   // Con signo: + entra, − sale.
   cantidad        Int
@@ -560,6 +636,9 @@ enum TipoMovimientoCaja {
 
 model MovimientoCaja {
   id              String             @id @default(cuid())
+  // Cada sede tiene su caja.
+  sedeId          String
+  sede            Sede               @relation(fields: [sedeId], references: [id])
   tipo            TipoMovimientoCaja
   monto           Int
   concepto        String
@@ -593,6 +672,9 @@ enum CategoriaGasto {
 // resultados) y cuánto hay que vender para no perder (punto de equilibrio).
 model Gasto {
   id               String          @id @default(cuid())
+  // null = gasto general del negocio (no de un local en particular).
+  sedeId           String?
+  sede             Sede?           @relation(fields: [sedeId], references: [id])
   // Día al que corresponde (hora de Colombia, guardado a mediodía).
   fecha            DateTime
   categoria        CategoriaGasto
@@ -616,6 +698,9 @@ model Turno {
   id           String    @id @default(cuid())
   userId       String
   user         User      @relation("TurnosDelUsuario", fields: [userId], references: [id])
+  // Dónde trabajó ese turno.
+  sedeId       String
+  sede         Sede      @relation(fields: [sedeId], references: [id])
   entrada      DateTime  @default(now())
   // null = sigue trabajando.
   salida       DateTime?
@@ -746,6 +831,8 @@ enum SolicitudPedidoEstado {
 // pedido sin tener mesa ni mesero dueño.
 model SolicitudPedido {
   id            String                @id @default(cuid())
+  sedeId        String
+  sede          Sede                  @relation(fields: [sedeId], references: [id])
   mesaId        String?
   mesa          Mesa?                 @relation(fields: [mesaId], references: [id])
   nombreCliente String?
@@ -786,6 +873,8 @@ model Factura {
   // cuenta de mostrador se liga directo a su Pedido (pedidoId) porque no hay
   // ninguna mesa/sesión detrás.
   id            String        @id @default(cuid())
+  sedeId        String
+  sede          Sede          @relation(fields: [sedeId], references: [id])
   mesaSesionId  String?       @unique
   mesaSesion    MesaSesion?   @relation(fields: [mesaSesionId], references: [id])
   pedidoId      String?       @unique
@@ -931,20 +1020,11 @@ model ConfiguracionFiscal {
   feFechaFin          String?
   feClaveTecnica      String?
   feSiguiente         Int?
-  posResolucion       String?
-  posPrefijo          String?
-  posDesde            Int?
-  posHasta            Int?
-  posFechaInicio      String?
-  posFechaFin         String?
-  posSiguiente        Int?
+  // La numeración POS y los datos de la caja van en cada sede.
   notaPrefijo         String              @default("NC")
   notaSiguiente       Int                 @default(1)
   ajustePrefijo       String              @default("NA")
   ajusteSiguiente     Int                 @default(1)
-  // Caja registradora (obligatorio en el documento POS).
-  cajaPlaca           String?
-  cajaUbicacion       String?
 }
 
 // Cierre de turno: el sistema suma lo cobrado desde el cierre anterior (por
@@ -952,6 +1032,8 @@ model ConfiguracionFiscal {
 // caja. Queda guardado y no se edita, para poder revisar descuadres después.
 model CierreCaja {
   id              String    @id @default(cuid())
+  sedeId          String
+  sede            Sede      @relation(fields: [sedeId], references: [id])
   desde           DateTime
   hasta           DateTime  @default(now())
   cerradoPorId    String

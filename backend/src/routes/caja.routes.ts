@@ -16,14 +16,15 @@ const personaSelect = { select: { id: true, nombre: true, apellido: true, role: 
 // y todo movimiento de efectivo que todavía no pertenece a ningún cierre, sin
 // importar la hora (así lo que se registra justo mientras se cierra no queda
 // por fuera de ambos turnos).
-async function resumenSinCerrar(cliente: Cliente) {
+// Cada sede tiene su caja: sus cobros, sus movimientos y sus cierres.
+async function resumenSinCerrar(cliente: Cliente, sedeId: string) {
   const [facturas, movimientos, ultimoCierre] = await Promise.all([
     cliente.factura.findMany({
-      where: { cierreCajaId: null, estado: { in: ["PAGADA", "PERDIDA"] } },
+      where: { sedeId, cierreCajaId: null, estado: { in: ["PAGADA", "PERDIDA"] } },
       select: { id: true, estado: true, total: true, propinaMonto: true, pagadaEn: true, cerradaPorId: true, pagos: { select: { metodo: true, monto: true } } },
     }),
-    cliente.movimientoCaja.findMany({ where: { cierreCajaId: null }, select: { id: true, tipo: true, monto: true, meseroId: true, creadoEn: true } }),
-    cliente.cierreCaja.findFirst({ orderBy: { hasta: "desc" }, select: { hasta: true } }),
+    cliente.movimientoCaja.findMany({ where: { sedeId, cierreCajaId: null }, select: { id: true, tipo: true, monto: true, meseroId: true, creadoEn: true } }),
+    cliente.cierreCaja.findFirst({ where: { sedeId }, orderBy: { hasta: "desc" }, select: { hasta: true } }),
   ]);
   const pagadas = facturas.filter((f) => f.estado === "PAGADA");
   const perdidas = facturas.filter((f) => f.estado === "PERDIDA");
@@ -94,11 +95,12 @@ cajaRouter.get(
   "/actual",
   requireAuth,
   requireAdmin,
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
+    const sedeId = req.sedeId;
     const [resumen, mesasAbiertas, cuentasPorCobrar] = await Promise.all([
-      resumenSinCerrar(prisma),
-      prisma.mesaSesion.count({ where: { estado: { not: "CERRADA" } } }),
-      prisma.factura.count({ where: { estado: "PENDIENTE" } }),
+      resumenSinCerrar(prisma, sedeId),
+      prisma.mesaSesion.count({ where: { mesa: { sedeId }, estado: { not: "CERRADA" } } }),
+      prisma.factura.count({ where: { sedeId, estado: "PENDIENTE" } }),
     ]);
     const { facturaIds: _f, movimientoIds, efectivoPorCobrador: _e, entregas: _en, ...totales } = resumen;
     const [movimientos, porMesero] = await Promise.all([
@@ -142,9 +144,11 @@ cajaRouter.post(
     if (tipo === "ENTREGA_MESERO") {
       const mesero = await prisma.user.findUnique({ where: { id: meseroId } });
       if (!mesero || mesero.role === "ADMIN") throw new ErrorDeNegocio("El usuario indicado no es un mesero", 400);
+      if (mesero.sedeId !== req.sedeId) throw new ErrorDeNegocio("Ese mesero trabaja en otra sede", 400);
     }
     const movimiento = await prisma.movimientoCaja.create({
       data: {
+        sedeId: req.sedeId,
         tipo,
         monto,
         concepto: concepto || "Entrega de efectivo del mesero",
@@ -167,7 +171,7 @@ cajaRouter.delete(
     if (await prisma.gasto.findUnique({ where: { movimientoCajaId: req.params.id } })) {
       throw new ErrorDeNegocio("Esta salida es el pago de un gasto: bórrala desde Gastos", 409);
     }
-    const borrado = await prisma.movimientoCaja.deleteMany({ where: { id: req.params.id, cierreCajaId: null } });
+    const borrado = await prisma.movimientoCaja.deleteMany({ where: { id: req.params.id, sedeId: req.sedeId, cierreCajaId: null } });
     if (borrado.count === 0) throw new ErrorDeNegocio("Ese movimiento no existe o ya pertenece a un cierre de caja", 409);
     res.status(204).send();
   })
@@ -191,13 +195,15 @@ cajaRouter.post(
     }
     const { baseInicial, efectivoContado, notas } = parsed.data;
 
+    const sedeId = req.sedeId;
     const cierre = await prisma.$transaction(async (tx) => {
-      const { facturaIds, movimientoIds, efectivoPorCobrador: _e, entregas: _en, ...totales } = await resumenSinCerrar(tx);
+      const { facturaIds, movimientoIds, efectivoPorCobrador: _e, entregas: _en, ...totales } = await resumenSinCerrar(tx, sedeId);
       if (facturaIds.length + movimientoIds.length === 0) throw new ErrorDeNegocio("No hay cuentas cobradas ni movimientos desde el último cierre.", 409);
 
       const creado = await tx.cierreCaja.create({
         data: {
           ...totales,
+          sedeId,
           cerradoPorId: req.user!.userId,
           baseInicial,
           efectivoContado,
@@ -223,8 +229,9 @@ cajaRouter.get(
   "/cierres",
   requireAuth,
   requireAdmin,
-  catchAsync(async (_req, res) => {
+  catchAsync(async (req, res) => {
     const cierres = await prisma.cierreCaja.findMany({
+      where: { sedeId: req.sedeId },
       orderBy: { hasta: "desc" },
       take: 60,
       include: { cerradoPor: { select: { id: true, nombre: true, apellido: true } } },

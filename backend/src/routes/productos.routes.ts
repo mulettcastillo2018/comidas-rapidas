@@ -5,9 +5,11 @@ import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { uploadImagenProducto } from "../lib/upload";
 import { emitProductoActualizado } from "../realtime/socket";
-import { OMITIR_PRODUCTO, sinDatosInternos } from "../lib/datosInternos";
+import { sinDatosInternos } from "../lib/datosInternos";
 import { ErrorDeNegocio } from "../lib/errores";
 import { conPromociones, incluirCatalogo } from "../services/catalogo";
+import { actualizarEnSede, conEstadoEnSede, estadoEnSede } from "../services/disponibilidad";
+import { sedes } from "../services/sedes";
 
 export const productosRouter = Router();
 
@@ -19,10 +21,11 @@ productosRouter.get(
       where: { isActive: true },
       orderBy: { nombre: "asc" },
       include: incluirCatalogo,
-      // El costo solo lo ve el admin.
-      ...(req.user!.role === "ADMIN" ? {} : { omit: OMITIR_PRODUCTO }),
     });
-    res.json(await conPromociones(productos));
+    // Disponibilidad e inventario de la sede de quien pregunta.
+    const conEstado = await conEstadoEnSede(await conPromociones(productos), req.sedeId);
+    // El costo y las banderas internas solo los ve el admin.
+    res.json(req.user!.role === "ADMIN" ? conEstado : conEstado.map(sinDatosInternos));
   })
 );
 
@@ -75,12 +78,12 @@ productosRouter.put(
       res.status(400).json({ error: "Indica si el producto está disponible (true/false)" });
       return;
     }
-    const producto = await prisma.producto.update({
-      where: { id: req.params.id },
-      data: { disponible: parsed.data.disponible },
-      include: { categoria: true },
-    });
-    emitProductoActualizado(producto);
+    // Solo en la sede de quien lo marca: en otro local puede haber.
+    const base = await prisma.producto.findUnique({ where: { id: req.params.id }, include: { categoria: true } });
+    if (!base) throw new ErrorDeNegocio("Producto no encontrado", 404);
+    const { productoId: _p, sedeId: _s, ...estado } = await actualizarEnSede(prisma, base.id, req.sedeId, { disponible: parsed.data.disponible });
+    const producto = { ...base, ...estado };
+    emitProductoActualizado(producto, req.sedeId);
     res.json(req.user!.role === "ADMIN" ? producto : sinDatosInternos(producto));
   })
 );
@@ -95,7 +98,8 @@ productosRouter.post(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const { componentes, ...datos } = parsed.data;
+    // "disponible" es de cada sede (lo marca cocina), no del producto.
+    const { componentes, disponible: _d, ...datos } = parsed.data;
     if (datos.esCombo) await validarComponentes(null, componentes ?? []);
     const producto = await prisma.producto.create({ data: datos });
     if (datos.esCombo) await guardarComponentes(producto.id, componentes!);
@@ -113,15 +117,17 @@ productosRouter.put(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    const { componentes, ...datos } = parsed.data;
+    const { componentes, disponible: _d, ...datos } = parsed.data;
     const actual = await prisma.producto.findUnique({ where: { id: req.params.id } });
     if (!actual) throw new ErrorDeNegocio("Producto no encontrado", 404);
     const seraCombo = datos.esCombo ?? actual.esCombo;
     if (seraCombo && componentes) await validarComponentes(actual.id, componentes);
-    const producto = await prisma.producto.update({ where: { id: actual.id }, data: datos, include: { categoria: true } });
-    if (seraCombo && componentes) await guardarComponentes(producto.id, componentes);
-    if (!seraCombo && actual.esCombo) await prisma.comboComponente.deleteMany({ where: { comboId: producto.id } });
-    emitProductoActualizado(producto);
+    const actualizado = await prisma.producto.update({ where: { id: actual.id }, data: datos, include: { categoria: true } });
+    if (seraCombo && componentes) await guardarComponentes(actualizado.id, componentes);
+    if (!seraCombo && actual.esCombo) await prisma.comboComponente.deleteMany({ where: { comboId: actualizado.id } });
+    // Nombre, precio, etc. cambian en todas las sedes.
+    for (const sede of await sedes()) emitProductoActualizado({ ...actualizado, ...(await estadoEnSede(actualizado.id, sede.id)) }, sede.id);
+    const producto = { ...actualizado, ...(await estadoEnSede(actualizado.id, req.sedeId)) };
     res.json(producto);
   })
 );

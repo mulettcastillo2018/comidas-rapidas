@@ -79,7 +79,8 @@ export async function probarGestion() {
     );
     creados.usuarios.push(otro.id);
     const turno = async (userId: string, entrada: Date, salida: Date) => {
-      const creado = await prisma.turno.create({ data: { userId, entrada, salida } });
+      const sedeId = (await prisma.sede.findFirstOrThrow({ where: { esPrincipal: true } })).id;
+      const creado = await prisma.turno.create({ data: { userId, entrada, salida, sedeId } });
       creados.turnos.push(creado.id);
       return creado;
     };

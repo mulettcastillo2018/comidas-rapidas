@@ -31,6 +31,7 @@ async function revisarItemsRetrasados() {
     await prisma.pedidoItem.update({ where: { id: item.id }, data: { retrasoNotificado: true } });
     await notificarPorRol({
       rol: "COCINA",
+      sedeId: item.pedido.sedeId,
       tipo: "ITEM_RETRASADO",
       mensaje: `${item.producto.nombre} de ${ubicacion} lleva más de ${item.tiempoPreparacionMinutos} min — ¿va atrasado o ya salió y falta marcarlo?`,
       pedidoId: item.pedidoId,

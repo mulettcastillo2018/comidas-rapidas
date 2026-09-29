@@ -1,14 +1,15 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
+import { requireAuth, requireAdmin, requireAdminGeneral } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { ubicacionDe } from "../lib/ubicacion";
 import { consultarCompania, crearCompania, leerEstado, urlPermitida, URL_SANDBOX } from "../services/facturacion/alanube";
 import { adquirienteSchema, MENSAJE_ADQUIRIENTE } from "../services/facturacion/adquiriente";
 import { digitoVerificacion } from "../services/facturacion/documento";
+import { exigirMismaSede, filtroSedes, sedes, sedesDelReporte } from "../services/sedes";
 import {
   anularDocumento,
   avisosDeNumeracion,
@@ -49,25 +50,30 @@ const NUMERACION_PRUEBAS = {
   feClaveTecnica: "fc8eac422eba16e22ffd8c6f94b3f40a6e38162c",
 };
 
-// Lo que ve la pantalla: nunca el token completo.
-async function vistaConfiguracion() {
+// Lo que ve la pantalla: nunca el token completo. La numeración POS es de
+// cada sede (se configura en Sedes): aquí solo se dice qué le falta a la sede
+// en la que se está trabajando.
+async function vistaConfiguracion(req: Request) {
   const c = await configuracionFiscal();
   const { alanubeToken, ...resto } = c;
   const tokenEntorno = Boolean(process.env.ALANUBE_TOKEN);
   const token = process.env.ALANUBE_TOKEN || alanubeToken;
+  const lista = await sedes();
+  const sede = lista.find((s) => s.id === req.sedeId) ?? null;
   return {
     ...resto,
     esSandbox: c.alanubeUrl === URL_SANDBOX,
     token: { configurado: Boolean(token), final: token ? token.slice(-4) : null, desdeEntorno: tokenEntorno },
-    faltantes: { FACTURA: faltantes(c, "FACTURA"), POS: faltantes(c, "POS") },
-    avisos: avisosDeNumeracion(c),
+    sede: sede ? { id: sede.id, nombre: sede.nombre } : null,
+    faltantes: { FACTURA: faltantes(c, "FACTURA"), POS: faltantes(c, "POS", sede) },
+    avisos: avisosDeNumeracion(c, req.sedeFija ? lista.filter((s) => s.id === req.sedeId) : lista),
   };
 }
 
 facturacionRouter.get(
   "/configuracion",
-  catchAsync(async (_req, res) => {
-    res.json(await vistaConfiguracion());
+  catchAsync(async (req, res) => {
+    res.json(await vistaConfiguracion(req));
   })
 );
 
@@ -94,30 +100,21 @@ const configuracionSchema = z
     feFechaFin: dia.nullable(),
     feClaveTecnica: texto(200).nullable(),
     feSiguiente: z.number().int().positive().nullable(),
-    posResolucion: texto(14).nullable(),
-    posPrefijo: z.string().trim().regex(/^[A-Za-z0-9]{1,4}$/).nullable(),
-    posDesde: z.number().int().positive().nullable(),
-    posHasta: z.number().int().positive().nullable(),
-    posFechaInicio: dia.nullable(),
-    posFechaFin: dia.nullable(),
-    posSiguiente: z.number().int().positive().nullable(),
     notaPrefijo: z.string().trim().regex(/^[A-Za-z0-9]{1,4}$/),
     ajustePrefijo: z.string().trim().regex(/^[A-Za-z0-9]{1,4}$/),
-    cajaPlaca: texto(50).nullable(),
-    cajaUbicacion: texto(100).nullable(),
   })
   .refine((c) => !c.nit || !c.dv || digitoVerificacion(c.nit) === c.dv, { message: "El dígito de verificación no corresponde al NIT" })
   .refine((c) => c.feDesde === null || c.feHasta === null || c.feDesde <= c.feHasta, { message: "El rango de facturación está al revés" })
-  .refine((c) => c.posDesde === null || c.posHasta === null || c.posDesde <= c.posHasta, { message: "El rango POS está al revés" })
   .refine((c) => c.feSiguiente === null || c.feDesde === null || c.feHasta === null || (c.feSiguiente >= c.feDesde && c.feSiguiente <= c.feHasta + 1), {
     message: "El siguiente número de factura está fuera del rango",
-  })
-  .refine((c) => c.posSiguiente === null || c.posDesde === null || c.posHasta === null || (c.posSiguiente >= c.posDesde && c.posSiguiente <= c.posHasta + 1), {
-    message: "El siguiente número POS está fuera del rango",
   });
+
+// La configuración es del negocio (un NIT, una conexión): solo el
+// administrador general la cambia.
 
 facturacionRouter.put(
   "/configuracion",
+  requireAdminGeneral,
   catchAsync(async (req, res) => {
     const parsed = configuracionSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -130,33 +127,34 @@ facturacionRouter.put(
     // Sin "siguiente número": se sigue donde iba; si cambió el prefijo (nueva
     // resolución), empieza en el inicio del rango.
     if (datos.feSiguiente === null) datos.feSiguiente = datos.fePrefijo === actual.fePrefijo ? actual.feSiguiente : null;
-    if (datos.posSiguiente === null) datos.posSiguiente = datos.posPrefijo === actual.posPrefijo ? actual.posSiguiente : null;
     // Al activarla empieza a contar: lo cobrado antes no se factura.
     const activadaEn = datos.activa && !actual.activa ? new Date() : datos.activa ? actual.activadaEn : actual.activadaEn;
     await prisma.configuracionFiscal.update({
       where: { id: "unica" },
       data: { ...datos, activadaEn, ...(alanubeToken !== undefined ? { alanubeToken } : {}) },
     });
-    res.json(await vistaConfiguracion());
+    res.json(await vistaConfiguracion(req));
   })
 );
 
 // Carga la numeración de pruebas de la DIAN (solo en el sandbox).
 facturacionRouter.post(
   "/configuracion/numeracion-pruebas",
-  catchAsync(async (_req, res) => {
+  requireAdminGeneral,
+  catchAsync(async (req, res) => {
     const c = await configuracionFiscal();
     if (c.alanubeUrl !== URL_SANDBOX && !c.alanubeUrl.startsWith("http://")) throw new ErrorDeNegocio("La numeración de pruebas solo se usa en el ambiente de pruebas", 409);
     const inicio = NUMERACION_PRUEBAS.feDesde + Math.floor(Math.random() * 4_000_000);
     await prisma.configuracionFiscal.update({ where: { id: "unica" }, data: { ...NUMERACION_PRUEBAS, feSiguiente: inicio } });
-    res.json(await vistaConfiguracion());
+    res.json(await vistaConfiguracion(req));
   })
 );
 
 // Da de alta la empresa en Alanube con el NIT configurado y guarda su id.
 facturacionRouter.post(
   "/configuracion/compania",
-  catchAsync(async (_req, res) => {
+  requireAdminGeneral,
+  catchAsync(async (req, res) => {
     const c = await configuracionFiscal();
     const conexion = conexionDe(c);
     if (!conexion) throw new ErrorDeNegocio("Primero guarda el token de Alanube", 409);
@@ -170,7 +168,7 @@ facturacionRouter.post(
       throw new ErrorDeNegocio(`Alanube no creó la compañía (${r.status}): ${e.mensaje ?? e.errores[0] ?? "sin detalle"}`, 502);
     }
     await prisma.configuracionFiscal.update({ where: { id: "unica" }, data: { alanubeCompanyId: id } });
-    res.json(await vistaConfiguracion());
+    res.json(await vistaConfiguracion(req));
   })
 );
 
@@ -209,6 +207,7 @@ function resumen(d: Prisma.DocumentoFiscalGetPayload<{ include: typeof incluirDo
     total: d.total,
     creadoEn: d.creadoEn,
     facturaId: d.facturaId,
+    sede: f.sede.nombre,
     ubicacion: f.mesaSesion ? `Mesa ${f.mesaSesion.mesa.numero}` : f.pedido ? ubicacionDe(f.pedido) : "—",
     anula: d.anula ? `${d.anula.prefijo}${d.anula.numero}` : null,
     anuladoPor: d.anuladoPor ? { numeroCompleto: `${d.anuladoPor.prefijo}${d.anuladoPor.numero}`, estado: d.anuladoPor.estado } : null,
@@ -220,6 +219,8 @@ const incluirDocumento = {
   anuladoPor: { select: { prefijo: true, numero: true, estado: true } },
   factura: {
     select: {
+      sedeId: true,
+      sede: { select: { nombre: true } },
       mesaSesion: { select: { mesa: { select: { numero: true } } } },
       pedido: { select: { canal: true, nombreCliente: true, codigoPlataforma: true, plataforma: { select: { nombre: true } } } },
     },
@@ -230,9 +231,10 @@ facturacionRouter.get(
   "/documentos",
   catchAsync(async (req, res) => {
     const estado = ESTADOS.find((e) => e === req.query.estado);
+    const deLaSede = { factura: filtroSedes(sedesDelReporte(req)) };
     const [documentos, conteo] = await Promise.all([
-      prisma.documentoFiscal.findMany({ where: estado ? { estado } : {}, include: incluirDocumento, orderBy: { creadoEn: "desc" }, take: 100 }),
-      prisma.documentoFiscal.groupBy({ by: ["estado"], _count: true }),
+      prisma.documentoFiscal.findMany({ where: { ...deLaSede, ...(estado ? { estado } : {}) }, include: incluirDocumento, orderBy: { creadoEn: "desc" }, take: 100 }),
+      prisma.documentoFiscal.groupBy({ by: ["estado"], where: deLaSede, _count: true }),
     ]);
     res.json({ documentos: documentos.map(resumen), porEstado: Object.fromEntries(conteo.map((c) => [c.estado, c._count])) });
   })
@@ -244,6 +246,7 @@ facturacionRouter.get(
   catchAsync(async (req, res) => {
     const d = await prisma.documentoFiscal.findUnique({ where: { id: req.params.id }, include: incluirDocumento });
     if (!d) throw new ErrorDeNegocio("Documento no encontrado", 404);
+    exigirMismaSede(req, d.factura.sedeId, "Ese documento");
     const c = await configuracionFiscal();
     res.json({
       ...resumen(d),
@@ -253,9 +256,15 @@ facturacionRouter.get(
   })
 );
 
+async function documentoDeLaSede(req: Request, id: string) {
+  const d = await prisma.documentoFiscal.findUnique({ where: { id }, select: { factura: { select: { sedeId: true } } } });
+  if (d) exigirMismaSede(req, d.factura.sedeId, "Ese documento");
+}
+
 facturacionRouter.post(
   "/documentos/:id/reenviar",
   catchAsync(async (req, res) => {
+    await documentoDeLaSede(req, req.params.id);
     const d = await reenviarDocumento(req.params.id);
     res.json({ id: d.id, estado: d.estado });
   })
@@ -266,6 +275,7 @@ facturacionRouter.post(
   catchAsync(async (req, res) => {
     const motivo = typeof req.body?.motivo === "string" ? req.body.motivo.trim().slice(0, 300) : "";
     if (motivo.length < 5) throw new ErrorDeNegocio("Escribe el motivo de la anulación", 400);
+    await documentoDeLaSede(req, req.params.id);
     const nota = await anularDocumento(req.params.id, motivo);
     res.status(201).json({ id: nota.id, numeroCompleto: `${nota.prefijo}${nota.numero}`, estado: nota.estado });
   })
@@ -277,6 +287,8 @@ facturacionRouter.put(
   catchAsync(async (req, res) => {
     const parsed = adquirienteSchema.safeParse(req.body);
     if (!parsed.success) throw new ErrorDeNegocio(parsed.error.flatten().formErrors[0] ?? MENSAJE_ADQUIRIENTE, 400);
+    const cuenta = await prisma.factura.findUnique({ where: { id: req.params.facturaId }, select: { sedeId: true } });
+    if (cuenta) exigirMismaSede(req, cuenta.sedeId, "Esa cuenta");
     const doc = await facturarANombreDe(req.params.facturaId, parsed.data);
     res.status(201).json({ id: doc.id, numeroCompleto: `${doc.prefijo}${doc.numero}`, estado: doc.estado });
   })

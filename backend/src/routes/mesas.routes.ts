@@ -5,20 +5,22 @@ import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { emitMesaActualizada } from "../realtime/socket";
+import { exigirMismaSede } from "../services/sedes";
 
 export const mesasRouter = Router();
 
 const mesaInclude = { meseroAsignado: { select: { id: true, nombre: true, apellido: true } } };
 
-// Por defecto solo las mesas activas (grilla del mesero, QR); el panel de
-// admin pide también las desactivadas para poder reactivarlas.
+// Las mesas de la sede donde se trabaja. Por defecto solo las activas
+// (grilla del mesero, QR); el panel de admin pide también las desactivadas
+// para poder reactivarlas.
 mesasRouter.get(
   "/",
   requireAuth,
   catchAsync(async (req, res) => {
     const incluirInactivas = req.query.incluirInactivas === "true" && req.user!.role === "ADMIN";
     const mesas = await prisma.mesa.findMany({
-      where: incluirInactivas ? undefined : { activa: true },
+      where: { sedeId: req.sedeId, ...(incluirInactivas ? {} : { activa: true }) },
       orderBy: { numero: "asc" },
       include: mesaInclude,
     });
@@ -33,8 +35,9 @@ const mesaSchema = z.object({
   activa: z.boolean().optional(),
 });
 
-async function validarNumeroDisponible(numero: string, excluirId?: string) {
-  const existente = await prisma.mesa.findUnique({ where: { numero } });
+// El número no se repite dentro de la sede (cada local tiene su "Mesa 1").
+async function validarNumeroDisponible(sedeId: string, numero: string, excluirId?: string) {
+  const existente = await prisma.mesa.findUnique({ where: { sedeId_numero: { sedeId, numero } } });
   if (existente && existente.id !== excluirId) {
     throw new ErrorDeNegocio(
       existente.activa
@@ -43,6 +46,20 @@ async function validarNumeroDisponible(numero: string, excluirId?: string) {
       409
     );
   }
+}
+
+// El mesero asignado debe trabajar en esa sede.
+async function validarMesero(sedeId: string, meseroId: string | null | undefined) {
+  if (!meseroId) return;
+  const mesero = await prisma.user.findUnique({ where: { id: meseroId }, select: { sedeId: true } });
+  if (!mesero || (mesero.sedeId && mesero.sedeId !== sedeId)) throw new ErrorDeNegocio("Ese mesero trabaja en otra sede", 400);
+}
+
+async function mesaDeLaSede(req: Parameters<typeof exigirMismaSede>[0], id: string) {
+  const mesa = await prisma.mesa.findUnique({ where: { id } });
+  if (!mesa) throw new ErrorDeNegocio("Mesa no encontrada", 404);
+  exigirMismaSede(req, mesa.sedeId, "Esa mesa");
+  return mesa;
 }
 
 mesasRouter.post(
@@ -55,8 +72,9 @@ mesasRouter.post(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    await validarNumeroDisponible(parsed.data.numero);
-    const mesa = await prisma.mesa.create({ data: parsed.data, include: mesaInclude });
+    await validarNumeroDisponible(req.sedeId, parsed.data.numero);
+    await validarMesero(req.sedeId, parsed.data.meseroAsignadoId);
+    const mesa = await prisma.mesa.create({ data: { ...parsed.data, sedeId: req.sedeId }, include: mesaInclude });
     emitMesaActualizada(mesa);
     res.status(201).json(mesa);
   })
@@ -72,8 +90,10 @@ mesasRouter.put(
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
-    if (parsed.data.numero) await validarNumeroDisponible(parsed.data.numero, req.params.id);
-    const mesa = await prisma.mesa.update({ where: { id: req.params.id }, data: parsed.data, include: mesaInclude });
+    const actual = await mesaDeLaSede(req, req.params.id);
+    if (parsed.data.numero) await validarNumeroDisponible(actual.sedeId, parsed.data.numero, actual.id);
+    await validarMesero(actual.sedeId, parsed.data.meseroAsignadoId);
+    const mesa = await prisma.mesa.update({ where: { id: actual.id }, data: parsed.data, include: mesaInclude });
     emitMesaActualizada(mesa);
     res.json(mesa);
   })
@@ -86,6 +106,7 @@ mesasRouter.delete(
   requireAuth,
   requireAdmin,
   catchAsync(async (req, res) => {
+    await mesaDeLaSede(req, req.params.id);
     const mesa = await prisma.mesa.findUnique({
       where: { id: req.params.id },
       include: { _count: { select: { sesiones: true, solicitudes: true } } },

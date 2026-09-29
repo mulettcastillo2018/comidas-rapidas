@@ -7,9 +7,11 @@ import { useToastStore } from "@/store/toast.store";
 import { ConfiguracionFacturacion } from "@/components/facturacion/ConfiguracionFacturacion";
 import { DocumentosFiscales } from "@/components/facturacion/DocumentosFiscales";
 import type { ConfiguracionFiscal } from "@/lib/facturacion";
+import { AlcanceSedes } from "@/components/SelectorSede";
 
 export default function AdminFacturacionPage() {
   const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.show);
   const [config, setConfig] = useState<ConfiguracionFiscal | null>(null);
   const [verConfig, setVerConfig] = useState(false);
@@ -64,11 +66,15 @@ export default function AdminFacturacionPage() {
             setVersion((v) => v + 1);
           }}
           onAviso={showToast}
+          soloLectura={Boolean(user?.sede)}
         />
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="text-sm font-bold">Documentos electrónicos</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold">Documentos electrónicos</h2>
+          <AlcanceSedes />
+        </div>
         <DocumentosFiscales token={token} onAviso={showToast} />
       </section>
     </div>

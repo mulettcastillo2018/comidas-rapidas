@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Prisma, type ConfiguracionFiscal, type DocumentoFiscal, type TipoDocumentoFiscal } from "@prisma/client";
+import { Prisma, type ConfiguracionFiscal, type DocumentoFiscal, type Sede, type TipoDocumentoFiscal } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ErrorDeNegocio } from "../../lib/errores";
 import { diaLocal } from "../../lib/fechas";
@@ -41,7 +41,9 @@ interface Rango {
   hasta: number | null;
   siguiente: number | null;
   resolucion: Resolucion | null;
-  campoSiguiente: keyof Pick<ConfiguracionFiscal, "feSiguiente" | "posSiguiente" | "notaSiguiente" | "ajusteSiguiente">;
+  // Dónde está el contador: en la configuración (factura y notas, de todo el
+  // negocio) o en la sede (POS, cada caja la suya).
+  campoSiguiente: "feSiguiente" | "notaSiguiente" | "ajusteSiguiente" | "posSiguiente";
 }
 
 function resolucionFe(c: ConfiguracionFiscal, prefijo = c.fePrefijo ?? ""): Resolucion | null {
@@ -49,17 +51,24 @@ function resolucionFe(c: ConfiguracionFiscal, prefijo = c.fePrefijo ?? ""): Reso
   return { numero: c.feResolucion, prefijo, desde: c.feDesde, hasta: c.feHasta, fechaInicio: c.feFechaInicio, fechaFin: c.feFechaFin, claveTecnica: c.feClaveTecnica };
 }
 
-function resolucionPos(c: ConfiguracionFiscal): Resolucion | null {
-  if (!c.posResolucion || !c.posPrefijo || c.posDesde === null || c.posHasta === null || !c.posFechaInicio || !c.posFechaFin) return null;
-  return { numero: c.posResolucion, prefijo: c.posPrefijo, desde: c.posDesde, hasta: c.posHasta, fechaInicio: c.posFechaInicio, fechaFin: c.posFechaFin };
+export function resolucionPos(s: Sede): Resolucion | null {
+  if (!s.posResolucion || !s.posPrefijo || s.posDesde === null || s.posHasta === null || !s.posFechaInicio || !s.posFechaFin) return null;
+  return { numero: s.posResolucion, prefijo: s.posPrefijo, desde: s.posDesde, hasta: s.posHasta, fechaInicio: s.posFechaInicio, fechaFin: s.posFechaFin };
 }
 
-function rangoDe(c: ConfiguracionFiscal, tipo: TipoDocumentoFiscal): Rango {
+function rangoDe(c: ConfiguracionFiscal, tipo: TipoDocumentoFiscal, sede: Sede | null): Rango {
   switch (tipo) {
     case "FACTURA":
       return { prefijo: c.fePrefijo ?? "", desde: c.feDesde, hasta: c.feHasta, siguiente: c.feSiguiente, resolucion: resolucionFe(c), campoSiguiente: "feSiguiente" };
     case "POS":
-      return { prefijo: c.posPrefijo ?? "", desde: c.posDesde, hasta: c.posHasta, siguiente: c.posSiguiente, resolucion: resolucionPos(c), campoSiguiente: "posSiguiente" };
+      return {
+        prefijo: sede?.posPrefijo ?? "",
+        desde: sede?.posDesde ?? null,
+        hasta: sede?.posHasta ?? null,
+        siguiente: sede?.posSiguiente ?? null,
+        resolucion: sede ? resolucionPos(sede) : null,
+        campoSiguiente: "posSiguiente",
+      };
     case "NOTA_CREDITO":
       // Alanube pide la resolución también en la nota crédito: la de facturas.
       return { prefijo: c.notaPrefijo, desde: 1, hasta: null, siguiente: c.notaSiguiente, resolucion: resolucionFe(c, c.notaPrefijo), campoSiguiente: "notaSiguiente" };
@@ -68,33 +77,38 @@ function rangoDe(c: ConfiguracionFiscal, tipo: TipoDocumentoFiscal): Rango {
   }
 }
 
-// Qué falta para poder emitir ese tipo de documento (vacío = listo).
-export function faltantes(c: ConfiguracionFiscal, tipo: TipoDocumentoFiscal): string[] {
+// Qué falta para poder emitir ese tipo de documento (vacío = listo). El POS
+// depende de la sede (su resolución y su caja).
+export function faltantes(c: ConfiguracionFiscal, tipo: TipoDocumentoFiscal, sede: Sede | null = null): string[] {
   const falta: string[] = [];
   if (!conexionDe(c)) falta.push("el token de Alanube");
   if (!c.alanubeCompanyId) falta.push("la compañía en Alanube");
-  const r = rangoDe(c, tipo);
+  const r = rangoDe(c, tipo, sede);
   if ((tipo === "FACTURA" || tipo === "POS" || tipo === "NOTA_CREDITO") && !r.resolucion) {
-    falta.push(tipo === "POS" ? "la resolución de numeración POS" : "la resolución de facturación electrónica");
+    falta.push(tipo === "POS" ? `la resolución de numeración POS${sede ? ` de ${sede.nombre}` : ""}` : "la resolución de facturación electrónica");
   }
   if (tipo === "FACTURA" && !c.feClaveTecnica) falta.push("la clave técnica de la resolución");
-  if (tipo === "POS" && (!c.cajaPlaca || !c.cajaUbicacion)) falta.push("los datos de la caja (placa y ubicación)");
+  if (tipo === "POS" && (!sede?.cajaPlaca || !sede?.cajaUbicacion)) falta.push(`los datos de la caja (placa y ubicación)${sede ? ` de ${sede.nombre}` : ""}`);
   return falta;
 }
 
-// Toma el siguiente número del rango, bloqueando la configuración para que
-// dos cobros al mismo tiempo no reciban el mismo número.
-async function asignarNumero(tx: Prisma.TransactionClient, tipo: TipoDocumentoFiscal) {
+// Toma el siguiente número del rango, bloqueando la fila que lleva el
+// contador (la configuración, o la sede para el POS) para que dos cobros al
+// mismo tiempo no reciban el mismo número.
+async function asignarNumero(tx: Prisma.TransactionClient, tipo: TipoDocumentoFiscal, sedeId: string) {
   await tx.$queryRaw`SELECT id FROM "ConfiguracionFiscal" WHERE id = 'unica' FOR UPDATE`;
+  if (tipo === "POS") await tx.$queryRaw`SELECT id FROM "Sede" WHERE id = ${sedeId} FOR UPDATE`;
   const c = await tx.configuracionFiscal.findUniqueOrThrow({ where: { id: "unica" } });
-  const falta = faltantes(c, tipo);
+  const sede = await tx.sede.findUniqueOrThrow({ where: { id: sedeId } });
+  const falta = faltantes(c, tipo, sede);
   if (falta.length > 0) throw new ErrorDeNegocio(`Para facturar electrónicamente falta configurar: ${falta.join(", ")}.`, 409);
-  const r = rangoDe(c, tipo);
+  const r = rangoDe(c, tipo, sede);
   const numero = r.siguiente ?? r.desde ?? 1;
   if (r.hasta !== null && numero > r.hasta) throw new ErrorDeNegocio(`Se acabó la numeración autorizada (${r.prefijo} hasta ${r.hasta}). Pide una nueva resolución a la DIAN.`, 409);
   if (r.resolucion && r.resolucion.fechaFin < diaLocal(new Date())) throw new ErrorDeNegocio(`La resolución ${r.resolucion.numero} venció el ${r.resolucion.fechaFin}.`, 409);
-  await tx.configuracionFiscal.update({ where: { id: "unica" }, data: { [r.campoSiguiente]: numero + 1 } });
-  return { config: c, prefijo: r.prefijo, numero, resolucion: r.resolucion };
+  if (r.campoSiguiente === "posSiguiente") await tx.sede.update({ where: { id: sedeId }, data: { posSiguiente: numero + 1 } });
+  else await tx.configuracionFiscal.update({ where: { id: "unica" }, data: { [r.campoSiguiente]: numero + 1 } });
+  return { config: c, sede, prefijo: r.prefijo, numero, resolucion: r.resolucion };
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +126,7 @@ async function datosDeVenta(facturaId: string) {
       pagos: { select: { metodo: true, monto: true } },
       cerradaPor: { select: { nombre: true, apellido: true } },
       cliente: { select: { telefono: true, nombre: true, puntos: true, eliminadoEn: true } },
+      sede: true,
       mesaSesion: { include: { mesa: true, pedidos: { include: { items: itemsVendidos } } } },
       pedido: { include: { items: itemsVendidos, plataforma: { select: { nombre: true } } } },
     },
@@ -182,7 +197,8 @@ async function armarContenido(
     envio: factura.envioMonto,
     pagos: factura.pagos,
     nota,
-    caja: { placa: config.cajaPlaca ?? "", ubicacion: config.cajaUbicacion ?? "", cajero, codigoVenta: factura.id.slice(-8) },
+    // La caja de la sede donde se cobró.
+    caja: { placa: factura.sede.cajaPlaca ?? "", ubicacion: factura.sede.cajaUbicacion ?? "", cajero, codigoVenta: factura.id.slice(-8) },
     ...(factura.cliente && !factura.cliente.eliminadoEn
       ? { beneficios: { identificacion: factura.cliente.telefono, nombre: factura.cliente.nombre, puntos: factura.cliente.puntos } }
       : {}),
@@ -216,7 +232,7 @@ function numeroRepetido(err: unknown): never {
 }
 
 export async function crearDocumento(facturaId: string) {
-  const factura = await prisma.factura.findUniqueOrThrow({ where: { id: facturaId }, select: { estado: true, adquiriente: true } });
+  const factura = await prisma.factura.findUniqueOrThrow({ where: { id: facturaId }, select: { estado: true, adquiriente: true, sedeId: true } });
   if (factura.estado !== "PAGADA") throw new ErrorDeNegocio("Solo se factura una cuenta pagada", 409);
   const adquiriente = adquirienteDe(factura.adquiriente);
   const config = await configuracionFiscal();
@@ -224,7 +240,7 @@ export async function crearDocumento(facturaId: string) {
   const cliente = adquiriente ?? CONSUMIDOR_FINAL;
 
   const doc = await prisma.$transaction(async (tx) => {
-    const numeracion = await asignarNumero(tx, tipo);
+    const numeracion = await asignarNumero(tx, tipo, factura.sedeId);
     const { contenido, total } = await armarContenido(numeracion.config, facturaId, tipo, numeracion, cliente);
     return tx.documentoFiscal.create({
       data: {
@@ -240,7 +256,7 @@ export async function crearDocumento(facturaId: string) {
       },
     });
   }).catch(numeroRepetido);
-  await avisarNumeracionBaja(tipo);
+  await avisarNumeracionBaja(tipo, factura.sedeId);
   return doc;
 }
 
@@ -348,7 +364,7 @@ async function ciclo() {
 
   const sinDocumento = await prisma.factura.findMany({
     where: { estado: "PAGADA", pagadaEn: { gte: config.activadaEn }, documentosFiscales: { none: {} }, id: { notIn: [...omitidas] } },
-    select: { id: true, total: true, propinaMonto: true },
+    select: { id: true, total: true, propinaMonto: true, sedeId: true },
     orderBy: { pagadaEn: "asc" },
     take: 20,
   });
@@ -362,7 +378,7 @@ async function ciclo() {
       await crearDocumento(f.id);
     } catch (err) {
       if (!(err instanceof ErrorDeNegocio)) throw err;
-      await avisar(err.message);
+      await avisar(err.message, undefined, f.sedeId);
       break;
     }
   }
@@ -419,9 +435,10 @@ export async function anularDocumento(id: string, motivo: string) {
   if (doc.anuladoPor) throw new ErrorDeNegocio("Este documento ya tiene una nota que lo anula", 409);
   const tipo: TipoDocumentoFiscal = doc.tipo === "FACTURA" ? "NOTA_CREDITO" : "NOTA_AJUSTE";
   const cliente = adquirienteDelContenido(doc.contenido);
+  const { sedeId } = await prisma.factura.findUniqueOrThrow({ where: { id: doc.facturaId }, select: { sedeId: true } });
 
   const nota = await prisma.$transaction(async (tx) => {
-    const numeracion = await asignarNumero(tx, tipo);
+    const numeracion = await asignarNumero(tx, tipo, sedeId);
     const { contenido, total } = await armarContenido(numeracion.config, doc.facturaId, tipo, numeracion, cliente, { referencia: doc, motivo });
     return tx.documentoFiscal.create({
       data: {
@@ -449,9 +466,9 @@ export async function reenviarDocumento(id: string) {
   if (!doc) throw new ErrorDeNegocio("Documento no encontrado", 404);
   if (doc.estado !== "RECHAZADO") throw new ErrorDeNegocio("Solo se reenvía un documento rechazado", 409);
   const config = await configuracionFiscal();
-  const factura = await prisma.factura.findUniqueOrThrow({ where: { id: doc.facturaId }, select: { adquiriente: true } });
+  const factura = await prisma.factura.findUniqueOrThrow({ where: { id: doc.facturaId }, select: { adquiriente: true, sede: true } });
   const cliente = doc.anula ? adquirienteDelContenido(doc.anula.contenido) : (adquirienteDe(factura.adquiriente) ?? CONSUMIDOR_FINAL);
-  const r = rangoDe(config, doc.tipo);
+  const r = rangoDe(config, doc.tipo, factura.sede);
   const { contenido } = await armarContenido(config, doc.facturaId, doc.tipo, { prefijo: doc.prefijo, numero: doc.numero, resolucion: r.resolucion ? { ...r.resolucion, prefijo: doc.prefijo } : null }, cliente, {
     referencia: doc.anula ?? undefined,
     motivo: doc.anula ? "Anulación" : undefined,
@@ -499,31 +516,39 @@ export async function facturarANombreDe(facturaId: string, adquiriente: Adquirie
 
 const ultimoAviso = new Map<string, number>();
 
-// Al admin, sin repetir el mismo aviso más de una vez por hora.
-async function avisar(mensaje: string, documentoId?: string) {
+// A los admins (los de la sede, si el aviso es de una, y los generales), sin
+// repetir el mismo aviso más de una vez por hora.
+async function avisar(mensaje: string, documentoId?: string, sedeId: string | null = null) {
   const antes = ultimoAviso.get(mensaje);
   if (antes && Date.now() - antes < 60 * 60_000) return;
   ultimoAviso.set(mensaje, Date.now());
-  await notificarPorRol({ rol: "ADMIN", tipo: "FACTURACION", mensaje, enlace: enlaces.facturacion(documentoId) });
+  await notificarPorRol({ rol: "ADMIN", sedeId, tipo: "FACTURACION", mensaje, enlace: enlaces.facturacion(documentoId) });
 }
 
-export function avisosDeNumeracion(c: ConfiguracionFiscal): string[] {
+function avisosDeRango(r: Rango, nombre: string, hoy: string, limite: string): string[] {
   const avisos: string[] = [];
-  const hoy = diaLocal(new Date());
-  const limite = diaLocal(new Date(Date.now() + DIAS_AVISO_VENCIMIENTO * 86_400_000));
-  for (const [nombre, tipo] of [["facturación electrónica", "FACTURA"], ["POS", "POS"]] as const) {
-    const r = rangoDe(c, tipo);
-    if (!r.resolucion) continue;
-    const quedan = r.hasta! - (r.siguiente ?? r.desde!) + 1;
-    if (quedan <= 0) avisos.push(`Se acabó la numeración de ${nombre}.`);
-    else if (quedan <= NUMEROS_MINIMOS) avisos.push(`Quedan ${quedan} números de ${nombre}: pide una nueva resolución a la DIAN.`);
-    if (r.resolucion.fechaFin < hoy) avisos.push(`La resolución de ${nombre} venció el ${r.resolucion.fechaFin}.`);
-    else if (r.resolucion.fechaFin <= limite) avisos.push(`La resolución de ${nombre} vence el ${r.resolucion.fechaFin}.`);
-  }
+  if (!r.resolucion) return avisos;
+  const quedan = r.hasta! - (r.siguiente ?? r.desde!) + 1;
+  if (quedan <= 0) avisos.push(`Se acabó la numeración de ${nombre}.`);
+  else if (quedan <= NUMEROS_MINIMOS) avisos.push(`Quedan ${quedan} números de ${nombre}: pide una nueva resolución a la DIAN.`);
+  if (r.resolucion.fechaFin < hoy) avisos.push(`La resolución de ${nombre} venció el ${r.resolucion.fechaFin}.`);
+  else if (r.resolucion.fechaFin <= limite) avisos.push(`La resolución de ${nombre} vence el ${r.resolucion.fechaFin}.`);
   return avisos;
 }
 
-async function avisarNumeracionBaja(tipo: TipoDocumentoFiscal) {
+// Avisos de la numeración de facturas y de la POS de cada sede.
+export function avisosDeNumeracion(c: ConfiguracionFiscal, sedesLista: Sede[]): string[] {
+  const hoy = diaLocal(new Date());
+  const limite = diaLocal(new Date(Date.now() + DIAS_AVISO_VENCIMIENTO * 86_400_000));
+  const varias = sedesLista.length > 1;
+  return [
+    ...avisosDeRango(rangoDe(c, "FACTURA", null), "facturación electrónica", hoy, limite),
+    ...sedesLista.filter((s) => s.activa).flatMap((s) => avisosDeRango(rangoDe(c, "POS", s), varias ? `POS de ${s.nombre}` : "POS", hoy, limite)),
+  ];
+}
+
+async function avisarNumeracionBaja(tipo: TipoDocumentoFiscal, sedeId: string) {
   if (tipo !== "FACTURA" && tipo !== "POS") return;
-  for (const aviso of avisosDeNumeracion(await configuracionFiscal())) await avisar(aviso);
+  const sede = await prisma.sede.findUniqueOrThrow({ where: { id: sedeId } });
+  for (const aviso of avisosDeNumeracion(await configuracionFiscal(), tipo === "POS" ? [sede] : [])) await avisar(aviso, undefined, tipo === "POS" ? sedeId : null);
 }

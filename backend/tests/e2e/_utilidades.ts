@@ -35,10 +35,11 @@ export const esperar = (ms: number) => new Promise((resolve) => setTimeout(resol
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Respuesta = { status: number; data: any };
 
-export async function req(method: string, path: string, body?: unknown, token?: string): Promise<Respuesta> {
+// `sede`: la sede en la que trabaja el administrador general (X-Sede).
+export async function req(method: string, path: string, body?: unknown, token?: string, sede?: string): Promise<Respuesta> {
   const res = await fetch(API_URL + path, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(sede ? { "X-Sede": sede } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return { status: res.status, data: await res.json().catch(() => null) };
@@ -79,8 +80,8 @@ export async function supervisorDePrueba(tokenAdmin: string, creados: { usuarios
   return { id: usuario.id as string, token, pin };
 }
 
-export async function conectar(token: string): Promise<Socket> {
-  const socket = io(API_URL, { auth: { token }, transports: ["websocket"] });
+export async function conectar(token: string, sede?: string): Promise<Socket> {
+  const socket = io(API_URL, { auth: { token, sede }, transports: ["websocket"] });
   await new Promise<void>((resolve) => socket.on("connect", () => resolve()));
   return socket;
 }

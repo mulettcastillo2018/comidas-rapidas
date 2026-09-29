@@ -9,7 +9,9 @@ export async function probarInsumos() {
   creados.textos.push("E2E-P");
   try {
     const t = await sesiones();
-    const stock = async (id: string) => (await prisma.insumo.findUniqueOrThrow({ where: { id } })).stock;
+    // Existencias en la sede principal (la del admin general sin elegir otra).
+    const enSede = async (id: string) => prisma.insumoSede.findFirstOrThrow({ where: { insumoId: id, sede: { esPrincipal: true } } });
+    const stock = async (id: string) => (await enSede(id)).stock;
     const insumo = async (datos: object) => {
       const i = exigir(await req("POST", "/insumos", datos, t.admin), "Crear insumo");
       creados.insumos.push(i.id);
@@ -72,7 +74,7 @@ export async function probarInsumos() {
     verificar(compra.stock === 2250 && Math.abs(compra.costoUnitario - 77500 / 2250) < 0.001, `costo promedio: (250 g × $30 + $70.000) / 2.250 g = $${compra.costoUnitario.toFixed(2)}/g`);
     verificar(gasto?.categoria === "INSUMOS" && gasto.monto === 70000 && gasto.movimientoCaja?.tipo === "SALIDA", "la compra queda como gasto de insumos y salida de la caja");
     verificar((await prisma.producto.findUniqueOrThrow({ where: { id: hamburguesa.id } })).costo === Math.round(150 * (77500 / 2250) + 800), "el costo de la hamburguesa se actualiza con el nuevo precio de la carne");
-    verificar(!(await prisma.insumo.findUniqueOrThrow({ where: { id: carne.id } })).alertaStockBajo, "con mercancía nueva se quita la alerta");
+    verificar(!(await enSede(carne.id)).alertaStockBajo, "con mercancía nueva se quita la alerta");
 
     exigir(await req("POST", `/insumos/${carne.id}/conteo`, { stockReal: 2000 }, t.admin), "Conteo");
     verificar((await stock(carne.id)) === 2000, "el conteo físico deja lo que de verdad hay");

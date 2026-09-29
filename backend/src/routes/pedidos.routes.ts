@@ -14,6 +14,7 @@ import { devolverStock, revisarStock } from "../services/inventario";
 import { devolverInsumos, revisarInsumos } from "../services/insumos";
 import { nombreCompleto } from "../lib/nombre";
 import { ubicacionDe } from "../lib/ubicacion";
+import { exigirMismaSede } from "../services/sedes";
 
 export const pedidosRouter = Router();
 
@@ -48,7 +49,8 @@ pedidosRouter.get(
   requireAuth,
   catchAsync(async (req, res) => {
     const pedidos = await prisma.pedido.findMany({
-      where: { estado: { in: ["RECIBIDO", "EN_PREPARACION", "LISTO"] } },
+      // Los de la sede donde se trabaja.
+      where: { sedeId: req.sedeId, estado: { in: ["RECIBIDO", "EN_PREPARACION", "LISTO"] } },
       include: pedidoInclude,
       orderBy: { creadoEn: "asc" },
     });
@@ -69,11 +71,12 @@ pedidosRouter.post(
     }
     const { mesaSesionId, notasGenerales, items } = parsed.data;
 
-    const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId } });
+    const sesion = await prisma.mesaSesion.findUnique({ where: { id: mesaSesionId }, include: { mesa: { select: { sedeId: true } } } });
     if (!sesion) {
       res.status(404).json({ error: "Sesión de mesa no encontrada" });
       return;
     }
+    exigirMismaSede(req, sesion.mesa.sedeId, "Esa mesa");
     if (sesion.estado !== "ABIERTA") {
       res.status(409).json({ error: "La mesa no está abierta para recibir pedidos" });
       return;
@@ -85,7 +88,7 @@ pedidosRouter.post(
       return;
     }
 
-    const pedidoCompleto = await crearPedido({ mesaSesionId, meseroId: req.user!.userId, notasGenerales, items });
+    const pedidoCompleto = await crearPedido({ sedeId: sesion.mesa.sedeId, mesaSesionId, meseroId: req.user!.userId, notasGenerales, items });
     res.status(201).json(pedidoCompleto);
   })
 );
@@ -138,6 +141,7 @@ pedidosRouter.put(
       res.status(404).json({ error: "Pedido no encontrado" });
       return;
     }
+    exigirMismaSede(req, pedido.sedeId, "Ese pedido");
     // Con mesa, el dueño es quien abrió la sesión; sin mesa (pedido de
     // mostrador), el dueño es directamente quien lo confirmó (el admin).
     const duenoPedidoId = pedido.mesaSesion?.meseroId ?? pedido.meseroId;
@@ -160,7 +164,7 @@ pedidosRouter.put(
     const enCurso = pedido.items.filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO");
     const yaEnCocina = estado === "CANCELADO" && enCurso.some((i) => i.estado === "EN_PREPARACION" || i.estado === "LISTO");
     const necesitanClave = estado === "CANCELADO" ? enCurso.filter(cancelarNecesitaClave) : [];
-    const autorizadoPorId = necesitanClave.length > 0 ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE) : null;
+    const autorizadoPorId = necesitanClave.length > 0 ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE, pedido.sedeId) : null;
     const devolver = estado === "CANCELADO" ? enCurso.filter(vuelveAlInventario) : [];
     let insumosDevueltos: string[] = [];
 
@@ -184,7 +188,7 @@ pedidosRouter.put(
           autorizadoPorId: necesitanClave.includes(i) ? autorizadoPorId : null,
         })),
       });
-      await devolverStock(tx, devolver.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })), req.user!.userId);
+      await devolverStock(tx, devolver.map((i) => ({ productoId: i.productoId, cantidad: i.cantidad, pedidoItemId: i.id })), req.user!.userId, pedido.sedeId);
       insumosDevueltos = await devolverInsumos(tx, devolver.map((i) => i.id), req.user!.userId);
 
       const nuevoEstado = calcularEstadoPedido(pedido.items.map((i) => (enCurso.includes(i) ? { estado } : i)));
@@ -199,19 +203,21 @@ pedidosRouter.put(
 
     const pedidoActualizado = await prisma.pedido.findUnique({ where: { id: pedido.id }, include: pedidoInclude });
     emitPedidoActualizado(pedidoActualizado);
-    if (devolver.length > 0) await revisarStock(devolver.map((i) => i.productoId));
-    await revisarInsumos(insumosDevueltos);
+    if (devolver.length > 0) await revisarStock(devolver.map((i) => i.productoId), pedido.sedeId);
+    await revisarInsumos(insumosDevueltos, pedido.sedeId);
     const ubicacion = pedidoActualizado ? ubicacionDe(pedidoActualizado) : "un pedido";
     if (autorizadoPorId && req.user!.role !== "ADMIN") {
       await avisarAutorizacion(
         autorizadoPorId,
         `${await nombreDe(req.user!.userId)} canceló lo que faltaba de un pedido de ${ubicacion} que cocina ya había empezado (con clave de ${await nombreDe(autorizadoPorId)}).`,
+        pedido.sedeId,
         pedidoActualizado?.mesaSesion ? enlaces.mesaAbierta(pedidoActualizado.mesaSesion.id) : undefined
       );
     }
     if (yaEnCocina && pedidoActualizado) {
       await notificarPorRol({
         rol: "COCINA",
+        sedeId: pedido.sedeId,
         tipo: "ITEM_CANCELADO",
         mensaje: `Se canceló el pedido completo de ${ubicacion} (ya había productos en cocina)`,
         pedidoId: pedidoActualizado.id,
@@ -253,6 +259,8 @@ pedidosRouter.put(
       res.status(404).json({ error: "Producto del pedido no encontrado" });
       return;
     }
+    const sedeId = item.pedido.sedeId;
+    exigirMismaSede(req, sedeId, "Ese pedido");
     // Entregar y cancelar son acciones del mesero dueño de la mesa (o admin) —
     // cancelar es él quien decide si el cliente ya no quiere el producto.
     // Avanzar de recibido a en-preparación/listo lo hace cocina y no está
@@ -273,7 +281,7 @@ pedidosRouter.put(
     // el mesero ya canceló.
     const yaEstabaEnCocina = estado === "CANCELADO" && (item.estado === "EN_PREPARACION" || item.estado === "LISTO");
     const autorizadoPorId =
-      estado === "CANCELADO" && cancelarNecesitaClave(item) ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE) : null;
+      estado === "CANCELADO" && cancelarNecesitaClave(item) ? await exigirAutorizacion(req.user!, parsed.data.pin, MOTIVO_CLAVE, sedeId) : null;
     const devolver = estado === "CANCELADO" && vuelveAlInventario(item);
 
     let insumosDevueltos: string[] = [];
@@ -291,7 +299,7 @@ pedidosRouter.put(
         data: { pedidoItemId: item.id, deEstado: item.estado, aEstado: estado, cambiadoPorId: req.user!.userId, autorizadoPorId },
       });
       if (devolver) {
-        await devolverStock(tx, [{ productoId: item.productoId, cantidad: item.cantidad, pedidoItemId: item.id }], req.user!.userId);
+        await devolverStock(tx, [{ productoId: item.productoId, cantidad: item.cantidad, pedidoItemId: item.id }], req.user!.userId, sedeId);
         insumosDevueltos = await devolverInsumos(tx, [item.id], req.user!.userId);
       }
 
@@ -337,6 +345,7 @@ pedidosRouter.put(
       const itemActualizado = pedidoActualizado.items.find((i) => i.id === item.id);
       await notificarPorRol({
         rol: "COCINA",
+        sedeId,
         tipo: "ITEM_CANCELADO",
         mensaje: `Se canceló ${itemActualizado?.producto?.nombre ?? "un producto"} de ${ubicacion} (ya estaba en cocina)`,
         pedidoId: pedidoActualizado.id,
@@ -344,12 +353,13 @@ pedidosRouter.put(
         enlace: enlaces.cocina(pedidoActualizado.id),
       });
     }
-    if (devolver) await revisarStock([item.productoId]);
-    await revisarInsumos(insumosDevueltos);
+    if (devolver) await revisarStock([item.productoId], sedeId);
+    await revisarInsumos(insumosDevueltos, sedeId);
     if (autorizadoPorId && req.user!.role !== "ADMIN") {
       await avisarAutorizacion(
         autorizadoPorId,
         `${await nombreDe(req.user!.userId)} canceló ${item.cantidad}× ${item.producto.nombre} de ${ubicacion} que cocina ya había empezado (con clave de ${await nombreDe(autorizadoPorId)}).`,
+        sedeId,
         pedidoActualizado?.mesaSesion ? enlaces.mesaAbierta(pedidoActualizado.mesaSesion.id) : undefined
       );
     }

@@ -18,6 +18,8 @@ export interface Creados {
   turnos: string[];
   insumos: string[];
   clientes: string[];
+  // Sedes creadas por la prueba: se borra todo lo que quedó en ellas.
+  sedes: string[];
   // Texto que identifica notificaciones de la prueba (p. ej. el nombre del
   // cliente de mostrador de prueba).
   textos: string[];
@@ -39,11 +41,17 @@ export function registroDeCreados(prefijoMesas: string): Creados {
     turnos: [],
     insumos: [],
     clientes: [],
+    sedes: [],
     textos: [prefijoMesas],
   };
 }
 
 export async function limpiar(c: Creados) {
+  const enSedes = { sedeId: { in: c.sedes } };
+  c.cierres.push(...(await prisma.cierreCaja.findMany({ where: enSedes, select: { id: true } })).map((x) => x.id));
+  c.gastos.push(...(await prisma.gasto.findMany({ where: enSedes, select: { id: true } })).map((x) => x.id));
+  c.movimientosCaja.push(...(await prisma.movimientoCaja.findMany({ where: enSedes, select: { id: true } })).map((x) => x.id));
+  c.turnos.push(...(await prisma.turno.findMany({ where: enSedes, select: { id: true } })).map((x) => x.id));
   // Un cierre de caja de prueba se deshace: las cuentas y movimientos reales
   // que tomó vuelven a quedar pendientes de cerrar.
   await prisma.factura.updateMany({ where: { cierreCajaId: { in: c.cierres } }, data: { cierreCajaId: null } });
@@ -60,11 +68,11 @@ export async function limpiar(c: Creados) {
   const sesiones = (await prisma.mesaSesion.findMany({ where: deMesasDePrueba, select: { id: true } })).map((s) => s.id);
   const pedidos = [
     ...c.pedidos,
-    ...(await prisma.pedido.findMany({ where: { mesaSesionId: { in: sesiones } }, select: { id: true } })).map((p) => p.id),
+    ...(await prisma.pedido.findMany({ where: { OR: [{ mesaSesionId: { in: sesiones } }, enSedes] }, select: { id: true } })).map((p) => p.id),
   ];
   const solicitudes = [
     ...c.solicitudes,
-    ...(await prisma.solicitudPedido.findMany({ where: { OR: [deMesasDePrueba, { pedidoId: { in: pedidos } }] }, select: { id: true } })).map((s) => s.id),
+    ...(await prisma.solicitudPedido.findMany({ where: { OR: [deMesasDePrueba, { pedidoId: { in: pedidos } }, enSedes] }, select: { id: true } })).map((s) => s.id),
   ];
 
   await prisma.notificacion.deleteMany({
@@ -73,7 +81,7 @@ export async function limpiar(c: Creados) {
   await prisma.encuesta.deleteMany({ where: { OR: [{ mesaSesionId: { in: sesiones } }, { solicitudId: { in: solicitudes } }] } });
   await prisma.solicitudPedidoItem.deleteMany({ where: { solicitudId: { in: solicitudes } } });
   await prisma.solicitudPedido.deleteMany({ where: { id: { in: solicitudes } } });
-  const deFacturas = { OR: [{ pedidoId: { in: pedidos } }, { mesaSesionId: { in: sesiones } }] };
+  const deFacturas = { OR: [{ pedidoId: { in: pedidos } }, { mesaSesionId: { in: sesiones } }, enSedes] };
   // Las notas primero: apuntan al documento que anulan.
   await prisma.documentoFiscal.deleteMany({ where: { factura: deFacturas, anulaId: { not: null } } });
   await prisma.documentoFiscal.deleteMany({ where: { factura: deFacturas } });
@@ -87,7 +95,9 @@ export async function limpiar(c: Creados) {
   await prisma.pedidoItemAdicion.deleteMany({ where: { pedidoItem: { pedidoId: { in: pedidos } } } });
   // Lo que esos pedidos consumieron de insumos reales vuelve a su inventario.
   const consumos = await prisma.movimientoInsumo.findMany({ where: { pedidoItemId: { in: (await prisma.pedidoItem.findMany({ where: { pedidoId: { in: pedidos } }, select: { id: true } })).map((i) => i.id) }, insumoId: { notIn: c.insumos } } });
-  for (const m of consumos) await prisma.insumo.update({ where: { id: m.insumoId }, data: { stock: { decrement: m.cantidad } } });
+  for (const m of consumos) {
+    await prisma.insumoSede.updateMany({ where: { insumoId: m.insumoId, sedeId: m.sedeId }, data: { stock: { decrement: m.cantidad } } });
+  }
   await prisma.movimientoInsumo.deleteMany({ where: { id: { in: consumos.map((m) => m.id) } } });
   await prisma.pedidoItem.deleteMany({ where: { pedidoId: { in: pedidos } } });
   await prisma.domicilio.deleteMany({ where: { pedidoId: { in: pedidos } } });
@@ -95,16 +105,19 @@ export async function limpiar(c: Creados) {
   await prisma.plataforma.deleteMany({ where: { id: { in: c.plataformas } } });
   await prisma.comensal.deleteMany({ where: { mesaSesionId: { in: sesiones } } });
   await prisma.mesaSesion.deleteMany({ where: { id: { in: sesiones } } });
-  await prisma.mesa.deleteMany({ where: { numero: { startsWith: c.prefijoMesas } } });
-  await prisma.movimientoInventario.deleteMany({ where: { productoId: { in: c.productos } } });
+  await prisma.mesa.deleteMany({ where: { OR: [{ numero: { startsWith: c.prefijoMesas } }, enSedes] } });
+  await prisma.movimientoInventario.deleteMany({ where: { OR: [{ productoId: { in: c.productos } }, enSedes] } });
+  await prisma.productoSede.deleteMany({ where: { OR: [{ productoId: { in: c.productos } }, enSedes] } });
   await prisma.comboComponente.deleteMany({ where: { OR: [{ comboId: { in: c.productos } }, { productoId: { in: c.productos } }] } });
   await prisma.productoAdicion.deleteMany({ where: { OR: [{ productoId: { in: c.productos } }, { adicionId: { in: c.adiciones } }] } });
   await prisma.recetaItem.deleteMany({ where: { OR: [{ productoId: { in: c.productos } }, { insumoId: { in: c.insumos } }] } });
   await prisma.adicionInsumo.deleteMany({ where: { OR: [{ adicionId: { in: c.adiciones } }, { insumoId: { in: c.insumos } }] } });
-  await prisma.movimientoInsumo.deleteMany({ where: { insumoId: { in: c.insumos } } });
+  await prisma.movimientoInsumo.deleteMany({ where: { OR: [{ insumoId: { in: c.insumos } }, enSedes] } });
+  await prisma.insumoSede.deleteMany({ where: { OR: [{ insumoId: { in: c.insumos } }, enSedes] } });
   await prisma.insumo.deleteMany({ where: { id: { in: c.insumos } } });
   await prisma.adicion.deleteMany({ where: { id: { in: c.adiciones } } });
   await prisma.promocion.deleteMany({ where: { id: { in: c.promociones } } });
   await prisma.producto.deleteMany({ where: { id: { in: c.productos } } });
   await prisma.user.deleteMany({ where: { id: { in: c.usuarios } } });
+  await prisma.sede.deleteMany({ where: { id: { in: c.sedes } } });
 }

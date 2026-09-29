@@ -6,6 +6,7 @@ import { ReporteVentasVista } from "@/components/reportes/ReporteVentasVista";
 import { ReporteTiemposCocina } from "@/components/reportes/ReporteTiemposCocina";
 import { ReporteOpiniones } from "@/components/reportes/ReporteOpiniones";
 import { ReporteResultados } from "@/components/reportes/ReporteResultados";
+import { AlcanceSedes } from "@/components/SelectorSede";
 
 const VISTAS = [
   { id: "ventas", label: "Ventas" },
@@ -22,6 +23,7 @@ export default function AdminReportesPage() {
 
   return (
     <div className="space-y-6">
+      <AlcanceSedes />
       <div className="flex gap-1 rounded-full bg-muted p-1 text-sm font-semibold sm:w-fit">
         {VISTAS.map((v) => (
           <button

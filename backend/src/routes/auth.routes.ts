@@ -36,7 +36,7 @@ authRouter.post(
       return;
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email }, include: { sede: { select: { id: true, nombre: true } } } });
     const valid = user ? await bcrypt.compare(password, user.passwordHash) : false;
     if (!user || !valid) {
       intentosFallidos.registrar(clave);
@@ -52,7 +52,8 @@ authRouter.post(
     const token = signToken({ userId: user.id, role: user.role });
     res.json({
       token,
-      user: { id: user.id, nombre: user.nombre, apellido: user.apellido, email: user.email, role: user.role },
+      // sede null = administrador general (elige la sede en la que trabaja).
+      user: { id: user.id, nombre: user.nombre, apellido: user.apellido, email: user.email, role: user.role, sede: user.sede },
     });
   })
 );
@@ -63,7 +64,7 @@ authRouter.get(
   catchAsync(async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.userId },
-      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true },
+      select: { id: true, nombre: true, apellido: true, email: true, role: true, isActive: true, createdAt: true, sede: { select: { id: true, nombre: true } } },
     });
     if (!user) {
       res.status(404).json({ error: "Usuario no encontrado" });

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { conAlcance, useVerTodas } from "@/lib/sedes";
 import { formatoFechaHora, formatoPesos, hoyLocal } from "@/lib/formato";
 import { METODO_PAGO_LABEL } from "@/lib/estados";
 import { DemandaYRotacion } from "./DemandaYRotacion";
@@ -90,6 +91,7 @@ export function ReporteVentasVista({ token }: { token: string }) {
   const [reporte, setReporte] = useState<ReporteVentas | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const todas = useVerTodas();
   const [verTodosProductos, setVerTodosProductos] = useState(false);
 
   useEffect(() => {
@@ -97,14 +99,14 @@ export function ReporteVentasVista({ token }: { token: string }) {
     let vigente = true;
     setCargando(true);
     setError(null);
-    apiFetch<ReporteVentas>(`/reportes/ventas?desde=${desde}&hasta=${hasta}`, { token })
+    apiFetch<ReporteVentas>(conAlcance(`/reportes/ventas?desde=${desde}&hasta=${hasta}`, todas), { token })
       .then((data) => vigente && setReporte(data))
       .catch((err) => vigente && setError(err instanceof ApiError ? err.message : "No se pudo cargar el reporte."))
       .finally(() => vigente && setCargando(false));
     return () => {
       vigente = false;
     };
-  }, [token, desde, hasta]);
+  }, [token, desde, hasta, todas]);
 
   const maxDia = Math.max(1, ...(reporte?.porDia.map((d) => d.ventas) ?? [0]));
   const productos = reporte ? (verTodosProductos ? reporte.porProducto : reporte.porProducto.slice(0, PRODUCTOS_VISIBLES)) : [];
@@ -280,6 +282,34 @@ export function ReporteVentasVista({ token }: { token: string }) {
               </table>
             </section>
           </div>
+
+          {reporte.porSede.length > 1 ? (
+            <section>
+              <h2 className="text-sm font-bold">Por sede</h2>
+              <table className="mt-3 w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground">
+                    <th className="py-1.5 pr-4">Sede</th>
+                    <th className="py-1.5 pr-4">Cuentas</th>
+                    <th className="py-1.5 pr-4 text-right">Ticket promedio</th>
+                    <th className="py-1.5 pr-4 text-right">Propinas</th>
+                    <th className="py-1.5 text-right">Ventas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reporte.porSede.map((s) => (
+                    <tr key={s.sedeId} className="border-b border-border/60">
+                      <td className="py-1.5 pr-4 font-semibold">{s.nombre}</td>
+                      <td className="py-1.5 pr-4 text-muted-foreground">{s.cuentas}</td>
+                      <td className="py-1.5 pr-4 text-right">{formatoPesos(s.cuentas ? Math.round(s.ventas / s.cuentas) : 0)}</td>
+                      <td className="py-1.5 pr-4 text-right">{formatoPesos(s.propinas)}</td>
+                      <td className="py-1.5 text-right font-semibold">{formatoPesos(s.ventas)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          ) : null}
 
           {reporte.porMesero.length > 0 ? (
             <section>

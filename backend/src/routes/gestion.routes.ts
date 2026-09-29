@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
+import { requireAuth, requireAdmin, requireAdminGeneral } from "../middleware/auth.middleware";
 import { catchAsync } from "../lib/catchAsync";
 import { ErrorDeNegocio } from "../lib/errores";
 import { esDiaValido } from "../lib/fechas";
 import { estadoDeResultados } from "../services/resultados";
 import { obtenerConfiguracion, repartoDePropinas } from "../services/propinas";
+import { sedesDelReporte } from "../services/sedes";
 
 // Reportes de gestión (estado de resultados, reparto de propinas) y los
 // ajustes del negocio. Se montan en /reportes y /configuracion.
@@ -31,7 +32,7 @@ reportesGestionRouter.get(
   "/resultados",
   catchAsync(async (req, res) => {
     const { desde, hasta } = rango(req.query);
-    res.json(await estadoDeResultados(desde, hasta));
+    res.json(await estadoDeResultados(desde, hasta, sedesDelReporte(req)));
   })
 );
 
@@ -39,7 +40,7 @@ reportesGestionRouter.get(
   "/propinas",
   catchAsync(async (req, res) => {
     const { desde, hasta } = rango(req.query);
-    res.json(await repartoDePropinas(desde, hasta));
+    res.json(await repartoDePropinas(desde, hasta, sedesDelReporte(req)));
   })
 );
 
@@ -60,8 +61,10 @@ configuracionRouter.get(
   })
 );
 
+// Las reglas de propinas y de puntos son de todo el negocio.
 configuracionRouter.put(
   "/",
+  requireAdminGeneral,
   catchAsync(async (req, res) => {
     const parsed = configuracionSchema.safeParse(req.body);
     if (!parsed.success) throw new ErrorDeNegocio("Revisa los valores: el porcentaje para cocina va de 0 a 100 y los del programa de puntos deben ser positivos", 400);
