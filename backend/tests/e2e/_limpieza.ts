@@ -65,7 +65,9 @@ export async function limpiar(c: Creados) {
   await prisma.cierreCaja.deleteMany({ where: { id: { in: c.cierres } } });
 
   const deMesasDePrueba = { mesa: { numero: { startsWith: c.prefijoMesas } } };
-  const sesiones = (await prisma.mesaSesion.findMany({ where: deMesasDePrueba, select: { id: true } })).map((s) => s.id);
+  // Las visitas de las mesas de prueba y las de cualquier mesa de las sedes de
+  // prueba (esas mesas no llevan el prefijo).
+  const sesiones = (await prisma.mesaSesion.findMany({ where: { OR: [deMesasDePrueba, { mesa: enSedes }] }, select: { id: true } })).map((s) => s.id);
   const pedidos = [
     ...c.pedidos,
     ...(await prisma.pedido.findMany({ where: { OR: [{ mesaSesionId: { in: sesiones } }, enSedes] }, select: { id: true } })).map((p) => p.id),
