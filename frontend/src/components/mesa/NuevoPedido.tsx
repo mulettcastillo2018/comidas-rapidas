@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { PackageCheck, Plus, Tag, Trash2 } from "lucide-react";
+import { Boton, CabeceraTarjeta, Campo, cx, Entrada, Insignia, Selector } from "@/components/ui";
 import { formatoPesos } from "@/lib/formato";
 import { resolverImagenUrl } from "@/lib/images";
 import { precioConAdiciones } from "@/lib/items";
@@ -28,7 +29,7 @@ const COMPARTIR = "compartir";
 const LLEVAR = "llevar";
 
 export function etiquetaDestino(comensales: Comensal[] | undefined, comensalId: string | null, paraLlevar?: boolean) {
-  if (paraLlevar) return "🥡 Para llevar";
+  if (paraLlevar) return "Para llevar";
   if (!comensalId) return "Para compartir";
   return comensales?.find((c) => c.id === comensalId)?.nombre ?? "—";
 }
@@ -116,100 +117,98 @@ export function NuevoPedido({
   }
 
   return (
-    <section className="mt-6 rounded-xl border border-border p-4">
-      <h2 className="text-sm font-bold">{titulo}</h2>
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <div className="min-w-0 max-w-full">
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">Producto</label>
-          <div className="flex items-center gap-2">
-            {imagen ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imagen} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-            ) : null}
-            <select
-              value={productoId}
-              onChange={(e) => setProductoId(e.target.value)}
-              className="max-w-full rounded-lg border border-border px-2 py-1.5 text-sm"
-            >
-              {porCategoria.map(([categoria, lista]) => (
-                <optgroup key={categoria} label={categoria}>
-                  {lista.map((p) => (
-                    <option key={p.id} value={p.id} disabled={!p.disponible}>
-                      {p.esCombo ? "🍱 " : ""}
-                      {p.nombre} — {formatoPesos(p.promocion?.precio ?? p.precio)}
-                      {p.promocion ? ` (antes ${formatoPesos(p.precio)})` : ""}{" "}
-                      {!p.disponible ? "(agotado)" : quedanPocas(p) ? `(quedan ${p.stock})` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-          {seleccionado && !seleccionado.requiereCocina ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">No pasa por cocina: queda listo para que lo lleves.</p>
-          ) : null}
-          {seleccionado && quedanPocas(seleccionado) ? (
-            <p className="mt-1 text-[11px] font-semibold text-amber-700">Solo quedan {seleccionado.stock}.</p>
-          ) : null}
-          {seleccionado?.promocion ? (
-            <p className="mt-1 text-[11px] font-semibold text-green-700">
-              🏷️ {seleccionado.promocion.nombre}: −{seleccionado.promocion.descuentoPct}%
-            </p>
-          ) : null}
-          {seleccionado?.esCombo ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Trae: {seleccionado.componentes?.map((c) => `${c.cantidad > 1 ? `${c.cantidad}× ` : ""}${c.producto.nombre}`).join(" + ")}
-            </p>
-          ) : null}
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">Cantidad</label>
-          <input
-            type="number"
-            min={1}
-            value={cantidad}
-            onChange={(e) => setCantidad(Math.max(1, Number(e.target.value)))}
-            className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
-          />
-        </div>
+    <section className="rounded-3xl border border-border bg-surface p-5 shadow-suave sm:p-6">
+      <CabeceraTarjeta titulo={titulo} />
+      <div className="mt-5 flex flex-wrap items-end gap-3">
+        <Campo etiqueta="Producto" className="min-w-0 flex-[2_1_16rem]">
+          {(control) => (
+            <div className="flex items-center gap-2.5">
+              {imagen ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={imagen} alt="" className="size-10 shrink-0 rounded-xl object-cover ring-1 ring-border" />
+              ) : null}
+              <Selector value={productoId} onChange={(e) => setProductoId(e.target.value)} contenedor="min-w-0 flex-1" {...control}>
+                {porCategoria.map(([categoria, lista]) => (
+                  <optgroup key={categoria} label={categoria}>
+                    {lista.map((p) => (
+                      <option key={p.id} value={p.id} disabled={!p.disponible}>
+                        {p.esCombo ? "🍱 " : ""}
+                        {p.nombre} — {formatoPesos(p.promocion?.precio ?? p.precio)}
+                        {p.promocion ? ` (antes ${formatoPesos(p.precio)})` : ""}{" "}
+                        {!p.disponible ? "(agotado)" : quedanPocas(p) ? `(quedan ${p.stock})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </Selector>
+            </div>
+          )}
+        </Campo>
+        <Campo etiqueta="Cantidad" className="w-24">
+          {(control) => (
+            <Entrada type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Math.max(1, Number(e.target.value)))} className="tabular-nums" {...control} />
+          )}
+        </Campo>
         {!sinDestino ? (
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-muted-foreground">Para</label>
-            <select value={destino} onChange={(e) => setDestino(e.target.value)} className="rounded-lg border border-border px-2 py-1.5 text-sm">
-              <option value={COMPARTIR}>Para compartir</option>
-              <option value={LLEVAR}>🥡 Para llevar</option>
-              {comensales.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Campo etiqueta="Para" className="min-w-36 flex-[1_1_9rem]">
+            {(control) => (
+              <Selector value={destino} onChange={(e) => setDestino(e.target.value)} {...control}>
+                <option value={COMPARTIR}>Para compartir</option>
+                <option value={LLEVAR}>Para llevar</option>
+                {comensales.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </Selector>
+            )}
+          </Campo>
         ) : null}
-        <div className="flex-1">
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">Notas (opcional)</label>
-          <input
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-            placeholder="Ej. sin cebolla"
-            className="w-full min-w-32 rounded-lg border border-border px-2 py-1.5 text-sm"
-          />
-        </div>
-        <button onClick={agregar} disabled={!productoId} className="rounded-full border border-accent px-4 py-1.5 text-sm font-semibold text-accent disabled:opacity-50">
-          + Agregar
-        </button>
+        <Campo etiqueta="Notas (opcional)" className="min-w-40 flex-[1.5_1_10rem]">
+          {(control) => <Entrada value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Ej. sin cebolla" {...control} />}
+        </Campo>
+        <Boton variante="secundario" onClick={agregar} disabled={!productoId} className="ml-auto text-accent">
+          <Plus /> Agregar
+        </Boton>
       </div>
 
+      {seleccionado &&
+      (!seleccionado.requiereCocina || quedanPocas(seleccionado) || seleccionado.promocion || seleccionado.esCombo) ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {!seleccionado.requiereCocina ? (
+            <Insignia tono="info">
+              <PackageCheck aria-hidden /> No pasa por cocina: queda listo para que lo lleves.
+            </Insignia>
+          ) : null}
+          {quedanPocas(seleccionado) ? <Insignia tono="aviso">Solo quedan {seleccionado.stock}.</Insignia> : null}
+          {seleccionado.promocion ? (
+            <Insignia tono="exito">
+              <Tag aria-hidden /> {seleccionado.promocion.nombre}: −{seleccionado.promocion.descuentoPct}%
+            </Insignia>
+          ) : null}
+          {seleccionado.esCombo ? (
+            <Insignia>
+              Trae: {seleccionado.componentes?.map((c) => `${c.cantidad > 1 ? `${c.cantidad}× ` : ""}${c.producto.nombre}`).join(" + ")}
+            </Insignia>
+          ) : null}
+        </div>
+      ) : null}
+
       {seleccionado && (seleccionado.adiciones?.length ?? 0) > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-muted-foreground">Adiciones:</span>
           {seleccionado.adiciones!.map((a) => {
             const elegida = adicionIds.includes(a.id);
             return (
               <button
                 key={a.id}
                 type="button"
+                aria-pressed={elegida}
                 onClick={() => setAdicionIds((prev) => (elegida ? prev.filter((x) => x !== a.id) : [...prev, a.id]))}
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${elegida ? "border-accent bg-accent text-white" : "border-border text-muted-foreground"}`}
+                className={cx(
+                  "rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition-all duration-200 ease-resorte active:scale-95",
+                  elegida ? "bg-accent text-accent-foreground ring-accent" : "bg-surface text-muted-foreground ring-border hover:text-foreground hover:ring-border-strong",
+                )}
               >
                 {a.nombre}
                 {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
@@ -217,43 +216,53 @@ export function NuevoPedido({
             );
           })}
           {adicionIds.length > 0 ? (
-            <span className="self-center text-xs text-muted-foreground">= {formatoPesos(precioConAdiciones(seleccionado, adicionIds))} c/u</span>
+            <span className="text-xs text-muted-foreground tabular-nums">= {formatoPesos(precioConAdiciones(seleccionado, adicionIds))} c/u</span>
           ) : null}
         </div>
       ) : null}
 
       {borrador.length > 0 ? (
-        <div className="mt-4 space-y-1.5 border-t border-border pt-3">
-          {borrador.map((item, index) => {
-            const producto = productos.find((p) => p.id === item.productoId);
-            return (
-              <div key={index} className="flex items-center justify-between gap-2 text-sm">
-                <span className={producto && !producto.disponible ? "text-red-600" : ""}>
-                  {item.cantidad}× {producto?.nombre ?? "Producto"}
-                  {item.adicionIds.length > 0
-                    ? ` + ${(producto?.adiciones ?? []).filter((a) => item.adicionIds.includes(a.id)).map((a) => a.nombre).join(", ")}`
-                    : ""}
-                  {!sinDestino ? ` — ${etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}` : ""}
-                  {item.notas ? ` (${item.notas})` : ""}
-                  {producto && !producto.disponible ? " — se agotó" : ""}
-                  <span className="ml-1 text-xs text-muted-foreground">{formatoPesos(precioConAdiciones(producto, item.adicionIds) * item.cantidad)}</span>
-                </span>
-                <button onClick={() => setBorrador((prev) => prev.filter((_, i) => i !== index))} className="text-muted-foreground hover:text-red-600">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            );
-          })}
+        <div className="mt-5 animate-aparecer rounded-2xl bg-surface-2/70 p-3 ring-1 ring-border ring-inset sm:p-4">
+          <ul className="divide-y divide-border/80">
+            {borrador.map((item, index) => {
+              const producto = productos.find((p) => p.id === item.productoId);
+              const agotado = Boolean(producto && !producto.disponible);
+              return (
+                <li key={index} className="flex items-center justify-between gap-3 py-2 text-sm first:pt-0 last:pb-0">
+                  <span className={cx("min-w-0", agotado && "text-peligro")}>
+                    <span className="font-semibold tabular-nums">{item.cantidad}×</span> {producto?.nombre ?? "Producto"}
+                    {item.adicionIds.length > 0
+                      ? ` + ${(producto?.adiciones ?? []).filter((a) => item.adicionIds.includes(a.id)).map((a) => a.nombre).join(", ")}`
+                      : ""}
+                    {!sinDestino ? <span className="text-muted-foreground"> — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}</span> : null}
+                    {item.notas ? <span className="text-muted-foreground"> ({item.notas})</span> : null}
+                    {agotado ? <span className="font-semibold"> — se agotó</span> : null}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-medium tabular-nums">{formatoPesos(precioConAdiciones(producto, item.adicionIds) * item.cantidad)}</span>
+                    <button
+                      onClick={() => setBorrador((prev) => prev.filter((_, i) => i !== index))}
+                      aria-label={`Quitar ${producto?.nombre ?? "producto"}`}
+                      className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-peligro/10 hover:text-peligro"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
           {agotadosEnBorrador.length > 0 ? (
-            <p className="text-xs text-red-600">Cocina marcó como agotado algo de este pedido. Quítalo para poder enviarlo.</p>
+            <p className="mt-3 text-xs font-medium text-peligro">Cocina marcó como agotado algo de este pedido. Quítalo para poder enviarlo.</p>
           ) : null}
-          <button
-            onClick={enviar}
-            disabled={enviando || agotadosEnBorrador.length > 0}
-            className="btn-primary mt-2 w-full rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {enviando ? "Enviando…" : textoEnviar}
-          </button>
+          <div className="mt-4 flex flex-col gap-3 border-t border-border/80 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Subtotal <span className="ml-1 text-lg font-semibold text-foreground tabular-nums">{formatoPesos(subtotal)}</span>
+            </p>
+            <Boton onClick={enviar} cargando={enviando} disabled={agotadosEnBorrador.length > 0} className="sm:min-w-48">
+              {enviando ? "Enviando…" : textoEnviar}
+            </Boton>
+          </div>
         </div>
       ) : null}
     </section>

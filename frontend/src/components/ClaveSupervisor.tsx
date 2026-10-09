@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { ShieldCheck } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import { Boton } from "@/components/ui";
 
 interface Solicitud {
   motivo: string;
@@ -25,11 +26,22 @@ function ModalClave({ solicitud, onCerrar }: { solicitud: Solicitud; onCerrar: (
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={cancelar}>
-      <form onSubmit={enviar} onClick={(e) => e.stopPropagation()} className="w-full max-w-xs space-y-3 rounded-2xl bg-background p-5 shadow-xl">
-        <div className="flex items-center gap-2">
-          <ShieldCheck size={20} className="text-accent" />
-          <h2 className="font-bold">Autorización del administrador</h2>
+    <div className="fixed inset-0 z-50 flex animate-aparecer items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm" onClick={cancelar}>
+      <form
+        onSubmit={enviar}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="titulo-clave"
+        className="w-full max-w-sm animate-emerger space-y-4 rounded-3xl bg-surface p-6 shadow-flotante ring-1 ring-border"
+      >
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent/10 text-accent">
+            <ShieldCheck className="size-5" aria-hidden />
+          </span>
+          <h2 id="titulo-clave" className="font-semibold tracking-tight">
+            Autorización del administrador
+          </h2>
         </div>
         <p className="text-sm text-muted-foreground">{solicitud.motivo}</p>
         <p className="text-xs text-muted-foreground">Un administrador debe digitar aquí su clave de supervisor.</p>
@@ -42,16 +54,17 @@ function ModalClave({ solicitud, onCerrar }: { solicitud: Solicitud; onCerrar: (
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
           placeholder="••••"
-          className="w-full rounded-lg border border-border px-3 py-2 text-center text-lg tracking-[0.5em]"
+          aria-label="Clave de supervisor"
+          className="h-14 w-full rounded-2xl border border-border bg-background text-center text-2xl tracking-[0.6em] tabular-nums transition-[border-color,box-shadow] duration-200 focus:border-accent focus:ring-4 focus:ring-accent/15 focus:outline-none"
         />
-        {solicitud.error ? <p className="text-xs text-red-600">{solicitud.error}</p> : null}
+        {solicitud.error ? <p className="text-xs font-medium text-peligro">{solicitud.error}</p> : null}
         <div className="flex gap-2">
-          <button type="button" onClick={cancelar} className="flex-1 rounded-full border border-border px-3 py-2 text-sm text-muted-foreground">
+          <Boton type="button" variante="secundario" className="flex-1" onClick={cancelar}>
             Cancelar
-          </button>
-          <button type="submit" disabled={pin.length < 4} className="btn-primary flex-1 rounded-full px-3 py-2 text-sm disabled:opacity-50">
+          </Boton>
+          <Boton type="submit" className="flex-1" disabled={pin.length < 4}>
             Autorizar
-          </button>
+          </Boton>
         </div>
       </form>
     </div>

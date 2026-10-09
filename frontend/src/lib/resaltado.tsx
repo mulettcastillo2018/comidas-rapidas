@@ -54,4 +54,4 @@ export function useResaltado(claves: string[]) {
   return [resaltado, lector] as const;
 }
 
-export const CLASE_RESALTADO = "ring-4 ring-amber-400 ring-offset-2 transition-shadow";
+export const CLASE_RESALTADO = "ring-4 ring-accent-2/70 ring-offset-2 ring-offset-background transition-shadow";

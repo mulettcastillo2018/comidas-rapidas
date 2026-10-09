@@ -13,7 +13,7 @@ const TONOS: Record<TonoInsignia, string> = {
 };
 
 export function estilosInsignia(tono: TonoInsignia = "neutro") {
-  return cx("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ring-1 ring-inset [&_svg]:size-3", TONOS[tono]);
+  return cx("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs leading-snug font-semibold ring-1 ring-inset [&_svg]:size-3 [&_svg]:shrink-0", TONOS[tono]);
 }
 
 /** Estado corto (Libre, Listo, Atrasado...). El texto dice el estado; el color solo lo refuerza. */

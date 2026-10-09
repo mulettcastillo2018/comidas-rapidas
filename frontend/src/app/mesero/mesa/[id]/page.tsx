@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Eye } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { useResaltado } from "@/lib/resaltado";
 import { useClaveSupervisor } from "@/components/ClaveSupervisor";
+import { Contenedor, Esqueleto, Insignia } from "@/components/ui";
 import { useAuthStore } from "@/store/auth.store";
 import { useToastStore } from "@/store/toast.store";
 import { SolicitudesCliente } from "@/components/mesa/SolicitudesCliente";
@@ -221,7 +224,19 @@ export default function MesaSesionPage() {
     setPagando(false);
   }
 
-  if (!sesion) return <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">Cargando…</div>;
+  if (!sesion) {
+    return (
+      <Contenedor>
+        <p className="sr-only">Cargando…</p>
+        <Esqueleto className="h-4 w-24" />
+        <Esqueleto className="mt-4 h-9 w-72 max-w-full" />
+        <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+          <Esqueleto className="h-72 rounded-3xl" />
+          <Esqueleto className="h-72 rounded-3xl" />
+        </div>
+      </Contenedor>
+    );
+  }
 
   const esPropietario = sesion.meseroId === user?.id || user?.role === "ADMIN";
   const pedidos = sesion.pedidos ?? [];
@@ -229,76 +244,103 @@ export default function MesaSesionPage() {
   const productosSinEntregar = pedidos.flatMap((p) => p.items).filter((i) => i.estado !== "ENTREGADO" && i.estado !== "CANCELADO").length;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+    <Contenedor>
       {modalClave}
-      <h1 className="text-2xl font-bold">
-        Mesa {sesion.mesa?.numero} — {sesion.nombreResponsable}
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Comensales: {comensales.map((c) => c.nombre).join(", ")}
-        {sesion.sillasAdicionales > 0 ? ` · +${sesion.sillasAdicionales} silla(s) extra` : ""}
-      </p>
+      <Link
+        href="/mesero"
+        className="group inline-flex items-center gap-1.5 rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-4 transition-transform duration-200 ease-resorte group-hover:-translate-x-0.5" aria-hidden />
+        Mesas
+      </Link>
+      <header className="mt-3 animate-aparecer">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+          Mesa {sesion.mesa?.numero} — {sesion.nombreResponsable}
+        </h1>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+          <span className="mr-1">Comensales:</span>
+          {comensales.map((c, i) => (
+            <Insignia key={c.id} tono={i === 0 ? "acento" : "neutro"}>
+              {c.nombre}
+            </Insignia>
+          ))}
+          {sesion.sillasAdicionales > 0 ? <Insignia tono="aviso">+{sesion.sillasAdicionales} silla(s) extra</Insignia> : null}
+        </div>
+      </header>
 
       {!esPropietario ? (
-        <p className="mt-3 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-          Esta mesa la está atendiendo <strong>{nombreCompleto(sesion.mesero)}</strong>. Solo puedes verla, no gestionarla.
+        <p className="mt-5 flex items-start gap-2.5 rounded-2xl bg-surface-2 p-4 text-sm text-muted-foreground ring-1 ring-border ring-inset">
+          <Eye className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            Esta mesa la está atendiendo <strong className="text-foreground">{nombreCompleto(sesion.mesero)}</strong>. Solo puedes verla, no gestionarla.
+          </span>
         </p>
       ) : null}
 
-      {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-
-      {esPropietario ? (
-        <SolicitudesCliente
-          solicitudes={solicitudes.filter((s) => s.mesaId === sesion.mesaId)}
-          resolviendoId={resolviendoSolicitudId}
-          onConfirmar={(s) => resolverSolicitud(s, "confirmar")}
-          onDescartar={(s) => resolverSolicitud(s, "descartar")}
-        />
+      {error ? (
+        <p role="alert" className="mt-5 rounded-xl bg-peligro/10 px-3.5 py-2.5 text-sm font-medium text-peligro ring-1 ring-peligro/20 ring-inset">
+          {error}
+        </p>
       ) : null}
 
-      {esPropietario && sesion.estado === "ABIERTA" ? (
-        <NuevoPedido productos={productos} comensales={comensales} enviando={enviando} onEnviar={enviarPedido} />
-      ) : null}
+      <div className="mt-8 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px] xl:gap-8">
+        <div className="grid min-w-0 gap-6">
+          {esPropietario ? (
+            <SolicitudesCliente
+              solicitudes={solicitudes.filter((s) => s.mesaId === sesion.mesaId)}
+              resolviendoId={resolviendoSolicitudId}
+              onConfirmar={(s) => resolverSolicitud(s, "confirmar")}
+              onDescartar={(s) => resolverSolicitud(s, "descartar")}
+            />
+          ) : null}
 
-      {lectorResaltado}
-      <ListaPedidos
-        resaltarItemId={resaltado.item}
-        pedidos={pedidos}
-        comensales={comensales}
-        esPropietario={esPropietario}
-        nombreMesero={nombreCompleto(sesion.mesero)}
-        actualizandoItemId={actualizandoItemId}
-        actualizandoPedidoId={actualizandoPedidoId}
-        onEntregarItem={(p, i) => cambiarEstadoItem(p, i, "ENTREGADO")}
-        onCancelarItem={(p, i) => cambiarEstadoItem(p, i, "CANCELADO")}
-        onEntregarPedido={(p) => cambiarEstadoPedido(p, "ENTREGADO")}
-        onCancelarPedido={(p) => cambiarEstadoPedido(p, "CANCELADO")}
-      />
+          {esPropietario && sesion.estado === "ABIERTA" ? (
+            <NuevoPedido productos={productos} comensales={comensales} enviando={enviando} onEnviar={enviarPedido} />
+          ) : null}
 
-      {esPropietario && sesion.estado === "ABIERTA" && token && user ? (
-        <GestionMesa
-          sesion={sesion}
-          token={token}
-          usuarioId={user.id}
-          esAdmin={user.role === "ADMIN"}
-          onActualizada={(actualizada, aviso) => {
-            setSesion(actualizada);
-            showToast(aviso);
-          }}
-        />
-      ) : null}
+          {lectorResaltado}
+          <ListaPedidos
+            resaltarItemId={resaltado.item}
+            pedidos={pedidos}
+            comensales={comensales}
+            esPropietario={esPropietario}
+            nombreMesero={nombreCompleto(sesion.mesero)}
+            actualizandoItemId={actualizandoItemId}
+            actualizandoPedidoId={actualizandoPedidoId}
+            onEntregarItem={(p, i) => cambiarEstadoItem(p, i, "ENTREGADO")}
+            onCancelarItem={(p, i) => cambiarEstadoItem(p, i, "CANCELADO")}
+            onEntregarPedido={(p) => cambiarEstadoPedido(p, "ENTREGADO")}
+            onCancelarPedido={(p) => cambiarEstadoPedido(p, "CANCELADO")}
+          />
+        </div>
 
-      {esPropietario ? (
-        <CuentaMesa
-          sesion={sesion}
-          productosSinEntregar={productosSinEntregar}
-          generando={generandoCuenta}
-          pagando={pagando}
-          onGenerar={generarCuenta}
-          onPagar={(cobro) => cerrarCuenta(cobro)}
-          onPerdida={() => cerrarCuenta("perdida")}
-        />
-      ) : null}
-    </div>
+        <aside className="grid min-w-0 gap-6">
+          {esPropietario ? (
+            <CuentaMesa
+              sesion={sesion}
+              productosSinEntregar={productosSinEntregar}
+              generando={generandoCuenta}
+              pagando={pagando}
+              onGenerar={generarCuenta}
+              onPagar={(cobro) => cerrarCuenta(cobro)}
+              onPerdida={() => cerrarCuenta("perdida")}
+            />
+          ) : null}
+
+          {esPropietario && sesion.estado === "ABIERTA" && token && user ? (
+            <GestionMesa
+              sesion={sesion}
+              token={token}
+              usuarioId={user.id}
+              esAdmin={user.role === "ADMIN"}
+              onActualizada={(actualizada, aviso) => {
+                setSesion(actualizada);
+                showToast(aviso);
+              }}
+            />
+          ) : null}
+        </aside>
+      </div>
+    </Contenedor>
   );
 }

@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { BellRing, Hand, Plus, Receipt, Users, X } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { nombreCompleto } from "@/lib/nombre";
 import { ordenarMesas, aplicarCambioDeMesa } from "@/lib/mesas";
 import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import { useAuthStore } from "@/store/auth.store";
+import { Boton, Contenedor, cx, EncabezadoPagina, Entrada, Esqueleto, Insignia, PuntoVivo } from "@/components/ui";
 import type { Mesa, MesaSesion, Pedido, SolicitudPedido } from "@/lib/types";
 
 export default function MeseroPage() {
@@ -23,6 +24,8 @@ export default function MeseroPage() {
   const [confirmaSillaExtra, setConfirmaSillaExtra] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Mientras llega la primera carga se muestran marcadores, no una grilla vacía.
+  const [cargando, setCargando] = useState(true);
   // Al llegar desde la notificación de un pedido QR en una mesa sin abrir.
   const [resaltado, lectorResaltado] = useResaltado(["mesa"]);
   // Mesas donde el cliente tocó "Llamar al mesero" o "Pedir la cuenta" desde
@@ -45,6 +48,7 @@ export default function MeseroPage() {
     setMesas(ordenarMesas(mesasData));
     setSesionesActivas(sesionesData);
     setSolicitudesPendientes(solicitudesData);
+    setCargando(false);
   }
 
   useEffect(() => {
@@ -153,154 +157,190 @@ export default function MeseroPage() {
 
   if (!user || (user.role !== "MESERO" && user.role !== "ADMIN")) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-10 text-center sm:px-6">
+      <Contenedor ancho="medio" className="text-center">
         <p className="text-muted-foreground">Esta sección es solo para meseros.</p>
-      </div>
+      </Contenedor>
     );
   }
 
+  const ocupadas = mesas.filter((m) => m.estado === "OCUPADA").length;
+
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-bold">Mesas</h1>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+    <Contenedor>
+      <EncabezadoPagina
+        antetitulo="Servicio en sala"
+        titulo="Mesas"
+        descripcion={
+          mesas.length ? (
+            <span className="tabular-nums">
+              {ocupadas} ocupada{ocupadas === 1 ? "" : "s"} · {mesas.length - ocupadas} libre{mesas.length - ocupadas === 1 ? "" : "s"}
+            </span>
+          ) : null
+        }
+      />
+      {error ? (
+        <p role="alert" className="mt-4 rounded-xl bg-peligro/10 px-3.5 py-2.5 text-sm font-medium text-peligro ring-1 ring-peligro/20 ring-inset">
+          {error}
+        </p>
+      ) : null}
       {lectorResaltado}
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-        {mesas.map((mesa) => {
+      <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        {cargando && mesas.length === 0
+          ? Array.from({ length: 8 }, (_, i) => <Esqueleto key={i} className="h-36 rounded-2xl" />)
+          : null}
+        {mesas.map((mesa, posicion) => {
           const sesion = sesionDeMesa(mesa.id);
+          const listos = productosListosEnMesa(mesa.id);
+          const libre = mesa.estado === "LIBRE";
+          const deOtro = libre && asignadaAOtroMesero(mesa);
+          const llamado = llamados[mesa.id] && ahora - llamados[mesa.id].en < 5 * 60_000 ? llamados[mesa.id] : null;
           return openingMesa?.id === mesa.id ? (
             <form
               key={mesa.id}
               onSubmit={handleAbrirMesa}
-              className="col-span-2 space-y-2 rounded-xl border border-accent p-4 sm:col-span-3 md:col-span-4"
+              className="col-span-full grid animate-emerger gap-5 rounded-3xl border border-accent/40 bg-surface p-5 shadow-elevada ring-4 ring-accent/10 sm:p-7"
             >
-              <p className="font-semibold">
-                Abrir Mesa {mesa.numero} <span className="font-normal text-muted-foreground">({mesa.capacidad} puestos)</span>
-              </p>
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground">
-                  Comensales (el primero queda a cargo de la mesa, para la cuenta)
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-lg font-semibold tracking-tight">
+                  Abrir Mesa {mesa.numero} <span className="text-sm font-normal text-muted-foreground">({mesa.capacidad} puestos)</span>
                 </p>
+                <p className="text-xs text-muted-foreground">Comensales (el primero queda a cargo de la mesa, para la cuenta)</p>
+              </div>
+
+              <div className="grid gap-2.5 sm:grid-cols-2">
                 {comensalInputs.map((value, index) => (
-                  <div key={index} className="flex gap-2">
-                    <input
+                  <div key={index} className="flex items-center gap-2">
+                    <span
+                      className={cx(
+                        "grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold tabular-nums",
+                        index === 0 ? "bg-accent text-accent-foreground" : index >= mesa.capacidad ? "bg-aviso/15 text-aviso" : "bg-surface-2 text-muted-foreground",
+                      )}
+                      aria-hidden
+                    >
+                      {index + 1}
+                    </span>
+                    <Entrada
                       value={value}
-                      onChange={(e) =>
-                        setComensalInputs((prev) => prev.map((v, i) => (i === index ? e.target.value : v)))
-                      }
+                      onChange={(e) => setComensalInputs((prev) => prev.map((v, i) => (i === index ? e.target.value : v)))}
                       placeholder={
-                        index === 0
-                          ? "Nombre — a cargo de la mesa"
-                          : `Nombre comensal ${index + 1}${index >= mesa.capacidad ? " (silla adicional)" : ""}`
+                        index === 0 ? "Nombre — a cargo de la mesa" : `Nombre comensal ${index + 1}${index >= mesa.capacidad ? " (silla adicional)" : ""}`
                       }
-                      className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
-                        index >= mesa.capacidad ? "border-accent bg-accent/5" : "border-border"
-                      }`}
+                      aria-label={index === 0 ? "Comensal a cargo de la mesa" : `Comensal ${index + 1}`}
+                      className={cx("flex-1", index >= mesa.capacidad && "border-aviso/50 bg-aviso/5")}
                     />
                     {comensalInputs.length > 1 ? (
                       <button
                         type="button"
                         onClick={() => setComensalInputs((prev) => prev.filter((_, i) => i !== index))}
-                        className="text-muted-foreground hover:text-red-600"
+                        aria-label={`Quitar comensal ${index + 1}`}
+                        className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-peligro/10 hover:text-peligro"
                       >
-                        <X size={16} />
+                        <X className="size-4" />
                       </button>
                     ) : null}
                   </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setComensalInputs((prev) => [...prev, ""])}
-                  className="flex items-center gap-1 text-xs font-semibold text-accent"
-                >
-                  <Plus size={14} /> Agregar comensal
-                </button>
               </div>
+              <Boton type="button" variante="fantasma" tamano="sm" className="w-fit text-accent hover:text-accent" onClick={() => setComensalInputs((prev) => [...prev, ""])}>
+                <Plus /> Agregar comensal
+              </Boton>
 
               {seSuperaCapacidad ? (
-                <label className="flex items-start gap-2 rounded-lg bg-accent/10 p-2 text-xs text-foreground">
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-aviso/10 p-4 text-sm text-foreground ring-1 ring-aviso/25 ring-inset">
                   <input
                     type="checkbox"
                     checked={confirmaSillaExtra}
                     onChange={(e) => setConfirmaSillaExtra(e.target.checked)}
-                    className="mt-0.5"
+                    className="mt-0.5 size-4 shrink-0 accent-accent"
                   />
                   <span>
-                    Esta mesa es para {mesa.capacidad} personas. Confirmo que traeré {sillasExtra} silla(s) adicional(es)
-                    de otra mesa o de bodega.
+                    Esta mesa es para {mesa.capacidad} personas. Confirmo que traeré {sillasExtra} silla(s) adicional(es) de otra mesa o de bodega.
                   </span>
                 </label>
               ) : null}
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={saving || (seSuperaCapacidad && !confirmaSillaExtra)}
-                  className="btn-primary flex-1 rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? "Abriendo…" : "Abrir mesa"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOpeningMesa(null)}
-                  className="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground"
-                >
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Boton type="button" variante="secundario" onClick={() => setOpeningMesa(null)}>
                   Cancelar
-                </button>
+                </Boton>
+                <Boton type="submit" cargando={saving} disabled={seSuperaCapacidad && !confirmaSillaExtra} className="sm:min-w-40">
+                  {saving ? "Abriendo…" : "Abrir mesa"}
+                </Boton>
               </div>
             </form>
           ) : (
             <button
               key={mesa.id}
               data-resaltado={resaltado.mesa === mesa.id}
-              disabled={mesa.estado === "LIBRE" && asignadaAOtroMesero(mesa)}
+              disabled={deOtro}
+              style={{ animationDelay: `${Math.min(posicion, 12) * 30}ms` }}
               onClick={() => {
                 setLlamados(({ [mesa.id]: _atendido, ...resto }) => resto);
                 if (mesa.estado === "LIBRE") startOpening(mesa);
                 else if (sesion) router.push(`/mesero/mesa/${sesion.id}`);
               }}
-              className={`flex flex-col items-center gap-1 rounded-xl border p-4 text-center transition-all duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${
-                mesa.estado === "LIBRE" ? "border-border hover:border-accent" : "border-accent bg-accent/5"
-              } ${resaltado.mesa === mesa.id ? CLASE_RESALTADO : ""}`}
+              className={cx(
+                "group relative flex min-h-36 animate-aparecer flex-col items-start gap-3 overflow-hidden rounded-2xl border p-4 text-left shadow-suave transition-[transform,box-shadow,border-color] duration-300 ease-salida sm:p-5",
+                "hover:-translate-y-0.5 hover:shadow-elevada active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0 disabled:hover:shadow-suave",
+                libre ? "border-border bg-surface hover:border-border-strong" : "border-accent/35 bg-accent/[0.04] hover:border-accent/60",
+                resaltado.mesa === mesa.id && CLASE_RESALTADO,
+              )}
             >
-              <p className="text-lg font-bold">Mesa {mesa.numero}</p>
-              <p className="text-xs text-muted-foreground">{mesa.capacidad} puestos</p>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  mesa.estado === "LIBRE" ? "bg-muted text-muted-foreground" : "bg-accent text-white"
-                }`}
-              >
-                {mesa.estado === "LIBRE"
-                  ? asignadaAOtroMesero(mesa)
-                    ? `Asignada a ${nombreCompleto(mesa.meseroAsignado)}`
-                    : "Libre — abrir"
-                  : sesion?.nombreResponsable ?? "Ocupada"}
-              </span>
-              {mesa.estado === "OCUPADA" && sesion && sesion.meseroId !== user?.id ? (
-                <span className="text-[11px] text-muted-foreground">Atendida por {nombreCompleto(sesion.mesero)}</span>
-              ) : null}
-              {mesa.estado === "OCUPADA" && sesion && sesion.sillasAdicionales > 0 ? (
-                <span className="text-[11px] font-semibold text-accent">+{sesion.sillasAdicionales} silla(s) extra</span>
-              ) : null}
-              {productosListosEnMesa(mesa.id) > 0 ? (
-                <span className="animate-pulse rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                  ✅ {productosListosEnMesa(mesa.id)} listo{productosListosEnMesa(mesa.id) > 1 ? "s" : ""} para entregar
+              {libre ? null : <span className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-accent to-accent-2" aria-hidden />}
+              <div className="flex w-full items-start justify-between gap-2">
+                <p className="text-lg font-semibold tracking-tight">Mesa {mesa.numero}</p>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums" title={`${mesa.capacidad} puestos`}>
+                  <Users className="size-3.5" aria-hidden />
+                  {mesa.capacidad}
+                  <span className="sr-only"> puestos</span>
                 </span>
-              ) : null}
-              {solicitudesDeMesa(mesa.id) > 0 ? (
-                <span className="animate-pulse rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">
-                  🔔 Pedido del cliente esperando
-                </span>
-              ) : null}
-              {llamados[mesa.id] && ahora - llamados[mesa.id].en < 5 * 60_000 ? (
-                <span className="animate-pulse rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                  {llamados[mesa.id].tipo === "CUENTA" ? "🧾 Pide la cuenta" : "🙋 Te están llamando"}
+              </div>
+
+              <div className="grid justify-items-start gap-1.5">
+                <Insignia tono={libre ? "neutro" : "acento"} className="max-w-full">
+                  <span className="truncate">
+                    {libre ? (deOtro ? `Asignada a ${nombreCompleto(mesa.meseroAsignado)}` : "Libre — abrir") : sesion?.nombreResponsable ?? "Ocupada"}
+                  </span>
+                </Insignia>
+                {mesa.estado === "OCUPADA" && sesion && sesion.meseroId !== user?.id ? (
+                  <span className="text-xs text-muted-foreground">Atendida por {nombreCompleto(sesion.mesero)}</span>
+                ) : null}
+                {mesa.estado === "OCUPADA" && sesion && sesion.sillasAdicionales > 0 ? (
+                  <span className="text-xs font-semibold text-aviso">+{sesion.sillasAdicionales} silla(s) extra</span>
+                ) : null}
+              </div>
+
+              {listos > 0 || solicitudesDeMesa(mesa.id) > 0 || llamado ? (
+                <div className="mt-auto grid w-full gap-1.5">
+                  {listos > 0 ? (
+                    <Insignia tono="exito" className="w-full justify-start">
+                      <PuntoVivo tono="exito" />
+                      {listos} listo{listos > 1 ? "s" : ""} para entregar
+                    </Insignia>
+                  ) : null}
+                  {solicitudesDeMesa(mesa.id) > 0 ? (
+                    <Insignia tono="acento" className="w-full justify-start">
+                      <BellRing className="animate-pulse" aria-hidden />
+                      Pedido del cliente esperando
+                    </Insignia>
+                  ) : null}
+                  {llamado ? (
+                    <Insignia tono="aviso" className="w-full justify-start">
+                      {llamado.tipo === "CUENTA" ? <Receipt className="animate-pulse" aria-hidden /> : <Hand className="animate-pulse" aria-hidden />}
+                      {llamado.tipo === "CUENTA" ? "Pide la cuenta" : "Te están llamando"}
+                    </Insignia>
+                  ) : null}
+                </div>
+              ) : libre && !deOtro ? (
+                <span className="mt-auto flex items-center gap-1 text-xs font-semibold text-accent opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <Plus className="size-3.5" aria-hidden /> Abrir mesa
                 </span>
               ) : null}
             </button>
           );
         })}
       </div>
-    </div>
+    </Contenedor>
   );
 }

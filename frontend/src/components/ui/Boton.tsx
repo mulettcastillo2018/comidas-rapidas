@@ -2,7 +2,7 @@ import type { ComponentProps } from "react";
 import { Loader2 } from "lucide-react";
 import { cx } from "./cx";
 
-export type VarianteBoton = "primario" | "secundario" | "fantasma" | "peligro" | "exito";
+export type VarianteBoton = "primario" | "secundario" | "fantasma" | "peligro" | "peligroSuave" | "exito";
 export type TamanoBoton = "sm" | "md" | "lg";
 
 const BASE =
@@ -17,6 +17,8 @@ const VARIANTES: Record<VarianteBoton, string> = {
   fantasma: "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
   peligro: "bg-peligro text-white shadow-suave hover:-translate-y-px hover:brightness-110 dark:text-background",
   exito: "bg-exito text-white shadow-suave hover:-translate-y-px hover:brightness-110 dark:text-background",
+  // Para cancelar o anular sin que pese tanto como la acción principal.
+  peligroSuave: "text-peligro ring-1 ring-peligro/30 ring-inset hover:bg-peligro/10",
 };
 
 const TAMANOS: Record<TamanoBoton, string> = {

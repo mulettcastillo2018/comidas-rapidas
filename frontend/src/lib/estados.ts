@@ -1,4 +1,14 @@
+import type { TonoInsignia } from "@/components/ui";
 import type { MetodoPago, PedidoEstado } from "./types";
+
+// Color de cada estado en todo el sistema (mesero, cocina, pantalla, admin).
+export const ESTADO_TONO: Record<PedidoEstado, TonoInsignia> = {
+  RECIBIDO: "info",
+  EN_PREPARACION: "aviso",
+  LISTO: "exito",
+  ENTREGADO: "neutro",
+  CANCELADO: "peligro",
+};
 
 // Estado del pedido completo (visto por el mesero).
 export const PEDIDO_ESTADO_LABEL: Record<PedidoEstado, string> = {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Star } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { Boton, Entrada } from "@/components/ui";
 import { formatoPesos } from "@/lib/formato";
 import { consultarPrograma, type ClienteDeCuenta, type ClienteFrecuente as Cliente, type ProgramaPuntos } from "@/lib/clientes";
 import { useAuthStore } from "@/store/auth.store";
@@ -78,29 +80,33 @@ export function ClienteFrecuente({
   }
 
   return (
-    <div className="space-y-2 rounded-lg border border-dashed border-border p-2 text-xs">
-      <p className="font-semibold">⭐ Cliente frecuente (puntos)</p>
+    <div className="space-y-2.5 rounded-2xl border border-dashed border-border-strong p-3 text-xs">
+      <p className="flex items-center gap-1.5 font-semibold">
+        <Star className="size-3.5 fill-accent-2 text-accent-2" aria-hidden /> Cliente frecuente (puntos)
+      </p>
       {cliente ? (
         <>
           <div className="flex items-center justify-between gap-2">
             <span>
-              <strong>{cliente.nombre}</strong> · {cliente.puntos} puntos ({formatoPesos(cliente.valorPuntos)})
+              <strong>{cliente.nombre}</strong> · <span className="tabular-nums">{cliente.puntos} puntos ({formatoPesos(cliente.valorPuntos)})</span>
             </span>
-            <button onClick={quitar} className="text-muted-foreground">
+            <button onClick={quitar} className="rounded-lg px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
               Quitar
             </button>
           </div>
           {puedeCanjear ? (
             <label className="flex flex-wrap items-center gap-2">
-              <input type="checkbox" checked={canjear} onChange={(e) => setCanjear(e.target.checked)} />
+              <input type="checkbox" checked={canjear} onChange={(e) => setCanjear(e.target.checked)} className="size-4 accent-accent" />
               Canjear
-              <input
+              <Entrada
+                tamano="sm"
                 type="number"
                 min={programa.minimoCanje}
                 max={maximoPuntos}
                 value={puntos}
                 onChange={(e) => setPuntos(Math.max(0, Math.min(maximoPuntos, Math.round(Number(e.target.value) || 0))))}
-                className="w-20 rounded border border-border px-1 py-0.5"
+                className="w-20 tabular-nums"
+                aria-label="Puntos a canjear"
               />
               puntos = −{formatoPesos(Math.min(puntos, maximoPuntos) * programa.valorPunto)}
             </label>
@@ -111,28 +117,30 @@ export function ClienteFrecuente({
       ) : (
         <>
           <div className="flex gap-2">
-            <input
+            <Entrada
+              tamano="sm"
               value={telefono}
               onChange={(e) => setTelefono(e.target.value.replace(/[^\d+ ]/g, ""))}
               placeholder="Celular del cliente"
               inputMode="tel"
-              className="min-w-0 flex-1 rounded-lg border border-border px-2 py-1"
+              aria-label="Celular del cliente"
+              className="min-w-0 flex-1"
             />
-            <button onClick={buscar} disabled={telefono.replace(/\D/g, "").length < 10} className="rounded-full border border-accent px-3 py-1 font-semibold text-accent disabled:opacity-50">
+            <Boton tamano="sm" variante="secundario" className="text-accent" onClick={buscar} disabled={telefono.replace(/\D/g, "").length < 10}>
               Buscar
-            </button>
+            </Boton>
           </div>
           {noExiste ? (
             <div className="space-y-1.5">
               <p className="text-muted-foreground">No está registrado. ¿Lo inscribimos?</p>
-              <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" className="w-full rounded-lg border border-border px-2 py-1" />
-              <label className="flex items-start gap-2 leading-snug text-muted-foreground">
-                <input type="checkbox" checked={autoriza} onChange={(e) => setAutoriza(e.target.checked)} className="mt-0.5" />
+              <Entrada tamano="sm" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" aria-label="Nombre del cliente" />
+              <label className="flex cursor-pointer items-start gap-2 leading-snug text-muted-foreground">
+                <input type="checkbox" checked={autoriza} onChange={(e) => setAutoriza(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-accent" />
                 El cliente autoriza guardar su nombre y celular para el programa de puntos (Ley 1581 de 2012). Puede pedir que se borren cuando quiera.
               </label>
-              <button onClick={registrar} disabled={!autoriza || nombre.trim().length < 2} className="btn-primary rounded-full px-3 py-1 disabled:opacity-50">
+              <Boton tamano="sm" onClick={registrar} disabled={!autoriza || nombre.trim().length < 2}>
                 Registrar
-              </button>
+              </Boton>
             </div>
           ) : (
             <p className="text-muted-foreground">
@@ -141,7 +149,7 @@ export function ClienteFrecuente({
           )}
         </>
       )}
-      {error ? <p className="text-red-600">{error}</p> : null}
+      {error ? <p className="font-medium text-peligro">{error}</p> : null}
     </div>
   );
 }

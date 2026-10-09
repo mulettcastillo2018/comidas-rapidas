@@ -10,16 +10,28 @@ export const estilosEntrada =
   "focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 " +
   "disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-peligro aria-[invalid=true]:focus:ring-peligro/15";
 
-export function Entrada({ className, ...props }: ComponentProps<"input">) {
-  return <input className={cx(estilosEntrada, "h-10", className)} {...props} />;
+/** Alto de los controles: "sm" para filas densas (precios, cantidades, filtros). */
+export type TamanoCampo = "sm" | "md";
+const ALTO: Record<TamanoCampo, string> = { sm: "h-8 rounded-lg px-2.5 text-xs", md: "h-10" };
+
+export function Entrada({ className, tamano = "md", ...props }: Omit<ComponentProps<"input">, "size"> & { tamano?: TamanoCampo }) {
+  return <input className={cx(estilosEntrada, ALTO[tamano], className)} {...props} />;
 }
 
 /** Select con la flecha del sistema (la nativa cambia según navegador y tema). */
-export function Selector({ className, ...props }: ComponentProps<"select">) {
+export function Selector({
+  className,
+  tamano = "md",
+  contenedor,
+  ...props
+}: Omit<ComponentProps<"select">, "size"> & { tamano?: TamanoCampo; /** Clases del envoltorio (ancho, flex). */ contenedor?: string }) {
   return (
-    <div className="relative">
-      <select className={cx(estilosEntrada, "h-10 cursor-pointer appearance-none pr-9", className)} {...props} />
-      <ChevronDown aria-hidden className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
+    <div className={cx("relative", contenedor)}>
+      <select className={cx(estilosEntrada, ALTO[tamano], "cursor-pointer appearance-none", tamano === "sm" ? "pr-7" : "pr-9", className)} {...props} />
+      <ChevronDown
+        aria-hidden
+        className={cx("pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground", tamano === "sm" ? "right-2 size-3.5" : "right-3 size-4")}
+      />
     </div>
   );
 }

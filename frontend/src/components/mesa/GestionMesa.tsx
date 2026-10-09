@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { ArrowRightLeft, UserPlus } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { Boton, CabeceraTarjeta, Entrada, Selector } from "@/components/ui";
 import { ordenarMesas } from "@/lib/mesas";
 import type { Mesa, MesaSesion } from "@/lib/types";
 
@@ -91,23 +93,25 @@ export function GestionMesa({
   }
 
   return (
-    <section className="mt-6 space-y-3 rounded-xl border border-border p-4 text-sm">
+    <section className="space-y-4 rounded-3xl border border-border bg-surface p-5 text-sm shadow-suave sm:p-6">
+      <CabeceraTarjeta titulo="Gestión de la mesa" />
       <form onSubmit={agregarComensal} className="flex flex-wrap items-center gap-2">
-        <input
+        <Entrada
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
           placeholder="Llegó alguien más: su nombre"
-          className="min-w-0 flex-1 rounded-lg border border-border px-2 py-1.5"
+          aria-label="Nombre del comensal que llegó"
+          className="min-w-0 flex-1 basis-48"
         />
-        <button type="submit" disabled={guardando || !nombre.trim()} className="rounded-full border border-accent px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-50">
-          + Agregar comensal
-        </button>
+        <Boton type="submit" variante="secundario" disabled={guardando || !nombre.trim()} className="text-accent">
+          <UserPlus /> Agregar comensal
+        </Boton>
       </form>
 
       {mesasLibres === null ? (
-        <button onClick={abrirCambioDeMesa} className="text-xs font-semibold text-accent">
-          Cambiar de mesa…
-        </button>
+        <Boton variante="fantasma" tamano="sm" className="text-accent hover:text-accent" onClick={abrirCambioDeMesa}>
+          <ArrowRightLeft /> Cambiar de mesa…
+        </Boton>
       ) : mesasLibres.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           No hay mesas libres ahora.{" "}
@@ -117,23 +121,23 @@ export function GestionMesa({
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <select value={destinoId} onChange={(e) => setDestinoId(e.target.value)} className="rounded-lg border border-border px-2 py-1.5">
+          <Selector value={destinoId} onChange={(e) => setDestinoId(e.target.value)} contenedor="min-w-44 flex-1" aria-label="Mesa de destino">
             <option value="">Pasar a la mesa…</option>
             {mesasLibres.map((m) => (
               <option key={m.id} value={m.id}>
                 Mesa {m.numero} ({m.capacidad} puestos)
               </option>
             ))}
-          </select>
-          <button onClick={mover} disabled={!destinoId || guardando} className="btn-primary rounded-full px-3 py-1.5 text-xs disabled:opacity-50">
+          </Selector>
+          <Boton onClick={mover} disabled={!destinoId || guardando}>
             Cambiar
-          </button>
-          <button onClick={() => setMesasLibres(null)} className="text-xs text-muted-foreground">
+          </Boton>
+          <Boton variante="fantasma" onClick={() => setMesasLibres(null)}>
             Cancelar
-          </button>
+          </Boton>
         </div>
       )}
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs font-medium text-peligro">{error}</p> : null}
     </section>
   );
 }

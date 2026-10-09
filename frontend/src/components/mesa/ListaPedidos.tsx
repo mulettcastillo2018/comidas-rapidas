@@ -1,6 +1,8 @@
 "use client";
 
-import { ITEM_ESTADO_LABEL, PEDIDO_ESTADO_LABEL } from "@/lib/estados";
+import { Clock, ClipboardList, QrCode, Tag } from "lucide-react";
+import { Boton, CabeceraTarjeta, cx, Insignia } from "@/components/ui";
+import { ESTADO_TONO, ITEM_ESTADO_LABEL, PEDIDO_ESTADO_LABEL } from "@/lib/estados";
 import { CLASE_RESALTADO } from "@/lib/resaltado";
 import { conAdiciones, etiquetaCombo } from "@/lib/items";
 import { formatoHora } from "@/lib/tiempoEstimado";
@@ -34,93 +36,97 @@ export function ListaPedidos({
   onCancelarPedido: (pedido: Pedido) => void;
 }) {
   return (
-    <section className="mt-6">
-      <h2 className="text-sm font-bold">Pedidos de esta mesa</h2>
+    <section className="rounded-3xl border border-border bg-surface p-5 shadow-suave sm:p-6">
+      <CabeceraTarjeta
+        titulo="Pedidos de esta mesa"
+        descripcion={pedidos.length ? `${pedidos.length} pedido${pedidos.length === 1 ? "" : "s"}` : undefined}
+      />
       {pedidos.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">Todavía no se ha enviado ningún pedido.</p>
+        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+          <ClipboardList className="size-5 shrink-0" aria-hidden />
+          Todavía no se ha enviado ningún pedido.
+        </div>
       ) : (
-        <div className="mt-3 space-y-2">
+        <ol className="mt-5 grid gap-3">
           {pedidos.map((pedido) => (
-            <div key={pedido.id} className={`rounded-xl border p-3 ${pedido.estado === "LISTO" ? "border-accent bg-accent/5" : "border-border"}`}>
-              <div className="flex items-center justify-between">
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    pedido.estado === "LISTO" ? "bg-accent text-white" : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {PEDIDO_ESTADO_LABEL[pedido.estado] ?? pedido.estado}
+            <li
+              key={pedido.id}
+              className={cx(
+                "rounded-2xl border p-4 transition-colors duration-300",
+                pedido.estado === "LISTO" ? "border-exito/40 bg-exito/[0.05]" : "border-border bg-background/60",
+              )}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Insignia tono={ESTADO_TONO[pedido.estado] ?? "neutro"}>{PEDIDO_ESTADO_LABEL[pedido.estado] ?? pedido.estado}</Insignia>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+                  <Clock className="size-3.5" aria-hidden />
+                  {formatoHora(pedido.creadoEn)}
                 </span>
-                <span className="text-xs text-muted-foreground">{formatoHora(pedido.creadoEn)}</span>
               </div>
               {pedido.origenCliente ? (
-                <p className="mt-1 text-[11px] italic text-muted-foreground">
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground italic">
+                  <QrCode className="size-3.5 shrink-0" aria-hidden />
                   Agregado por el cliente desde el QR — validado por {nombreMesero || "el mesero"}
                 </p>
               ) : null}
-              <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
-                {pedido.items.map((item) => (
-                  <li
-                    key={item.id}
-                    data-resaltado={item.id === resaltarItemId}
-                    className={`space-y-1 rounded-md ${item.id === resaltarItemId ? `${CLASE_RESALTADO} p-1` : ""}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={item.estado === "CANCELADO" ? "line-through" : ""}>
-                        {item.cantidad}× {conAdiciones(item, item.producto?.nombre)} — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}
-                        {item.notas ? ` (${item.notas})` : ""}
-                        {etiquetaCombo(item) ? <span className="ml-1 text-[11px] text-accent">{etiquetaCombo(item)}</span> : null}
-                        {item.promocionNombre ? <span className="ml-1 text-[11px] text-green-700">🏷️ {item.promocionNombre}</span> : null}
-                      </span>
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          item.estado === "LISTO" ? "bg-accent text-white" : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {ITEM_ESTADO_LABEL[item.estado] ?? item.estado}
-                      </span>
-                    </div>
-                    {esPropietario && item.estado === "LISTO" ? (
-                      <button
-                        onClick={() => onEntregarItem(pedido, item)}
-                        disabled={actualizandoItemId === item.id}
-                        className="w-full rounded-full border border-accent px-2 py-1 text-[11px] font-semibold text-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {actualizandoItemId === item.id ? "Entregando…" : "Entregar este producto"}
-                      </button>
-                    ) : null}
-                    {esPropietario && (item.estado === "RECIBIDO" || item.estado === "EN_PREPARACION" || item.estado === "LISTO") ? (
-                      <button
-                        onClick={() => onCancelarItem(pedido, item)}
-                        disabled={actualizandoItemId === item.id}
-                        className="w-full rounded-full border border-red-600 px-2 py-1 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Cancelar producto
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
+              <ul className="mt-3 divide-y divide-border/70">
+                {pedido.items.map((item) => {
+                  const puedeCancelar = item.estado === "RECIBIDO" || item.estado === "EN_PREPARACION" || item.estado === "LISTO";
+                  return (
+                    <li
+                      key={item.id}
+                      data-resaltado={item.id === resaltarItemId}
+                      className={cx("grid gap-2 py-2.5 first:pt-0 last:pb-0", item.id === resaltarItemId && `${CLASE_RESALTADO} rounded-xl p-2`)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span className={cx("text-sm", item.estado === "CANCELADO" ? "text-muted-foreground line-through" : "text-foreground")}>
+                          <span className="font-semibold tabular-nums">{item.cantidad}×</span> {conAdiciones(item, item.producto?.nombre)}
+                          <span className="text-muted-foreground"> — {etiquetaDestino(comensales, item.comensalId, item.paraLlevar)}</span>
+                          {item.notas ? <span className="text-muted-foreground"> ({item.notas})</span> : null}
+                          {etiquetaCombo(item) ? <span className="ml-1 text-xs text-accent">{etiquetaCombo(item)}</span> : null}
+                          {item.promocionNombre ? (
+                            <span className="ml-1 inline-flex items-center gap-0.5 text-xs text-exito">
+                              <Tag className="size-3" aria-hidden /> {item.promocionNombre}
+                            </span>
+                          ) : null}
+                        </span>
+                        <Insignia tono={ESTADO_TONO[item.estado] ?? "neutro"} className="shrink-0">
+                          {ITEM_ESTADO_LABEL[item.estado] ?? item.estado}
+                        </Insignia>
+                      </div>
+                      {esPropietario && (item.estado === "LISTO" || puedeCancelar) ? (
+                        <div className="flex flex-wrap gap-2">
+                          {item.estado === "LISTO" ? (
+                            <Boton tamano="sm" variante="exito" onClick={() => onEntregarItem(pedido, item)} disabled={actualizandoItemId === item.id}>
+                              {actualizandoItemId === item.id ? "Entregando…" : "Entregar este producto"}
+                            </Boton>
+                          ) : null}
+                          {puedeCancelar ? (
+                            <Boton tamano="sm" variante="peligroSuave" onClick={() => onCancelarItem(pedido, item)} disabled={actualizandoItemId === item.id}>
+                              Cancelar producto
+                            </Boton>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
-              {esPropietario && pedido.estado === "LISTO" ? (
-                <button
-                  onClick={() => onEntregarPedido(pedido)}
-                  disabled={actualizandoPedidoId === pedido.id}
-                  className="btn-primary mt-2 w-full rounded-full px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Marcar entregado
-                </button>
-              ) : null}
               {esPropietario && pedido.estado !== "ENTREGADO" && pedido.estado !== "CANCELADO" ? (
-                <button
-                  onClick={() => onCancelarPedido(pedido)}
-                  disabled={actualizandoPedidoId === pedido.id}
-                  className="mt-2 w-full rounded-full border border-red-600 px-3 py-1.5 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Cancelar lo que falta del pedido
-                </button>
+                <div className="mt-4 flex flex-col gap-2 border-t border-border/70 pt-4 sm:flex-row">
+                  {pedido.estado === "LISTO" ? (
+                    <Boton className="flex-1" onClick={() => onEntregarPedido(pedido)} disabled={actualizandoPedidoId === pedido.id}>
+                      Marcar entregado
+                    </Boton>
+                  ) : null}
+                  <Boton variante="peligroSuave" className="flex-1" onClick={() => onCancelarPedido(pedido)} disabled={actualizandoPedidoId === pedido.id}>
+                    Cancelar lo que falta del pedido
+                  </Boton>
+                </div>
               ) : null}
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
     </section>
   );
