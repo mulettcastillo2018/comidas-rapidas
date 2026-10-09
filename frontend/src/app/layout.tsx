@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toast } from "@/components/Toast";
 import { Navbar } from "@/components/Navbar";
+import { SCRIPT_TEMA, TemaPorRuta } from "@/components/TemaPorRuta";
 
 export const metadata: Metadata = {
   title: "Comidas Rápidas",
@@ -20,8 +21,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={`${geist.variable} ${geistMono.variable} h-full antialiased`}>
+    // suppressHydrationWarning: el script del tema agrega data-tema a <html> antes de hidratar.
+    <html lang="es" className={`${geist.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }} />
+      </head>
       <body className="flex min-h-full flex-col">
+        <TemaPorRuta />
         <Navbar />
         <main className="flex-1">{children}</main>
         <Toast />

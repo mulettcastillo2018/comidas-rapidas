@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChefHat, Clock, ShoppingBag, StickyNote } from "lucide-react";
+import { Boton, Contenedor, cx, EncabezadoPagina, Insignia, PuntoVivo, type TonoInsignia } from "@/components/ui";
 import { apiFetch, ApiError } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { estaAtrasado, etiquetaCanal, reemplazarPedidoActivo, ubicacionPedido } from "@/lib/pedidos";
@@ -13,10 +14,11 @@ import { CLASE_RESALTADO, useResaltado } from "@/lib/resaltado";
 import { etiquetaCombo } from "@/lib/items";
 import type { Pedido, PedidoItem, Producto } from "@/lib/types";
 
-const COLUMNAS = [
-  { estado: "RECIBIDO" as const, titulo: "Recibido" },
-  { estado: "EN_PREPARACION" as const, titulo: "En preparación" },
-  { estado: "LISTO" as const, titulo: "Listo — falta despachar" },
+// Cada columna lleva el color de su estado (el mismo de ESTADO_TONO en todo el sistema).
+const COLUMNAS: { estado: "RECIBIDO" | "EN_PREPARACION" | "LISTO"; titulo: string; tono: TonoInsignia; barra: string }[] = [
+  { estado: "RECIBIDO", titulo: "Recibido", tono: "info", barra: "bg-info" },
+  { estado: "EN_PREPARACION", titulo: "En preparación", tono: "aviso", barra: "bg-aviso" },
+  { estado: "LISTO", titulo: "Listo — falta despachar", tono: "exito", barra: "bg-exito" },
 ];
 
 interface ItemConContexto extends PedidoItem {
@@ -133,102 +135,132 @@ export default function CocinaPage() {
 
   if (!user || (user.role !== "COCINA" && user.role !== "ADMIN")) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-10 text-center sm:px-6">
+      <Contenedor ancho="medio" className="text-center">
         <p className="text-muted-foreground">Esta sección es solo para cocina.</p>
-      </div>
+      </Contenedor>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-bold">Tablero de cocina</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Cada producto se despacha por separado. Si algo se demora más de lo esperado, se marca en rojo — revisa si de
-        verdad va atrasado o si ya salió y falta confirmarlo aquí.
-      </p>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+    <Contenedor ancho="total">
+      <EncabezadoPagina
+        antetitulo="Cocina"
+        titulo="Tablero de cocina"
+        descripcion="Cada producto se despacha por separado. Si algo se demora más de lo esperado, se marca en rojo — revisa si de verdad va atrasado o si ya salió y falta confirmarlo aquí."
+        acciones={
+          <Insignia tono="exito" className="px-3 py-1">
+            <PuntoVivo tono="exito" /> En vivo
+          </Insignia>
+        }
+      />
+      {error ? (
+        <p role="alert" className="mt-5 rounded-xl bg-peligro/10 px-3.5 py-2.5 text-sm font-medium text-peligro ring-1 ring-peligro/20 ring-inset">
+          {error}
+        </p>
+      ) : null}
 
       {lectorResaltado}
-      <PanelDisponibilidad
-        productos={productos}
-        cambiando={cambiandoProductoId}
-        onCambiar={cambiarDisponibilidad}
-      />
+      <PanelDisponibilidad productos={productos} cambiando={cambiandoProductoId} onCambiar={cambiarDisponibilidad} />
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        {COLUMNAS.map((columna) => (
-          <div key={columna.estado} className="rounded-xl border border-border p-3">
-            <h2 className="text-sm font-bold">
-              {columna.titulo} <span className="text-muted-foreground">({itemsPorColumna[columna.estado]?.length ?? 0})</span>
-            </h2>
-            <div className="mt-3 space-y-3">
-              {itemsPorColumna[columna.estado]?.map((item) => {
-                const atrasado = estaAtrasado(item, item.pedido.creadoEn, ahora);
-                return (
-                  <div
-                    key={item.id}
-                    data-resaltado={estaResaltado(item)}
-                    className={`rounded-lg border p-3 text-sm ${
-                      atrasado ? "animate-pulse border-2 border-red-600 bg-red-50" : "border-border"
-                    } ${estaResaltado(item) ? CLASE_RESALTADO : ""}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold">
-                        {item.pedido.mesaSesion ? `Mesa ${item.pedido.mesaSesion.mesa?.numero}` : etiquetaCanal(item.pedido)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">~{item.tiempoPreparacionMinutos} min</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {item.pedido.mesaSesion
-                        ? `Mesero: ${nombreCompleto(item.pedido.mesaSesion.mesero) || "—"}`
-                        : `Cliente: ${item.pedido.nombreCliente ?? "—"}`}
-                    </p>
-                    <p className="mt-1 font-semibold">
-                      {item.cantidad}× {item.producto?.nombre}
-                      {item.paraLlevar ? " — 🥡 Para llevar" : item.comensal ? ` — ${item.comensal.nombre}` : " — Para compartir"}
-                    </p>
-                    {item.adiciones && item.adiciones.length > 0 ? (
-                      <p className="text-xs font-bold text-accent">+ {item.adiciones.map((a) => a.nombre).join(", ")}</p>
-                    ) : null}
-                    {item.comboNombre ? <p className="text-[11px] text-muted-foreground">{etiquetaCombo(item)}</p> : null}
-                    {item.paraLlevar ? (
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-accent">Empacar para llevar</p>
-                    ) : null}
-                    {item.notas ? <p className="text-xs text-muted-foreground">{item.notas}</p> : null}
-
-                    {atrasado ? (
-                      <p className="mt-2 flex items-center gap-1 text-xs font-bold text-red-700">
-                        <AlertTriangle size={14} />
-                        Se pasó del tiempo — ¿va atrasado o ya salió y falta marcarlo?
+      <div className="mt-6 grid grid-cols-1 items-start gap-4 md:grid-cols-3 xl:gap-6">
+        {COLUMNAS.map((columna) => {
+          const items = itemsPorColumna[columna.estado] ?? [];
+          return (
+            <section key={columna.estado} className="flex min-w-0 flex-col rounded-3xl border border-border bg-surface/50 p-3 sm:p-4">
+              <header className="flex items-center justify-between gap-2 px-1 pb-3">
+                <h2 className="flex items-center gap-2.5 text-sm font-semibold">
+                  <span className={cx("size-2.5 rounded-full", columna.barra)} aria-hidden />
+                  {columna.titulo}
+                </h2>
+                <Insignia tono={columna.tono} className="tabular-nums">
+                  {items.length}
+                </Insignia>
+              </header>
+              <div className="grid gap-3">
+                {items.length === 0 ? (
+                  <p className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-border py-8 text-xs text-muted-foreground">
+                    <ChefHat className="size-4" aria-hidden /> Nada por aquí
+                  </p>
+                ) : null}
+                {items.map((item) => {
+                  const atrasado = estaAtrasado(item, item.pedido.creadoEn, ahora);
+                  return (
+                    <article
+                      key={item.id}
+                      data-resaltado={estaResaltado(item)}
+                      className={cx(
+                        "relative animate-emerger overflow-hidden rounded-2xl border bg-surface p-4 text-sm shadow-suave transition-colors duration-300",
+                        atrasado ? "border-peligro/70 bg-peligro/[0.08] ring-1 ring-peligro/40" : "border-border",
+                        estaResaltado(item) && CLASE_RESALTADO,
+                      )}
+                    >
+                      <span className={cx("absolute inset-y-0 left-0 w-1", atrasado ? "bg-peligro" : columna.barra)} aria-hidden />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-base font-semibold tracking-tight">
+                          {item.pedido.mesaSesion ? `Mesa ${item.pedido.mesaSesion.mesa?.numero}` : etiquetaCanal(item.pedido)}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+                          <Clock className="size-3.5" aria-hidden />~{item.tiempoPreparacionMinutos} min
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {item.pedido.mesaSesion
+                          ? `Mesero: ${nombreCompleto(item.pedido.mesaSesion.mesero) || "—"}`
+                          : `Cliente: ${item.pedido.nombreCliente ?? "—"}`}
                       </p>
-                    ) : null}
+                      <p className="mt-3 text-base leading-snug font-semibold">
+                        <span className="tabular-nums">{item.cantidad}×</span> {item.producto?.nombre}
+                        <span className="font-normal text-muted-foreground">
+                          {item.paraLlevar ? " — Para llevar" : item.comensal ? ` — ${item.comensal.nombre}` : " — Para compartir"}
+                        </span>
+                      </p>
+                      {item.adiciones && item.adiciones.length > 0 ? (
+                        <p className="mt-1 text-sm font-semibold text-accent">+ {item.adiciones.map((a) => a.nombre).join(", ")}</p>
+                      ) : null}
+                      {item.comboNombre ? <p className="mt-1 text-xs text-muted-foreground">{etiquetaCombo(item)}</p> : null}
+                      {item.paraLlevar || item.notas ? (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
+                          {item.paraLlevar ? (
+                            <Insignia tono="info" className="tracking-wide uppercase">
+                              <ShoppingBag aria-hidden /> Empacar para llevar
+                            </Insignia>
+                          ) : null}
+                          {item.notas ? (
+                            <Insignia tono="aviso">
+                              <StickyNote aria-hidden /> {item.notas}
+                            </Insignia>
+                          ) : null}
+                        </div>
+                      ) : null}
 
-                    {columna.estado === "RECIBIDO" ? (
-                      <button
-                        onClick={() => avanzarItem(item, "EN_PREPARACION")}
-                        disabled={updatingItemId === item.id}
-                        className="btn-primary mt-3 w-full rounded-full px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Empezar a preparar
-                      </button>
-                    ) : columna.estado === "EN_PREPARACION" ? (
-                      <button
-                        onClick={() => avanzarItem(item, "LISTO")}
-                        disabled={updatingItemId === item.id}
-                        className="btn-primary mt-3 w-full rounded-full px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Ya salió
-                      </button>
-                    ) : (
-                      <p className="mt-3 text-center text-xs font-semibold text-accent">Esperando al mesero…</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+                      {atrasado ? (
+                        <p className="mt-3 flex items-start gap-1.5 text-xs font-semibold text-peligro">
+                          <AlertTriangle className="mt-px size-4 shrink-0 animate-pulse" aria-hidden />
+                          Se pasó del tiempo — ¿va atrasado o ya salió y falta marcarlo?
+                        </p>
+                      ) : null}
+
+                      {columna.estado === "RECIBIDO" ? (
+                        <Boton bloque className="mt-4" onClick={() => avanzarItem(item, "EN_PREPARACION")} disabled={updatingItemId === item.id}>
+                          Empezar a preparar
+                        </Boton>
+                      ) : columna.estado === "EN_PREPARACION" ? (
+                        <Boton bloque variante="exito" className="mt-4" onClick={() => avanzarItem(item, "LISTO")} disabled={updatingItemId === item.id}>
+                          Ya salió
+                        </Boton>
+                      ) : (
+                        <p className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-exito/10 py-2 text-xs font-semibold text-exito">
+                          <PuntoVivo tono="exito" /> Esperando al mesero…
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
       </div>
-    </div>
+    </Contenedor>
   );
 }
