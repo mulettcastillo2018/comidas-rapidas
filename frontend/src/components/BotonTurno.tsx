@@ -5,6 +5,7 @@ import { Clock } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatoHora } from "@/lib/tiempoEstimado";
 import { useAuthStore } from "@/store/auth.store";
+import { cx, PuntoVivo } from "@/components/ui";
 import { useToastStore } from "@/store/toast.store";
 
 interface TurnoAbierto {
@@ -56,11 +57,15 @@ export function BotonTurno() {
       onClick={marcar}
       disabled={ocupado}
       title={abierto ? `En turno desde las ${formatoHora(abierto.entrada)}` : "Marcar la entrada a tu turno"}
-      className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${
-        abierto ? "bg-green-100 text-green-800" : "bg-muted text-muted-foreground hover:bg-accent hover:text-white"
-      }`}
+      aria-label={abierto ? `En turno desde las ${formatoHora(abierto.entrada)}. Terminar turno` : "Iniciar turno"}
+      className={cx(
+        "flex h-9 w-9 items-center justify-center gap-2 rounded-full text-xs font-semibold ring-1 ring-inset transition-all duration-200 ease-resorte active:scale-95 disabled:opacity-50 sm:w-auto sm:px-3",
+        abierto
+          ? "bg-exito/10 text-exito ring-exito/20 hover:bg-exito/15"
+          : "bg-surface text-muted-foreground ring-border hover:text-foreground hover:ring-border-strong",
+      )}
     >
-      <Clock size={14} />
+      {abierto ? <PuntoVivo tono="exito" /> : <Clock className="size-3.5" aria-hidden />}
       <span className="hidden sm:inline">{abierto ? `En turno · ${formatoHora(abierto.entrada)}` : "Iniciar turno"}</span>
     </button>
   );

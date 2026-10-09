@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin } from "lucide-react";
+import { ChevronDown, MapPin } from "lucide-react";
 import { activas, elegirSede, nombreActual, useAlcanceSedes, useSedes } from "@/lib/sedes";
 
 // En la barra: la sede en la que se trabaja. El administrador general la
@@ -12,20 +12,24 @@ export function SelectorSede() {
 
   if (!sedes.puedeCambiar) {
     return (
-      <span className="flex items-center gap-1 text-xs font-semibold text-muted-foreground" title="Tu sede">
-        <MapPin size={14} />
+      <span className="flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-muted-foreground ring-1 ring-border ring-inset" title="Tu sede">
+        <MapPin className="size-3.5 text-accent" aria-hidden />
         {nombreActual(sedes)}
       </span>
     );
   }
 
   return (
-    <label className="flex items-center gap-1 text-xs font-semibold text-muted-foreground" title="Sede en la que estás trabajando">
-      <MapPin size={14} />
+    <label
+      className="relative flex h-9 items-center rounded-full bg-surface text-xs font-semibold ring-1 ring-border transition-shadow duration-200 ring-inset focus-within:ring-2 focus-within:ring-accent/40 hover:ring-border-strong"
+      title="Sede en la que estás trabajando"
+    >
+      <MapPin className="pointer-events-none absolute left-3 size-3.5 text-accent" aria-hidden />
+      <span className="sr-only">Sede</span>
       <select
         value={sedes.actual}
         onChange={(e) => elegirSede(e.target.value)}
-        className="rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-semibold text-foreground"
+        className="h-full max-w-48 cursor-pointer appearance-none truncate rounded-full bg-transparent pr-8 pl-8 text-foreground outline-none"
       >
         {lista.map((s) => (
           <option key={s.id} value={s.id}>
@@ -33,6 +37,7 @@ export function SelectorSede() {
           </option>
         ))}
       </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-muted-foreground" aria-hidden />
     </label>
   );
 }

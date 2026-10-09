@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, ChevronRight } from "lucide-react";
+import { Bell, CheckCheck, ChevronRight } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { suscribirEnVivo } from "@/lib/socket";
 import { playForTipo, unlockAudio } from "@/lib/notificationSound";
 import { useAuthStore } from "@/store/auth.store";
+import { cx } from "@/components/ui";
+import { useClicFuera } from "@/lib/useClicFuera";
 import type { Notificacion, UserRole } from "@/lib/types";
 
 const TIPO_LABEL: Record<string, string> = {
@@ -52,7 +54,8 @@ export function NotificationBell() {
   const router = useRouter();
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [abierto, setAbierto] = useState(false);
-  const contenedorRef = useRef<HTMLDivElement>(null);
+  const cerrar = useCallback(() => setAbierto(false), []);
+  const contenedorRef = useClicFuera<HTMLDivElement>(abierto, cerrar);
 
   useEffect(() => {
     if (!token || !user) return;
@@ -81,14 +84,6 @@ export function NotificationBell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user]);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (contenedorRef.current && !contenedorRef.current.contains(e.target as Node)) setAbierto(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   if (!user) return null;
 
   const noLeidas = notificaciones.filter((n) => !n.leida).length;
@@ -115,45 +110,71 @@ export function NotificationBell() {
     <div ref={contenedorRef} className="relative">
       <button
         onClick={() => setAbierto((v) => !v)}
-        className="relative rounded-full p-1.5 text-muted-foreground hover:text-foreground"
+        aria-expanded={abierto}
+        aria-label={noLeidas > 0 ? `Notificaciones: ${noLeidas} sin leer` : "Notificaciones"}
+        className={cx(
+          "relative grid size-9 place-items-center rounded-full transition-colors duration-200 hover:bg-surface-2 hover:text-foreground",
+          abierto ? "bg-surface-2 text-foreground" : "text-muted-foreground",
+        )}
         title="Notificaciones"
       >
-        <Bell size={18} />
+        <Bell className="size-[18px]" />
         {noLeidas > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+          <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 animate-emerger items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-foreground ring-2 ring-background tabular-nums">
             {noLeidas > 9 ? "9+" : noLeidas}
           </span>
         ) : null}
       </button>
       {abierto ? (
-        <div className="absolute right-0 z-50 mt-2 max-h-96 w-80 overflow-y-auto rounded-xl border border-border bg-background shadow-lg">
-          <div className="flex items-center justify-between border-b border-border p-3">
-            <p className="text-sm font-semibold">Notificaciones</p>
+        <div className="fixed inset-x-3 top-[4.25rem] z-50 flex max-h-[min(28rem,calc(100dvh-6rem))] origin-top-right animate-emerger flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-flotante sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-3 sm:w-96">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold">
+              Notificaciones
+              {noLeidas > 0 ? <span className="ml-2 text-xs font-medium text-muted-foreground tabular-nums">{noLeidas} sin leer</span> : null}
+            </p>
             {noLeidas > 0 ? (
-              <button onClick={marcarTodasLeidas} className="text-xs font-semibold text-accent">
+              <button
+                onClick={marcarTodasLeidas}
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-accent transition-colors duration-200 hover:bg-accent/10"
+              >
+                <CheckCheck className="size-3.5" aria-hidden />
                 Marcar todas leídas
               </button>
             ) : null}
           </div>
           {notificaciones.length === 0 ? (
-            <p className="p-4 text-center text-xs text-muted-foreground">Sin notificaciones todavía.</p>
+            <div className="grid place-items-center gap-2 px-4 py-10 text-center">
+              <span className="grid size-10 place-items-center rounded-full bg-surface-2 text-muted-foreground">
+                <Bell className="size-4" aria-hidden />
+              </span>
+              <p className="text-xs text-muted-foreground">Sin notificaciones todavía.</p>
+            </div>
           ) : (
-            <ul className="divide-y divide-border">
+            <ul className="overflow-y-auto overscroll-contain p-1.5">
               {notificaciones.map((n) => (
                 <li key={n.id}>
                   <button
                     onClick={() => abrir(n)}
                     title="Ir a donde está"
-                    className={`flex w-full items-center gap-2 p-3 text-left text-xs hover:bg-muted ${n.leida ? "" : "bg-accent/5"}`}
+                    className={cx(
+                      "group flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition-colors duration-200 hover:bg-surface-2",
+                      n.leida ? "" : "bg-accent/[0.06]",
+                    )}
                   >
+                    <span className={cx("mt-1.5 size-1.5 shrink-0 rounded-full", n.leida ? "bg-transparent" : "bg-accent")} aria-hidden />
                     <span className="min-w-0 flex-1">
-                      <span className="block font-semibold text-accent">{TIPO_LABEL[n.tipo] ?? n.tipo}</span>
-                      <span className="mt-0.5 block text-foreground">{n.mensaje}</span>
-                      <span className="mt-1 block text-[10px] text-muted-foreground">
-                        {new Date(n.creadaEn).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-accent">{TIPO_LABEL[n.tipo] ?? n.tipo}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                          {new Date(n.creadaEn).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
                       </span>
+                      <span className="mt-0.5 block leading-relaxed text-foreground">{n.mensaje}</span>
                     </span>
-                    <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
+                    <ChevronRight
+                      className="mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-resorte group-hover:translate-x-0.5"
+                      aria-hidden
+                    />
                   </button>
                 </li>
               ))}

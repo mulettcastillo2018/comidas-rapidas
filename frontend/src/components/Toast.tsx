@@ -13,13 +13,17 @@ export function Toast() {
     return () => clearTimeout(timer);
   }, [message, clear]);
 
-  if (!message) return null;
-
   return (
-    <div className="fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-      <div className="rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-lg">
-        {message}
-      </div>
+    // La región existe siempre para que los lectores de pantalla anuncien cada aviso.
+    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4 print:hidden">
+      {message ? (
+        <div
+          key={message}
+          className="max-w-md animate-emerger rounded-2xl bg-foreground/90 px-4 py-3 text-center text-sm font-medium text-background shadow-flotante backdrop-blur-xl"
+        >
+          {message}
+        </div>
+      ) : null}
     </div>
   );
 }
