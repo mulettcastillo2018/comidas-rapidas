@@ -1,55 +1,209 @@
 @import "tailwindcss";
 
+/*
+ * Sistema de diseño de Comidas Rápidas (ver docs/DISENO.md).
+ *
+ * Todo sale de estos tokens: las pantallas usan las clases utilitarias que
+ * Tailwind genera a partir de ellos (bg-surface, text-peligro, shadow-suave,
+ * ease-resorte, animate-aparecer...) y no colores sueltos.
+ *
+ * Tema claro por defecto. El oscuro profundo se activa con data-tema="oscuro"
+ * en un contenedor (cocina y pantalla) y cambia solo los valores: las mismas
+ * clases sirven para los dos temas.
+ */
+
+@custom-variant dark (&:where([data-tema="oscuro"], [data-tema="oscuro"] *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #1c1410;
-  --accent: #e2402a;
+  /* Superficies y texto */
+  --background: #faf8f6;
+  --surface: #ffffff;
+  --surface-2: #f4f1ee;
+  --foreground: #17120f;
+  --muted: #f4f1ee;
+  --muted-foreground: #6b625a;
+  --border: #ebe6e1;
+  --border-strong: #dcd4cd;
+
+  /* Marca: brasa (acción principal) y ámbar (solo para resaltar) */
+  --accent: #d63a24;
   --accent-foreground: #ffffff;
   --accent-2: #f2a71b;
-  --border: #ece7e2;
-  --muted: #f7f4f1;
-  --muted-foreground: #74695f;
+
+  /* Estados: siempre acompañados de texto o ícono, nunca solo color */
+  --exito: #15803d;
+  --aviso: #b45309;
+  --peligro: #dc2626;
+  --info: #0369a1;
+
+  --ring: #d63a24;
+  --sombra: 23 18 15;
+  --resplandor: color-mix(in oklab, var(--accent-2) 12%, transparent);
+}
+
+[data-tema="oscuro"] {
+  --background: #0c0a09;
+  --surface: #161311;
+  --surface-2: #1f1b18;
+  --foreground: #f5f1ed;
+  --muted: #1f1b18;
+  --muted-foreground: #a69c93;
+  --border: #2a2420;
+  --border-strong: #3d352f;
+
+  --accent: #ff6b4a;
+  --accent-foreground: #1a0b06;
+  --accent-2: #fbbf24;
+
+  --exito: #4ade80;
+  --aviso: #fbbf24;
+  --peligro: #f87171;
+  --info: #38bdf8;
+
+  --ring: #ff6b4a;
+  --sombra: 0 0 0;
+  --resplandor: color-mix(in oklab, var(--accent) 10%, transparent);
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-2: var(--accent-2);
-  --color-border: var(--border);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --font-sans: "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto,
-    Helvetica, Arial, sans-serif;
+  --color-exito: var(--exito);
+  --color-aviso: var(--aviso);
+  --color-peligro: var(--peligro);
+  --color-info: var(--info);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Sombras suaves y profundas, del mismo tono cálido que el texto */
+  --shadow-suave: 0 1px 2px 0 rgb(var(--sombra) / 0.04), 0 4px 16px -8px rgb(var(--sombra) / 0.1);
+  --shadow-elevada: 0 2px 6px -2px rgb(var(--sombra) / 0.06), 0 18px 44px -18px rgb(var(--sombra) / 0.22);
+  --shadow-flotante: 0 4px 12px -4px rgb(var(--sombra) / 0.08), 0 32px 64px -24px rgb(var(--sombra) / 0.28);
+  --shadow-acento: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 8px 20px -10px color-mix(in srgb, var(--accent) 75%, transparent);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+@theme {
+  /* Movimiento: resorte para lo que se toca, salida rápida para lo que aparece */
+  --ease-resorte: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-salida: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-aparecer: aparecer 0.5s var(--ease-salida) both;
+  --animate-emerger: emerger 0.35s var(--ease-resorte) both;
+  --animate-brillo: brillo 1.6s linear infinite;
+
+  @keyframes aparecer {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes emerger {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes brillo {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
 }
 
-.brand-gradient-text {
-  background-image: linear-gradient(90deg, var(--accent), var(--accent-2));
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background:
+      radial-gradient(1200px 520px at 50% -220px, var(--resplandor), transparent 70%),
+      var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  /* Foco visible y consistente para teclado en todo el sitio */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-.btn-primary {
-  background-image: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #ffffff;
-  font-weight: 700;
-  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--accent) 60%, transparent);
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-}
+@layer components {
+  .brand-gradient-text {
+    background-image: linear-gradient(90deg, var(--accent), var(--accent-2));
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
 
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 28px -10px color-mix(in srgb, var(--accent) 70%, transparent);
+  /*
+   * Botón principal heredado: las pantallas que aún no pasan al sistema nuevo
+   * lo usan. Las migradas usan <Boton> (components/ui/boton.tsx); se borra
+   * cuando ya nadie lo use.
+   */
+  .btn-primary {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+    font-weight: 600;
+    box-shadow: var(--shadow-acento);
+    transition:
+      transform 0.2s var(--ease-resorte),
+      box-shadow 0.2s ease,
+      filter 0.2s ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.06);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 }
 
 /* Ver lib/impresion.tsx: al imprimir una precuenta o un comprobante, solo
@@ -57,5 +211,9 @@ body {
 @media print {
   body.imprimiendo > :not(.zona-impresion) {
     display: none !important;
+  }
+
+  body {
+    background: #ffffff;
   }
 }
