@@ -44,16 +44,27 @@ ajustes que no son de color.
 | `Insignia` / `PuntoVivo` | Estados cortos con tono semántico; punto con pulso para "en vivo" |
 | `EncabezadoPagina` / `Contenedor` | Título de pantalla con acciones; ancho y márgenes de página |
 | `Esqueleto` | Marcador de carga |
+| `Segmentado` | Pestañas en control segmentado; en pantallas angostas se desplaza en vez de partir el texto |
+| `cx` | Une clases y resuelve choques con tailwind-merge (conoce los tokens propios): la última clase gana |
 
 ## Avance por secciones
 
-El rediseño se aplica sección por sección. Mientras tanto, la clase heredada `.btn-primary` ya usa los
-tokens nuevos para que las pantallas pendientes no desentonen; se elimina cuando ninguna la use.
+El rediseño se aplicó sección por sección, cada una en su propio commit y revisada con capturas en
+celular, tableta, escritorio y TV:
 
-1. Fundamentos: tokens, tipografía, componentes base y guía viva.
-2. Marco: barra superior, inicio y acceso.
-3. Mesero.
-4. Cocina (tema oscuro).
-5. Pantalla del salón (tema oscuro).
+1. Fundamentos: tokens, tipografía, componentes base y guía viva (`/diseno`).
+2. Marco: barra superior de vidrio con menú móvil, inicio en grilla bento y acceso.
+3. Mesero: mesas y detalle de mesa en dos columnas.
+4. Cocina en tema oscuro (el tema se aplica por ruta antes de pintar: `TemaPorRuta`).
+5. Pantalla del salón en oscuro, pensada para TV.
 6. Páginas públicas: carta QR, seguimiento y encuesta.
-7. Administración.
+7. Administración: barra lateral agrupada y pasada de estilos en todas las pantallas.
+
+## Notas para seguir
+
+- Los campos que todavía no usan `<Entrada>`/`<Selector>` toman fondo, borde al pasar el mouse y anillo de
+  foco desde la capa base de `globals.css` (selector `:where(...)[class*="border-border"]`, sin especificidad).
+- La clase `.btn-primary` sigue en las pantallas de administración y ya usa los tokens; en código nuevo se
+  prefiere `<Boton>`.
+- Funcionalidad intacta: las pruebas del frontend pasan y un recorrido con clics reales (pedido, cocina,
+  entrega, cuenta y cobro) se verificó en una sede temporal que luego se borra.
