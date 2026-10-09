@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Minus, Plus } from "lucide-react";
+import { ArrowRight, Flame, Minus, Plus, Tag } from "lucide-react";
+import { Boton, cx, Entrada, Esqueleto, Insignia, PuntoVivo } from "@/components/ui";
 import { apiFetch, ApiError } from "@/lib/api";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { resolverImagenUrl } from "@/lib/images";
@@ -172,201 +173,252 @@ function CartaContent() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-      <h1 className="brand-gradient-text text-center text-3xl font-extrabold tracking-tight">Comidas Rápidas</h1>
-      <p className="mt-2 text-center text-muted-foreground">Nuestra carta</p>
+    <div className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6 sm:pt-12">
+      <header className="animate-aparecer text-center">
+        <span className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-linear-to-br from-accent to-accent-2 text-white shadow-acento">
+          <Flame className="size-7" aria-hidden />
+        </span>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          <span className="brand-gradient-text">Comidas Rápidas</span>
+        </h1>
+        <p className="mt-2 text-muted-foreground">Nuestra carta{sedeNombre ? ` · ${sedeNombre}` : ""}</p>
+      </header>
 
-      {mesaId ? (
-        <div className="mt-4">
-          <LlamarMesero mesaId={mesaId} />
-        </div>
-      ) : null}
+      <div className="mx-auto mt-6 grid max-w-2xl gap-3">
+        {mesaId ? <LlamarMesero mesaId={mesaId} /> : null}
 
-      {puedeOrdenar && pedidoReciente ? (
-        <Link
-          href={`/seguimiento/${pedidoReciente}`}
-          className="mt-6 block rounded-xl border border-accent bg-accent/5 p-3 text-center text-sm font-semibold text-accent"
-        >
-          Tienes un pedido en curso → ver cómo va
-        </Link>
-      ) : null}
+        {puedeOrdenar && pedidoReciente ? (
+          <Link
+            href={`/seguimiento/${pedidoReciente}`}
+            className="group flex items-center justify-between gap-3 rounded-2xl bg-accent/10 px-4 py-3.5 text-sm font-semibold text-accent ring-1 ring-accent/25 transition-colors ring-inset hover:bg-accent/15"
+          >
+            <span className="flex items-center gap-2">
+              <PuntoVivo tono="acento" /> Tienes un pedido en curso → ver cómo va
+            </span>
+            <ArrowRight className="size-4 transition-transform duration-200 ease-resorte group-hover:translate-x-0.5" aria-hidden />
+          </Link>
+        ) : null}
 
-      {puedeOrdenar ? (
-        <p className="mt-4 rounded-xl bg-muted p-3 text-center text-sm text-muted-foreground">
-          {esRecoger
-            ? `Arma tu pedido para recoger${sedeNombre ? ` en ${sedeNombre}` : ""}. Cuando termines, acércate a caja para confirmarlo y pagarlo.`
-            : "¿Ya sabes qué vas a pedir? Agrégalo aquí abajo y quedará listo para cuando llegue tu mesero."}
-        </p>
-      ) : null}
+        {puedeOrdenar ? (
+          <p className="rounded-2xl bg-surface-2/80 px-4 py-3.5 text-center text-sm leading-relaxed text-muted-foreground ring-1 ring-border ring-inset">
+            {esRecoger
+              ? `Arma tu pedido para recoger${sedeNombre ? ` en ${sedeNombre}` : ""}. Cuando termines, acércate a caja para confirmarlo y pagarlo.`
+              : "¿Ya sabes qué vas a pedir? Agrégalo aquí abajo y quedará listo para cuando llegue tu mesero."}
+          </p>
+        ) : null}
+      </div>
 
       {!categorias ? (
-        <p className="mt-8 text-center text-sm text-muted-foreground">Cargando…</p>
+        <div className="mx-auto mt-10 grid max-w-2xl gap-3" aria-label="Cargando…">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Esqueleto key={i} className="h-24 rounded-2xl" />
+          ))}
+        </div>
       ) : categorias.length === 0 ? (
-        <p className="mt-8 text-center text-sm text-muted-foreground">Todavía no hay productos disponibles.</p>
+        <p className="mt-10 text-center text-sm text-muted-foreground">Todavía no hay productos disponibles.</p>
       ) : (
-        <div className="mt-8 space-y-8 pb-40">
-          {categorias.map((categoria) => {
-            const CategoriaIcon = getCategoryIcon(categoria.icono);
-            return (
-              <section key={categoria.id}>
-                <div className="flex items-center gap-2 border-b border-border pb-2">
-                  <CategoriaIcon size={18} className="text-accent" />
-                  <h2 className="text-lg font-bold">{categoria.nombre}</h2>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {categoria.productos.map((producto) => {
-                    const imagen = resolverImagenUrl(producto.imagenUrl);
-                    const elegidas = adicionesElegidas[producto.id] ?? [];
-                    return (
-                      <div key={producto.id}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
+        <>
+          {/* Atajos a cada categoría: quedan fijos bajo la barra al bajar por la carta. */}
+          <nav
+            aria-label="Categorías"
+            className="sticky top-16 z-20 -mx-4 mt-8 border-b border-border/60 bg-background/80 px-4 py-3 backdrop-blur-xl backdrop-saturate-150 sm:-mx-6 sm:px-6"
+          >
+            <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {categorias.map((categoria) => {
+                const Icono = getCategoryIcon(categoria.icono);
+                return (
+                  <a
+                    key={categoria.id}
+                    href={`#categoria-${categoria.id}`}
+                    className="flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 py-1.5 text-sm font-medium text-muted-foreground shadow-suave ring-1 ring-border transition-colors ring-inset hover:text-foreground"
+                  >
+                    <Icono className="size-4 text-accent" aria-hidden />
+                    {categoria.nombre}
+                  </a>
+                );
+              })}
+            </div>
+          </nav>
+
+          <div className={cx("mt-6 grid gap-10", puedeOrdenar && carrito.length > 0 ? "pb-[26rem] sm:pb-80" : "pb-10")}>
+            {categorias.map((categoria) => {
+              const CategoriaIcon = getCategoryIcon(categoria.icono);
+              return (
+                <section key={categoria.id} id={`categoria-${categoria.id}`} className="scroll-mt-32">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid size-9 place-items-center rounded-xl bg-accent/10 text-accent">
+                      <CategoriaIcon className="size-[18px]" aria-hidden />
+                    </span>
+                    <h2 className="text-xl font-semibold tracking-tight">{categoria.nombre}</h2>
+                  </div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {categoria.productos.map((producto) => {
+                      const imagen = resolverImagenUrl(producto.imagenUrl);
+                      const elegidas = adicionesElegidas[producto.id] ?? [];
+                      return (
+                        <article key={producto.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-suave">
+                          <div className="flex items-start gap-3.5">
                             {imagen ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={imagen} alt={producto.nombre} className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+                              <img src={imagen} alt={producto.nombre} className="size-20 shrink-0 rounded-xl object-cover ring-1 ring-border" />
                             ) : null}
-                            <div>
-                              <p className="font-semibold">{producto.nombre}</p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="font-semibold leading-snug">{producto.nombre}</p>
+                                <div className="shrink-0 text-right">
+                                  {producto.promocion ? (
+                                    <p className="text-xs text-muted-foreground line-through tabular-nums">{formatoPesos(producto.precio)}</p>
+                                  ) : null}
+                                  <p className="font-semibold tabular-nums">{formatoPesos(producto.promocion?.precio ?? producto.precio)}</p>
+                                </div>
+                              </div>
                               {producto.promocion ? (
-                                <p className="text-xs font-semibold text-green-700">
-                                  🏷️ {producto.promocion.nombre}: −{producto.promocion.descuentoPct}%
-                                </p>
+                                <Insignia tono="exito" className="mt-1">
+                                  <Tag aria-hidden /> {producto.promocion.nombre}: −{producto.promocion.descuentoPct}%
+                                </Insignia>
                               ) : null}
-                              <p className="text-sm text-muted-foreground">{producto.descripcion}</p>
+                              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{producto.descripcion}</p>
                               {producto.esCombo && producto.componentes?.length ? (
-                                <p className="text-xs text-muted-foreground">
+                                <p className="mt-1 text-xs text-muted-foreground">
                                   Incluye: {producto.componentes.map((c) => `${c.cantidad > 1 ? `${c.cantidad}× ` : ""}${c.producto.nombre}`).join(" + ")}
                                 </p>
                               ) : null}
                             </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <div className="text-right">
-                              {producto.promocion ? (
-                                <p className="text-xs text-muted-foreground line-through">{formatoPesos(producto.precio)}</p>
-                              ) : null}
-                              <p className="font-semibold">{formatoPesos(producto.promocion?.precio ?? producto.precio)}</p>
+                          {(producto.adiciones?.length ?? 0) > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {producto.adiciones!.map((a) =>
+                                puedeOrdenar ? (
+                                  <button
+                                    key={a.id}
+                                    type="button"
+                                    aria-pressed={elegidas.includes(a.id)}
+                                    onClick={() => alternarAdicion(producto.id, a.id)}
+                                    className={cx(
+                                      "rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-all duration-200 ease-resorte active:scale-95",
+                                      elegidas.includes(a.id)
+                                        ? "bg-accent text-accent-foreground ring-accent"
+                                        : "bg-surface text-muted-foreground ring-border hover:text-foreground",
+                                    )}
+                                  >
+                                    {a.nombre}
+                                    {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
+                                  </button>
+                                ) : (
+                                  <span key={a.id} className="rounded-full bg-surface-2 px-2.5 py-1 text-xs text-muted-foreground">
+                                    {a.nombre}
+                                    {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
+                                  </span>
+                                ),
+                              )}
                             </div>
-                            {puedeOrdenar ? (
-                              <button
-                                onClick={() => agregarAlCarrito(producto)}
-                                className="rounded-full border border-accent px-2 py-1 text-xs font-semibold text-accent"
-                              >
-                                + Agregar
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                        {(producto.adiciones?.length ?? 0) > 0 ? (
-                          <div className="mt-1.5 flex flex-wrap gap-1.5 sm:pl-[76px]">
-                            {producto.adiciones!.map((a) =>
-                              puedeOrdenar ? (
-                                <button
-                                  key={a.id}
-                                  type="button"
-                                  onClick={() => alternarAdicion(producto.id, a.id)}
-                                  className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                                    elegidas.includes(a.id) ? "border-accent bg-accent text-white" : "border-border text-muted-foreground"
-                                  }`}
-                                >
-                                  {a.nombre}
-                                  {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
-                                </button>
-                              ) : (
-                                <span key={a.id} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                                  {a.nombre}
-                                  {a.precio > 0 ? ` +${formatoPesos(a.precio)}` : ""}
-                                </span>
-                              )
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+                          ) : null}
+                          {puedeOrdenar ? (
+                            <Boton variante="secundario" tamano="sm" className="mt-auto self-end text-accent" onClick={() => agregarAlCarrito(producto)}>
+                              <Plus /> Agregar
+                            </Boton>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {puedeOrdenar && carrito.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
-          <div className="mx-auto max-w-2xl">
-            <h2 className="text-sm font-bold">Tu pedido</h2>
-            <div className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+        <div className="fixed inset-x-0 bottom-0 z-30 animate-aparecer px-2 pb-2 sm:px-4 sm:pb-4">
+          <div className="mx-auto max-w-2xl rounded-3xl border border-border/70 bg-surface/90 p-4 shadow-flotante backdrop-blur-xl backdrop-saturate-150 sm:p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Tu pedido</h2>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {carrito.reduce((s, i) => s + i.cantidad, 0)} producto{carrito.reduce((s, i) => s + i.cantidad, 0) === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="mt-3 max-h-40 space-y-2.5 overflow-y-auto overscroll-contain pr-1">
               {carrito.map((item) => (
-                <div key={item.clave} className="space-y-1 border-b border-border pb-2 text-sm last:border-0">
+                <div key={item.clave} className="space-y-1.5 border-b border-border/70 pb-2.5 text-sm last:border-0 last:pb-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span>
-                      {item.nombre} <span className="text-xs text-muted-foreground">{formatoPesos(item.precio)}</span>
+                    <span className="min-w-0">
+                      {item.nombre} <span className="text-xs text-muted-foreground tabular-nums">{formatoPesos(item.precio)}</span>
                     </span>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => cambiarCantidad(item.clave, -1)} className="text-muted-foreground">
-                        <Minus size={14} />
+                    <div className="flex shrink-0 items-center gap-1 rounded-full bg-surface-2 p-0.5 ring-1 ring-border ring-inset">
+                      <button
+                        onClick={() => cambiarCantidad(item.clave, -1)}
+                        aria-label={`Quitar uno de ${item.nombre}`}
+                        className="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+                      >
+                        <Minus className="size-3.5" />
                       </button>
-                      <span className="w-5 text-center">{item.cantidad}</span>
-                      <button onClick={() => cambiarCantidad(item.clave, 1)} className="text-muted-foreground">
-                        <Plus size={14} />
+                      <span className="w-5 text-center text-sm font-semibold tabular-nums">{item.cantidad}</span>
+                      <button
+                        onClick={() => cambiarCantidad(item.clave, 1)}
+                        aria-label={`Agregar uno de ${item.nombre}`}
+                        className="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+                      >
+                        <Plus className="size-3.5" />
                       </button>
                     </div>
                   </div>
-                  <input
+                  <Entrada
+                    tamano="sm"
                     value={item.notas}
                     onChange={(e) => cambiarNotas(item.clave, e.target.value)}
                     placeholder="Notas (ej. sin cebolla)"
-                    className="w-full rounded-lg border border-border px-2 py-1 text-xs"
+                    aria-label={`Notas para ${item.nombre}`}
                   />
                   {!esRecoger ? (
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                       <input
                         type="checkbox"
                         checked={item.paraLlevar}
                         onChange={(e) => cambiarParaLlevar(item.clave, e.target.checked)}
+                        className="size-4 accent-accent"
                       />
-                      🥡 Es para llevar (para alguien que no está en la mesa)
+                      Es para llevar (para alguien que no está en la mesa)
                     </label>
                   ) : null}
                 </div>
               ))}
             </div>
-            <div className="mt-2 flex items-center justify-between text-sm font-bold">
-              <span>Total</span>
-              <span>{formatoPesos(total)}</span>
+            <div className="mt-3 flex items-baseline justify-between border-t border-border/70 pt-3">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="text-lg font-semibold tabular-nums">{formatoPesos(total)}</span>
             </div>
-            <input
-              value={nombreCliente}
-              onChange={(e) => setNombreCliente(e.target.value)}
-              placeholder={esRecoger ? "Tu nombre" : "Tu nombre (opcional)"}
-              className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm"
-            />
-            {esRecoger ? (
-              <input
-                value={telefonoCliente}
-                onChange={(e) => setTelefonoCliente(e.target.value)}
-                placeholder="Tu teléfono (para avisarte)"
-                inputMode="tel"
-                className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm"
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Entrada
+                value={nombreCliente}
+                onChange={(e) => setNombreCliente(e.target.value)}
+                placeholder={esRecoger ? "Tu nombre" : "Tu nombre (opcional)"}
+                aria-label="Tu nombre"
+                className={esRecoger ? "" : "sm:col-span-2"}
               />
-            ) : null}
+              {esRecoger ? (
+                <Entrada
+                  value={telefonoCliente}
+                  onChange={(e) => setTelefonoCliente(e.target.value)}
+                  placeholder="Tu teléfono (para avisarte)"
+                  inputMode="tel"
+                  aria-label="Tu teléfono"
+                />
+              ) : null}
+            </div>
             {esRecoger ? (
-              <label className="mt-2 flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
-                <input type="checkbox" checked={aceptaDatos} onChange={(e) => setAceptaDatos(e.target.checked)} className="mt-0.5" />
+              <label className="mt-2.5 flex cursor-pointer items-start gap-2 text-[11px] leading-snug text-muted-foreground">
+                <input type="checkbox" checked={aceptaDatos} onChange={(e) => setAceptaDatos(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-accent" />
                 <span>
-                  Autorizo el uso de mi nombre y teléfono solo para gestionar este pedido y avisarme cuando esté listo. El
-                  teléfono se borra a los 30 días (Ley 1581 de 2012).
+                  Autorizo el uso de mi nombre y teléfono solo para gestionar este pedido y avisarme cuando esté listo. El teléfono se borra a los 30 días (Ley 1581 de
+                  2012).
                 </span>
               </label>
             ) : null}
-            {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
-            <button
-              onClick={enviarPedido}
-              disabled={enviando}
-              className="btn-primary mt-3 w-full rounded-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            {error ? <p className="mt-2.5 text-xs font-medium text-peligro">{error}</p> : null}
+            <Boton bloque tamano="lg" className="mt-3" onClick={enviarPedido} cargando={enviando}>
               {enviando ? "Enviando…" : "Enviar mi pedido"}
-            </button>
+            </Boton>
           </div>
         </div>
       ) : null}
@@ -376,7 +428,16 @@ function CartaContent() {
 
 export default function CartaPage() {
   return (
-    <Suspense fallback={<div className="mx-auto max-w-2xl px-4 py-10 text-center sm:px-6">Cargando…</div>}>
+    <Suspense
+      fallback={
+        <div className="mx-auto grid max-w-2xl gap-3 px-4 py-16 sm:px-6" aria-label="Cargando…">
+          <Esqueleto className="mx-auto size-14 rounded-2xl" />
+          <Esqueleto className="mx-auto h-8 w-56" />
+          <Esqueleto className="mt-6 h-24 rounded-2xl" />
+          <Esqueleto className="h-24 rounded-2xl" />
+        </div>
+      }
+    >
       <CartaContent />
     </Suspense>
   );

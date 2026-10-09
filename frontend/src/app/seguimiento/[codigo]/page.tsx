@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Check } from "lucide-react";
+import { ArrowLeft, Check, Flame, PartyPopper, Star, TriangleAlert } from "lucide-react";
+import { cx, estilosBoton, Esqueleto, Insignia, type TonoInsignia } from "@/components/ui";
 import { apiFetch, ApiError } from "@/lib/api";
 import { playForTipo, unlockAudio } from "@/lib/notificationSound";
 import { formatoHora } from "@/lib/tiempoEstimado";
@@ -27,6 +28,8 @@ const INTERVALO_MS = 10_000;
 const ETAPAS_FINALES: Etapa[] = ["ENTREGADO", "CANCELADO", "DESCARTADA", "VENCIDA"];
 const PASOS = ["Enviado", "Confirmado", "En preparación", "Listo"];
 const PASO_POR_ETAPA: Partial<Record<Etapa, number>> = { ESPERANDO_CONFIRMACION: 0, EN_COCINA: 2, LISTO: 3, ENTREGADO: 4 };
+
+const ITEM_TONO: Record<string, TonoInsignia> = { PENDIENTE: "neutro", RECIBIDO: "info", EN_PREPARACION: "aviso", LISTO: "exito", ENTREGADO: "neutro", CANCELADO: "peligro" };
 
 const ITEM_LABEL: Record<string, string> = {
   PENDIENTE: "Por confirmar",
@@ -120,7 +123,18 @@ export default function SeguimientoPage() {
 
   if (!datos) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center text-sm text-muted-foreground">{error ?? "Cargando tu pedido…"}</div>
+      <div className="mx-auto grid max-w-md gap-4 px-4 py-16 text-center text-sm text-muted-foreground">
+        {error ? (
+          <p>{error}</p>
+        ) : (
+          <>
+            <p className="sr-only">Cargando tu pedido…</p>
+            <Esqueleto className="mx-auto h-7 w-48" />
+            <Esqueleto className="h-28 rounded-3xl" />
+            <Esqueleto className="h-40 rounded-3xl" />
+          </>
+        )}
+      </div>
     );
   }
 
@@ -129,25 +143,40 @@ export default function SeguimientoPage() {
   const problema = datos.etapa === "CANCELADO" || datos.etapa === "DESCARTADA" || datos.etapa === "VENCIDA";
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10" onClick={unlockAudio}>
-      <h1 className="brand-gradient-text text-center text-2xl font-extrabold tracking-tight">Comidas Rápidas</h1>
-      <p className="mt-1 text-center text-sm text-muted-foreground">
-        {datos.canal === "MESA" ? `Mesa ${datos.mesaNumero}` : "Pedido para recoger"}
-        {datos.nombre ? ` · ${datos.nombre}` : ""}
-      </p>
+    <div className="mx-auto max-w-md px-4 pt-8 pb-12 sm:pt-12" onClick={unlockAudio}>
+      <header className="text-center">
+        <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-linear-to-br from-accent to-accent-2 text-white shadow-acento">
+          <Flame className="size-5" aria-hidden />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          <span className="brand-gradient-text">Comidas Rápidas</span>
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {datos.canal === "MESA" ? `Mesa ${datos.mesaNumero}` : "Pedido para recoger"}
+          {datos.nombre ? ` · ${datos.nombre}` : ""}
+        </p>
+      </header>
 
       <div
-        className={`mt-6 rounded-2xl border-2 p-5 text-center ${
-          datos.etapa === "LISTO" ? "border-accent bg-accent/10" : problema ? "border-red-600" : "border-border"
-        }`}
+        key={datos.etapa}
+        className={cx(
+          "mt-6 animate-emerger rounded-3xl border p-6 text-center shadow-elevada",
+          datos.etapa === "LISTO"
+            ? "border-exito/40 bg-exito/[0.08] shadow-[0_0_48px_-16px] shadow-exito/50"
+            : problema
+              ? "border-peligro/40 bg-peligro/[0.06]"
+              : "border-border bg-surface",
+        )}
       >
-        <p className={`text-xl font-extrabold ${datos.etapa === "LISTO" ? "text-accent" : problema ? "text-red-600" : ""}`}>{titulo}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{detalle}</p>
+        {datos.etapa === "LISTO" ? <PartyPopper className="mx-auto mb-2 size-8 text-exito" aria-hidden /> : null}
+        {problema ? <TriangleAlert className="mx-auto mb-2 size-7 text-peligro" aria-hidden /> : null}
+        <p className={cx("text-xl font-semibold tracking-tight", datos.etapa === "LISTO" && "text-exito", problema && "text-peligro")}>{titulo}</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{detalle}</p>
       </div>
 
       {datos.etapa === "ENTREGADO" && datos.canal === "MOSTRADOR" ? (
-        <Link href={`/encuesta/${codigo}`} className="btn-primary mt-4 block rounded-full px-4 py-2.5 text-center text-sm">
-          ¿Cómo te fue? Califícanos ⭐
+        <Link href={`/encuesta/${codigo}`} className={estilosBoton({ tamano: "lg", bloque: true, variante: "primario" }) + " mt-4"}>
+          <Star /> ¿Cómo te fue? Califícanos
         </Link>
       ) : null}
       {datos.canal === "MESA" && datos.mesaId && !ETAPAS_FINALES.includes(datos.etapa) ? (
@@ -157,44 +186,47 @@ export default function SeguimientoPage() {
       ) : null}
 
       {paso !== undefined ? (
-        <ol className="mt-6 flex items-start justify-between">
+        <ol className="mt-8 flex items-start">
           {PASOS.map((nombre, i) => {
             const hecho = i < paso || paso === 4;
             const actual = i === paso;
             return (
-              <li key={nombre} className="flex flex-1 flex-col items-center gap-1 text-center">
+              <li key={nombre} className="relative flex flex-1 flex-col items-center gap-1.5 text-center">
+                {i > 0 ? (
+                  <span
+                    className={cx("absolute top-3.5 right-1/2 h-0.5 w-full -translate-y-1/2 transition-colors duration-500", hecho || actual ? "bg-accent" : "bg-border")}
+                    aria-hidden
+                  />
+                ) : null}
                 <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                    hecho ? "bg-accent text-white" : actual ? "animate-pulse bg-accent/20 text-accent ring-2 ring-accent" : "bg-muted text-muted-foreground"
-                  }`}
+                  className={cx(
+                    "relative grid size-7 place-items-center rounded-full text-xs font-semibold transition-all duration-500 ease-resorte",
+                    hecho ? "bg-accent text-accent-foreground" : actual ? "bg-background text-accent shadow-[0_0_0_5px] shadow-accent/15 ring-2 ring-accent" : "bg-surface-2 text-muted-foreground ring-1 ring-border",
+                  )}
                 >
-                  {hecho ? <Check size={14} /> : i + 1}
+                  {hecho ? <Check className="size-3.5" /> : i + 1}
                 </span>
-                <span className={`text-[11px] ${actual ? "font-semibold" : "text-muted-foreground"}`}>{nombre}</span>
+                <span className={cx("text-[11px]", actual ? "font-semibold text-foreground" : "text-muted-foreground")}>{nombre}</span>
               </li>
             );
           })}
         </ol>
       ) : null}
 
-      <ul className="mt-6 divide-y divide-border rounded-xl border border-border text-sm">
+      <ul className="mt-8 divide-y divide-border overflow-hidden rounded-3xl border border-border bg-surface text-sm shadow-suave">
         {datos.items.map((item, i) => (
-          <li key={i} className="flex items-center justify-between gap-2 px-3 py-2">
+          <li key={i} className="flex items-center justify-between gap-2 px-4 py-3">
             <span className={item.estado === "CANCELADO" ? "text-muted-foreground line-through" : ""}>
-              {item.cantidad}× {item.nombre}
+              <span className="font-semibold tabular-nums">{item.cantidad}×</span> {item.nombre}
             </span>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                item.estado === "LISTO" ? "bg-accent text-white" : "bg-muted text-muted-foreground"
-              }`}
-            >
+            <Insignia tono={ITEM_TONO[item.estado] ?? "neutro"} className="shrink-0">
               {ITEM_LABEL[item.estado] ?? item.estado}
-            </span>
+            </Insignia>
           </li>
         ))}
       </ul>
 
-      {error ? <p className="mt-3 text-center text-xs text-amber-600">{error}</p> : null}
+      {error ? <p className="mt-3 text-center text-xs font-medium text-aviso">{error}</p> : null}
       {!ETAPAS_FINALES.includes(datos.etapa) ? (
         <p className="mt-4 text-center text-xs text-muted-foreground">Esta página se actualiza sola. Puedes dejarla abierta.</p>
       ) : null}
@@ -202,8 +234,9 @@ export default function SeguimientoPage() {
       <div className="mt-6 text-center">
         <Link
           href={datos.canal === "MESA" && datos.mesaId ? `/carta?mesa=${datos.mesaId}` : "/carta?recoger=1"}
-          className="text-sm font-semibold text-accent"
+          className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-semibold text-accent transition-colors hover:bg-accent/10"
         >
+          <ArrowLeft className="size-4 transition-transform duration-200 ease-resorte group-hover:-translate-x-0.5" aria-hidden />
           Volver a la carta
         </Link>
       </div>

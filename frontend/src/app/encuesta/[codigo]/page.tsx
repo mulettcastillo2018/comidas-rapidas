@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
-import { Star } from "lucide-react";
+import { Flame, HeartHandshake, Star } from "lucide-react";
+import { AreaTexto, Boton, cx, Esqueleto } from "@/components/ui";
 import { apiFetch, ApiError } from "@/lib/api";
 
 interface EstadoEncuesta {
@@ -45,42 +46,62 @@ export default function EncuestaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10 text-center">
-      <h1 className="brand-gradient-text text-2xl font-extrabold tracking-tight">Comidas Rápidas</h1>
+    <div className="mx-auto max-w-md px-4 pt-10 pb-12 text-center sm:pt-16">
+      <span className="mx-auto mb-3 grid size-11 place-items-center rounded-2xl bg-linear-to-br from-accent to-accent-2 text-white shadow-acento">
+        <Flame className="size-5" aria-hidden />
+      </span>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        <span className="brand-gradient-text">Comidas Rápidas</span>
+      </h1>
       {!estado ? (
-        <p className="mt-10 text-sm text-muted-foreground">{error ?? "Cargando…"}</p>
+        error ? (
+          <p className="mt-10 text-sm text-muted-foreground">{error}</p>
+        ) : (
+          <div className="mt-8 grid gap-3" aria-label="Cargando…">
+            <Esqueleto className="mx-auto h-6 w-48" />
+            <Esqueleto className="h-56 rounded-3xl" />
+          </div>
+        )
       ) : enviada || estado.yaRespondida ? (
-        <div className="mt-10 space-y-2">
-          <p className="text-4xl">🙏</p>
-          <p className="text-lg font-bold">¡Gracias por tu opinión!</p>
+        <div className="mt-8 animate-emerger space-y-2 rounded-3xl border border-border bg-surface p-8 shadow-elevada">
+          <HeartHandshake className="mx-auto size-10 text-accent" aria-hidden />
+          <p className="text-lg font-semibold">¡Gracias por tu opinión!</p>
           <p className="text-sm text-muted-foreground">Nos ayuda a mejorar cada día.</p>
         </div>
       ) : (
-        <form onSubmit={enviar} className="mt-6 space-y-5">
+        <form onSubmit={enviar} className="mt-8 animate-aparecer space-y-5 rounded-3xl border border-border bg-surface p-6 shadow-elevada sm:p-8">
           <div>
-            <p className="text-lg font-bold">¿Cómo te atendimos?</p>
+            <p className="text-lg font-semibold">¿Cómo te atendimos?</p>
             <p className="text-sm text-muted-foreground">{estado.contexto}</p>
           </div>
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-1" role="radiogroup" aria-label="Calificación">
             {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} type="button" onClick={() => setCalificacion(n)} aria-label={`${n} estrellas`} className="p-1">
-                <Star size={36} className={n <= calificacion ? "fill-amber-400 text-amber-400" : "text-muted-foreground"} />
+              <button
+                key={n}
+                type="button"
+                role="radio"
+                aria-checked={n === calificacion}
+                onClick={() => setCalificacion(n)}
+                aria-label={`${n} estrellas`}
+                className="rounded-xl p-1.5 transition-transform duration-200 ease-resorte hover:scale-110 active:scale-95"
+              >
+                <Star className={cx("size-9 transition-colors duration-200", n <= calificacion ? "fill-accent-2 text-accent-2" : "text-border-strong")} />
               </button>
             ))}
           </div>
           <p className="h-5 text-sm font-semibold">{ETIQUETAS[calificacion]}</p>
-          <textarea
+          <AreaTexto
             value={comentario}
             onChange={(e) => setComentario(e.target.value)}
             maxLength={500}
             rows={3}
             placeholder={calificacion > 0 && calificacion <= 3 ? "¿Qué podemos mejorar?" : "Cuéntanos algo más (opcional)"}
-            className="w-full rounded-xl border border-border px-3 py-2 text-sm"
+            aria-label="Comentario"
           />
-          {error ? <p className="text-xs text-red-600">{error}</p> : null}
-          <button type="submit" disabled={calificacion === 0 || enviando} className="btn-primary w-full rounded-full px-4 py-2.5 text-sm disabled:opacity-50">
+          {error ? <p className="text-xs font-medium text-peligro">{error}</p> : null}
+          <Boton type="submit" bloque tamano="lg" disabled={calificacion === 0} cargando={enviando}>
             {enviando ? "Enviando…" : "Enviar"}
-          </button>
+          </Boton>
         </form>
       )}
     </div>
