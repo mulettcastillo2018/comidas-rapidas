@@ -53,7 +53,7 @@ function EditorTurno({ turno, token, onGuardado }: { turno: Turno; token: string
       <button onClick={guardar} className="font-semibold text-accent">
         Guardar
       </button>
-      {error ? <span className="text-red-600">{error}</span> : null}
+      {error ? <span className="text-peligro">{error}</span> : null}
     </div>
   );
 }
@@ -116,19 +116,19 @@ export default function AdminPersonalPage() {
           setHasta(h);
         }}
       />
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
 
       <section className="space-y-3">
-        <h2 className="text-sm font-bold">Reparto de propinas</h2>
+        <h2 className="text-base font-semibold tracking-tight">Reparto de propinas</h2>
         {config ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
             <label className="flex items-center gap-2">
               Para cocina:
               <select
                 value={config.propinaPctCocina}
                 disabled={reglasFijas}
                 onChange={(e) => guardarConfig({ propinaPctCocina: Number(e.target.value) })}
-                className="rounded-lg border border-border px-2 py-1"
+                className="rounded-xl border border-border px-2 py-1"
               >
                 {[0, 10, 15, 20, 25, 30, 40, 50].map((p) => (
                   <option key={p} value={p}>
@@ -143,7 +143,7 @@ export default function AdminPersonalPage() {
                 value={config.propinaModo}
                 disabled={reglasFijas}
                 onChange={(e) => guardarConfig({ propinaModo: e.target.value as Configuracion["propinaModo"] })}
-                className="rounded-lg border border-border px-2 py-1"
+                className="rounded-xl border border-border px-2 py-1"
               >
                 <option value="PROPIAS">cada mesero lo de sus mesas</option>
                 <option value="POZO">todo junto, por horas trabajadas</option>
@@ -161,31 +161,31 @@ export default function AdminPersonalPage() {
                 {reparto.paraCocina > 0 ? ` · cocina ${formatoPesos(reparto.paraCocina)} · salón ${formatoPesos(reparto.paraSalon)}` : ""}
               </p>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm tabular-nums">
                   <thead>
-                    <tr className="border-b border-border text-xs text-muted-foreground">
-                      <th className="py-1.5 pr-4">Persona</th>
-                      <th className="py-1.5 pr-4">Horas</th>
-                      <th className="py-1.5 pr-4 text-right">Propinas de sus mesas</th>
-                      <th className="py-1.5 text-right">Le corresponde</th>
+                    <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                      <th className="py-2.5 pr-4">Persona</th>
+                      <th className="py-2.5 pr-4">Horas</th>
+                      <th className="py-2.5 pr-4 text-right">Propinas de sus mesas</th>
+                      <th className="py-2.5 text-right">Le corresponde</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reparto.reparto.map((p) => (
-                      <tr key={p.userId} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">
+                      <tr key={p.userId} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4">
                           {p.nombre} <span className="text-[11px] text-muted-foreground">{ROL[p.role] ?? p.role}</span>
                         </td>
-                        <td className="py-1.5 pr-4">{formatoHoras(p.horas)}</td>
-                        <td className="py-1.5 pr-4 text-right text-muted-foreground">{p.propiasGeneradas > 0 ? formatoPesos(p.propiasGeneradas) : "—"}</td>
-                        <td className="py-1.5 text-right font-semibold">{formatoPesos(p.monto)}</td>
+                        <td className="py-2.5 pr-4">{formatoHoras(p.horas)}</td>
+                        <td className="py-2.5 pr-4 text-right text-muted-foreground">{p.propiasGeneradas > 0 ? formatoPesos(p.propiasGeneradas) : "—"}</td>
+                        <td className="py-2.5 text-right font-semibold">{formatoPesos(p.monto)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               {reparto.avisos.map((a) => (
-                <p key={a} className="text-xs text-amber-700">
+                <p key={a} className="text-xs text-aviso">
                   {a}
                 </p>
               ))}
@@ -195,7 +195,7 @@ export default function AdminPersonalPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-bold">Horas trabajadas</h2>
+        <h2 className="text-base font-semibold tracking-tight">Horas trabajadas</h2>
         {!turnos ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : turnos.turnos.length === 0 ? (
@@ -211,10 +211,10 @@ export default function AdminPersonalPage() {
             </div>
             <ul className="space-y-1.5 text-sm">
               {turnos.turnos.map((t) => (
-                <li key={t.id} className="rounded-lg border border-border px-3 py-2">
+                <li key={t.id} className="rounded-xl border border-border px-3 py-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span>
-                      <strong>{t.nombre}</strong> · {formatoFechaHora(t.entrada)} → {t.salida ? formatoFechaHora(t.salida) : <span className="text-green-700">sigue en turno</span>}
+                      <strong>{t.nombre}</strong> · {formatoFechaHora(t.entrada)} → {t.salida ? formatoFechaHora(t.salida) : <span className="text-exito">sigue en turno</span>}
                       {t.editado ? <span className="ml-1 text-[11px] text-muted-foreground">(corregido)</span> : null}
                     </span>
                     <span className="flex items-center gap-3 text-xs">

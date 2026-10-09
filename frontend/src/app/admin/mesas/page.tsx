@@ -178,8 +178,8 @@ export default function AdminMesasPage() {
         Cada mesa debe estar identificada aquí para que el mesero pueda abrirla al recibir clientes. Puedes asignarla a
         un mesero específico (solo él o el admin podrán atenderla) o dejarla libre para cualquiera.
       </p>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {aviso ? <p className="text-sm text-green-700">{aviso}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
+      {aviso ? <p className="text-sm text-exito">{aviso}</p> : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {mesas.map((mesa) =>
@@ -187,16 +187,16 @@ export default function AdminMesasPage() {
             <form
               key={mesa.id}
               onSubmit={(e) => handleUpdate(mesa.id, e)}
-              className="flex flex-col gap-1.5 rounded-xl border border-border p-3"
+              className="flex flex-col gap-1.5 rounded-2xl border border-border p-3 bg-surface shadow-suave"
             >
-              <input name="numero" defaultValue={mesa.numero} required className="w-full rounded-lg border border-border px-2 py-1 text-sm" />
+              <input name="numero" defaultValue={mesa.numero} required className="w-full rounded-xl border border-border px-2 py-1 text-sm" />
               <input
                 name="capacidad"
                 type="number"
                 min={1}
                 defaultValue={mesa.capacidad}
                 required
-                className="w-full rounded-lg border border-border px-2 py-1 text-sm"
+                className="w-full rounded-xl border border-border px-2 py-1 text-sm"
               />
               <div className="flex gap-2">
                 <button type="submit" disabled={saving} className="btn-primary flex-1 rounded-full px-3 py-1 text-sm">
@@ -214,9 +214,9 @@ export default function AdminMesasPage() {
           ) : !mesa.activa ? (
             <div
               key={mesa.id}
-              className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-border p-3 text-center opacity-60"
+              className="flex flex-col items-center gap-1 rounded-2xl border border-dashed border-border p-3 text-center opacity-60 bg-surface shadow-suave"
             >
-              <p className="text-lg font-bold">Mesa {mesa.numero}</p>
+              <p className="text-lg font-semibold">Mesa {mesa.numero}</p>
               <p className="text-xs text-muted-foreground">{mesa.capacidad} puestos</p>
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">Desactivada</span>
               <button onClick={() => handleReactivar(mesa)} className="mt-1 text-xs font-semibold text-accent">
@@ -224,17 +224,17 @@ export default function AdminMesasPage() {
               </button>
             </div>
           ) : (
-            <div key={mesa.id} className="relative flex flex-col items-center gap-1 rounded-xl border border-border p-3 text-center">
+            <div key={mesa.id} className="relative flex flex-col items-center gap-1 rounded-2xl border border-border p-3 text-center bg-surface shadow-suave">
               {mesa.estado === "OCUPADA" ? (
                 <span className="absolute right-2 top-2 flex items-center gap-1" title="Mesa ocupada ahora mismo">
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-peligro opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-peligro" />
                   </span>
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-red-600">En vivo</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-peligro">En vivo</span>
                 </span>
               ) : null}
-              <p className="text-lg font-bold">Mesa {mesa.numero}</p>
+              <p className="text-lg font-semibold">Mesa {mesa.numero}</p>
               <p className="text-xs text-muted-foreground">{mesa.capacidad} puestos</p>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -246,7 +246,7 @@ export default function AdminMesasPage() {
               <select
                 value={mesa.meseroAsignadoId ?? ""}
                 onChange={(e) => handleAsignarMesero(mesa.id, e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border px-2 py-1 text-xs"
+                className="mt-1 w-full rounded-xl border border-border px-2 py-1 text-xs"
               >
                 <option value="">Sin asignar (libre)</option>
                 {meserosDeSede.map((m) => (
@@ -266,7 +266,7 @@ export default function AdminMesasPage() {
                       if (sesionId && e.target.value) handleReasignar(sesionId, e.target.value);
                       e.target.value = "";
                     }}
-                    className="mt-1 w-full rounded-lg border border-border px-2 py-1 text-[11px]"
+                    className="mt-1 w-full rounded-xl border border-border px-2 py-1 text-[11px]"
                   >
                     <option value="">Reasignar a otro mesero…</option>
                     {meserosDeSede
@@ -284,7 +284,7 @@ export default function AdminMesasPage() {
                   Editar
                 </button>
                 {mesa.estado === "LIBRE" ? (
-                  <button onClick={() => handleDelete(mesa)} className="text-xs font-semibold text-red-600">
+                  <button onClick={() => handleDelete(mesa)} className="text-xs font-semibold text-peligro">
                     Quitar
                   </button>
                 ) : null}
@@ -295,9 +295,9 @@ export default function AdminMesasPage() {
       </div>
 
       {creating ? (
-        <form onSubmit={handleCreate} className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-3">
-          <input name="numero" placeholder="Número de mesa" required className="rounded-lg border border-border px-2 py-1 text-sm" />
-          <input name="capacidad" type="number" min={1} placeholder="Capacidad" required className="w-28 rounded-lg border border-border px-2 py-1 text-sm" />
+        <form onSubmit={handleCreate} className="flex flex-wrap items-center gap-2 rounded-2xl border border-border p-3 bg-surface shadow-suave">
+          <input name="numero" placeholder="Número de mesa" required className="rounded-xl border border-border px-2 py-1 text-sm" />
+          <input name="capacidad" type="number" min={1} placeholder="Capacidad" required className="w-28 rounded-xl border border-border px-2 py-1 text-sm" />
           <button type="submit" disabled={saving} className="btn-primary rounded-full px-4 py-1 text-sm">
             {saving ? "Guardando…" : "Crear"}
           </button>
@@ -306,7 +306,7 @@ export default function AdminMesasPage() {
           </button>
         </form>
       ) : (
-        <button onClick={() => setCreating(true)} className="btn-primary rounded-full px-4 py-2 text-sm">
+        <button onClick={() => setCreating(true)} className="btn-primary rounded-xl px-4 py-2 text-sm">
           + Nueva mesa
         </button>
       )}

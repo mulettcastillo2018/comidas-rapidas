@@ -1,5 +1,6 @@
 "use client";
 
+import { Segmentado } from "@/components/ui";
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { formatoFechaHora } from "@/lib/formato";
@@ -37,9 +38,9 @@ type Accion = { productoId: string; tipo: "ENTRADA" | "AJUSTE" | "ACTIVAR" | "MI
 const TIPO_MOVIMIENTO = { ENTRADA: "Llegó mercancía", VENTA: "Venta", DEVOLUCION: "Devolución", AJUSTE: "Ajuste por conteo" } as const;
 
 function Estado({ p }: { p: ProductoInventario }) {
-  if (p.stock <= 0) return <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">Agotado</span>;
-  if (p.stock <= p.stockMinimo) return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Por debajo del mínimo</span>;
-  return <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">Bien</span>;
+  if (p.stock <= 0) return <span className="rounded-full bg-peligro/10 px-2 py-0.5 text-[11px] font-semibold text-peligro">Agotado</span>;
+  if (p.stock <= p.stockMinimo) return <span className="rounded-full bg-aviso/10 px-2 py-0.5 text-[11px] font-semibold text-aviso">Por debajo del mínimo</span>;
+  return <span className="rounded-full bg-exito/10 px-2 py-0.5 text-[11px] font-semibold text-exito">Bien</span>;
 }
 
 function FormularioAccion({
@@ -73,22 +74,22 @@ function FormularioAccion({
       {accion.tipo !== "MINIMO" ? (
         <label className="flex flex-col gap-1">
           {textos[accion.tipo]}
-          <input type="number" min={0} value={cantidad} onChange={(e) => setCantidad(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-24 rounded-lg border border-border px-2 py-1" />
+          <input type="number" min={0} value={cantidad} onChange={(e) => setCantidad(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-24 rounded-xl border border-border px-2 py-1" />
         </label>
       ) : null}
       {accion.tipo === "ACTIVAR" || accion.tipo === "MINIMO" ? (
         <label className="flex flex-col gap-1">
           {textos.MINIMO}
-          <input type="number" min={0} value={minimo} onChange={(e) => setMinimo(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-24 rounded-lg border border-border px-2 py-1" />
+          <input type="number" min={0} value={minimo} onChange={(e) => setMinimo(Math.max(0, Math.round(Number(e.target.value) || 0)))} className="w-24 rounded-xl border border-border px-2 py-1" />
         </label>
       ) : null}
       {accion.tipo === "ENTRADA" || accion.tipo === "AJUSTE" ? (
         <label className="flex flex-1 flex-col gap-1">
           Nota (opcional)
-          <input value={nota} onChange={(e) => setNota(e.target.value)} maxLength={200} placeholder={accion.tipo === "ENTRADA" ? "ej. proveedor, factura" : "ej. se rompieron 2"} className="rounded-lg border border-border px-2 py-1" />
+          <input value={nota} onChange={(e) => setNota(e.target.value)} maxLength={200} placeholder={accion.tipo === "ENTRADA" ? "ej. proveedor, factura" : "ej. se rompieron 2"} className="rounded-xl border border-border px-2 py-1" />
         </label>
       ) : null}
-      <button type="submit" disabled={accion.tipo === "ENTRADA" && cantidad === 0} className="btn-primary rounded-full px-3 py-1.5 disabled:opacity-50">
+      <button type="submit" disabled={accion.tipo === "ENTRADA" && cantidad === 0} className="btn-primary rounded-xl px-3 py-1.5 disabled:opacity-50">
         Guardar
       </button>
       <button type="button" onClick={onCancelar} className="text-muted-foreground">
@@ -120,17 +121,7 @@ export default function AdminInventarioPage() {
   if (!token) return null;
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-1 rounded-full bg-muted p-1 text-sm font-semibold sm:w-fit">
-        {VISTAS.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setVista(v.id)}
-            className={`flex-1 rounded-full px-4 py-1.5 sm:flex-none ${vista === v.id ? "bg-background shadow-sm" : "text-muted-foreground"}`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
+      <Segmentado etiqueta="Inventario" opciones={VISTAS} valor={vista} onCambio={setVista} />
       {vista === "unidades" ? (
         <InventarioPorUnidades />
       ) : vista === "insumos" ? (
@@ -205,22 +196,22 @@ function InventarioPorUnidades() {
         Para lo que vendes tal como lo compras (gaseosas, agua, cervezas, empacados): registras lo que llega y cada venta lo
         descuenta sola. Al llegar a cero el producto se marca agotado y te avisamos cuando queda poco.
       </p>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-bold">Con inventario</h2>
+        <h2 className="text-base font-semibold tracking-tight">Con inventario</h2>
         {controlados.length === 0 ? (
           <p className="text-sm text-muted-foreground">Todavía no controlas el inventario de ningún producto. Actívalo abajo.</p>
         ) : (
           controlados.map((p) => (
-            <div key={p.id} className="rounded-xl border border-border p-3 text-sm">
+            <div key={p.id} className="rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-semibold">
                     {p.nombre} <span className="text-xs font-normal text-muted-foreground">· {p.categoria.nombre}</span>
                   </p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span className="text-base font-extrabold text-foreground">{p.stock}</span> unidades · mínimo {p.stockMinimo}
+                    <span className="text-base font-semibold tracking-tight text-foreground">{p.stock}</span> unidades · mínimo {p.stockMinimo}
                     <Estado p={p} />
                   </p>
                 </div>
@@ -237,7 +228,7 @@ function InventarioPorUnidades() {
                   <button onClick={() => verHistorial(p.id)} className="text-muted-foreground">
                     Historial
                   </button>
-                  <button onClick={() => desactivar(p)} className="text-red-600">
+                  <button onClick={() => desactivar(p)} className="text-peligro">
                     Dejar de controlar
                   </button>
                 </div>
@@ -258,7 +249,7 @@ function InventarioPorUnidades() {
                         </span>
                       </span>
                       <span className="shrink-0 text-right">
-                        <span className={`font-semibold ${m.cantidad < 0 ? "text-red-600" : "text-green-700"}`}>
+                        <span className={`font-semibold ${m.cantidad < 0 ? "text-peligro" : "text-exito"}`}>
                           {m.cantidad > 0 ? "+" : ""}
                           {m.cantidad}
                         </span>
@@ -275,13 +266,13 @@ function InventarioPorUnidades() {
 
       {sinControl.length > 0 ? (
         <section className="space-y-2">
-          <h2 className="text-sm font-bold">Sin inventario</h2>
+          <h2 className="text-base font-semibold tracking-tight">Sin inventario</h2>
           <p className="text-xs text-muted-foreground">
             Ideal para lo que no pasa por cocina. Lo que se prepara (hamburguesas, papas) depende de varios insumos, así
             que no se controla por unidades.
           </p>
           {sinControl.map((p) => (
-            <div key={p.id} className="rounded-xl border border-dashed border-border p-3 text-sm">
+            <div key={p.id} className="rounded-2xl border border-dashed border-border p-3 text-sm bg-surface shadow-suave">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>
                   {p.nombre} <span className="text-xs text-muted-foreground">· {p.categoria.nombre}</span>

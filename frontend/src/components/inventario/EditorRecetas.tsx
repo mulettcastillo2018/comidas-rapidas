@@ -81,7 +81,7 @@ export function EditorRecetas({ token, onAviso }: { token: string; onAviso: (m: 
 
   return (
     <div className="space-y-3">
-      <select value={seleccion} onChange={(e) => setSeleccion(e.target.value)} className="w-full max-w-md rounded-lg border border-border px-2 py-2 text-sm">
+      <select value={seleccion} onChange={(e) => setSeleccion(e.target.value)} className="w-full max-w-md rounded-xl border border-border px-2 py-2 text-sm">
         <option value="">¿De qué producto o adición?</option>
         <optgroup label="Productos">
           {productos.map((p) => (
@@ -105,7 +105,7 @@ export function EditorRecetas({ token, onAviso }: { token: string; onAviso: (m: 
         insumos.length === 0 ? (
           <p className="text-sm text-muted-foreground">Primero crea los insumos en la pestaña Insumos.</p>
         ) : (
-          <div className="space-y-2 rounded-xl border border-border p-3 text-sm">
+          <div className="space-y-2 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
             <p className="text-xs text-muted-foreground">Cantidad para una unidad de lo que se vende.</p>
             {filas.map((f, n) => {
               const insumo = insumoDe(f.insumoId);
@@ -114,7 +114,7 @@ export function EditorRecetas({ token, onAviso }: { token: string; onAviso: (m: 
                   <select
                     value={f.insumoId}
                     onChange={(e) => setFilas((prev) => prev.map((x, j) => (j === n ? { ...x, insumoId: e.target.value } : x)))}
-                    className="min-w-0 flex-1 rounded-lg border border-border px-2 py-1.5"
+                    className="min-w-0 flex-1 rounded-xl border border-border px-2 py-1.5"
                   >
                     <option value="">Ingrediente…</option>
                     {insumos.map((i) => (
@@ -127,10 +127,10 @@ export function EditorRecetas({ token, onAviso }: { token: string; onAviso: (m: 
                     value={f.cantidad}
                     onChange={(e) => setFilas((prev) => prev.map((x, j) => (j === n ? { ...x, cantidad: e.target.value.replace(",", ".") } : x)))}
                     inputMode="decimal"
-                    className="w-20 rounded-lg border border-border px-2 py-1.5"
+                    className="w-20 rounded-xl border border-border px-2 py-1.5"
                   />
                   <span className="w-8 text-xs text-muted-foreground">{insumo ? UNIDAD_CORTA[insumo.unidad as UnidadInsumo] : ""}</span>
-                  <button onClick={() => setFilas((prev) => prev.filter((_, j) => j !== n))} className="text-muted-foreground hover:text-red-600" aria-label="Quitar">
+                  <button onClick={() => setFilas((prev) => prev.filter((_, j) => j !== n))} className="text-muted-foreground hover:text-peligro" aria-label="Quitar">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -154,8 +154,8 @@ export function EditorRecetas({ token, onAviso }: { token: string; onAviso: (m: 
                 {receta && !receta.costoDesdeReceta && receta.costo !== null ? ` · hoy tiene ${formatoPesos(receta.costo)} digitado a mano` : ""}
               </label>
             ) : null}
-            {error ? <p className="text-xs text-red-600">{error}</p> : null}
-            <button onClick={guardar} className="btn-primary rounded-full px-4 py-1.5 text-xs">
+            {error ? <p className="text-xs text-peligro">{error}</p> : null}
+            <button onClick={guardar} className="btn-primary rounded-xl px-4 py-1.5 text-xs">
               Guardar
             </button>
           </div>

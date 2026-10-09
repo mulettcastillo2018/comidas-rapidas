@@ -14,10 +14,10 @@ const PRODUCTOS_VISIBLES = 10;
 // Ingeniería de menú: qué hacer con cada producto según cuánto se vende y
 // cuánto deja por unidad, comparado con el resto de la carta.
 const CLASIFICACION: Record<ClasificacionMenu, { etiqueta: string; consejo: string; clase: string }> = {
-  ESTRELLA: { etiqueta: "⭐ Estrella", consejo: "Se vende mucho y deja buen margen: cuídalo y destácalo.", clase: "bg-green-100 text-green-800" },
-  CABALLO: { etiqueta: "🐴 Caballo de batalla", consejo: "Se vende mucho pero deja poco: sube un poco el precio o baja su costo.", clase: "bg-amber-100 text-amber-800" },
-  ROMPECABEZAS: { etiqueta: "🧩 Rompecabezas", consejo: "Deja buen margen pero se vende poco: promociónalo, ponlo más visible.", clase: "bg-sky-100 text-sky-800" },
-  PERRO: { etiqueta: "🐶 Perro", consejo: "Ni se vende ni deja: piensa en cambiarlo o sacarlo de la carta.", clase: "bg-red-100 text-red-800" },
+  ESTRELLA: { etiqueta: "⭐ Estrella", consejo: "Se vende mucho y deja buen margen: cuídalo y destácalo.", clase: "bg-exito/10 text-exito" },
+  CABALLO: { etiqueta: "🐴 Caballo de batalla", consejo: "Se vende mucho pero deja poco: sube un poco el precio o baja su costo.", clase: "bg-aviso/10 text-aviso" },
+  ROMPECABEZAS: { etiqueta: "🧩 Rompecabezas", consejo: "Deja buen margen pero se vende poco: promociónalo, ponlo más visible.", clase: "bg-info/10 text-info" },
+  PERRO: { etiqueta: "🐶 Perro", consejo: "Ni se vende ni deja: piensa en cambiarlo o sacarlo de la carta.", clase: "bg-peligro/10 text-peligro" },
 };
 
 const CANALES: Record<CanalPedido, string> = {
@@ -77,9 +77,9 @@ function descargarCsv(reporte: ReporteVentas) {
 
 function Tarjeta({ titulo, valor, detalle, alerta }: { titulo: string; valor: string; detalle?: string; alerta?: boolean }) {
   return (
-    <div className={`rounded-xl border p-4 ${alerta ? "border-red-600" : "border-border"}`}>
+    <div className={`rounded-2xl border p-4 bg-surface shadow-suave ${alerta ? "border-peligro" : "border-border"}`}>
       <p className="text-xs text-muted-foreground">{titulo}</p>
-      <p className={`mt-1 text-xl font-extrabold ${alerta ? "text-red-600" : ""}`}>{valor}</p>
+      <p className={`mt-1 text-xl font-semibold tracking-tight ${alerta ? "text-peligro" : ""}`}>{valor}</p>
       {detalle ? <p className="mt-0.5 text-xs text-muted-foreground">{detalle}</p> : null}
     </div>
   );
@@ -133,11 +133,11 @@ export function ReporteVentasVista({ token }: { token: string }) {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="flex items-center gap-1.5">
             Desde
-            <input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="rounded-lg border border-border px-2 py-1" />
+            <input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="rounded-xl border border-border px-2 py-1" />
           </label>
           <label className="flex items-center gap-1.5">
             Hasta
-            <input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} className="rounded-lg border border-border px-2 py-1" />
+            <input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} className="rounded-xl border border-border px-2 py-1" />
           </label>
           {reporte && reporte.cuentas.length > 0 ? (
             <button onClick={() => descargarCsv(reporte)} className="ml-auto flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-semibold">
@@ -147,7 +147,7 @@ export function ReporteVentasVista({ token }: { token: string }) {
         </div>
       </div>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
       {!reporte ? <p className="text-sm text-muted-foreground">Cargando…</p> : null}
 
       {reporte ? (
@@ -198,7 +198,7 @@ export function ReporteVentasVista({ token }: { token: string }) {
           </div>
 
           <section className="space-y-3">
-            <h2 className="text-sm font-bold">Ganancia</h2>
+            <h2 className="text-base font-semibold tracking-tight">Ganancia</h2>
             {reporte.resumen.ganancia.ventasConCosto > 0 ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <Tarjeta
@@ -213,13 +213,13 @@ export function ReporteVentasVista({ token }: { token: string }) {
                 <Tarjeta titulo="Costo de lo vendido" valor={formatoPesos(reporte.resumen.ganancia.costoVentas)} detalle="insumos y empaques" />
               </div>
             ) : (
-              <p className="rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground">
+              <p className="rounded-2xl border border-dashed border-border p-3 text-sm text-muted-foreground bg-surface shadow-suave">
                 Para ver cuánto ganas, configura el <strong>costo</strong> de tus productos en Admin → Productos. Se aplica a
                 lo que se venda desde ese momento.
               </p>
             )}
             {reporte.resumen.ganancia.productosSinCosto.length > 0 && reporte.resumen.ganancia.ventasConCosto > 0 ? (
-              <p className="text-xs text-amber-700">
+              <p className="text-xs text-aviso">
                 Sin costo (su ganancia no se cuenta): {reporte.resumen.ganancia.productosSinCosto.join(", ")}.
               </p>
             ) : null}
@@ -227,7 +227,7 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.porDia.length > 1 ? (
             <section>
-              <h2 className="text-sm font-bold">Ventas por día</h2>
+              <h2 className="text-base font-semibold tracking-tight">Ventas por día</h2>
               <div className="mt-3 space-y-1">
                 {reporte.porDia.map((d) => (
                   <div key={d.dia} className="flex items-center gap-2 text-xs">
@@ -246,19 +246,19 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           <div className="grid gap-6 sm:grid-cols-2">
             <section>
-              <h2 className="text-sm font-bold">Por método de pago</h2>
+              <h2 className="text-base font-semibold tracking-tight">Por método de pago</h2>
               <table className="mt-3 w-full text-left text-sm">
                 <tbody>
                   {reporte.porMetodo.length === 0 ? (
                     <tr>
-                      <td className="py-1.5 text-muted-foreground">Sin cobros en este rango.</td>
+                      <td className="py-2.5 text-muted-foreground">Sin cobros en este rango.</td>
                     </tr>
                   ) : (
                     reporte.porMetodo.map((m) => (
-                      <tr key={m.metodo} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">{METODO_PAGO_LABEL[m.metodo]}</td>
-                        <td className="py-1.5 pr-4 text-muted-foreground">{m.cuentas} cuenta(s)</td>
-                        <td className="py-1.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
+                      <tr key={m.metodo} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4">{METODO_PAGO_LABEL[m.metodo]}</td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">{m.cuentas} cuenta(s)</td>
+                        <td className="py-2.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
                       </tr>
                     ))
                   )}
@@ -266,16 +266,16 @@ export function ReporteVentasVista({ token }: { token: string }) {
               </table>
             </section>
             <section>
-              <h2 className="text-sm font-bold">Por canal</h2>
+              <h2 className="text-base font-semibold tracking-tight">Por canal</h2>
               <table className="mt-3 w-full text-left text-sm">
                 <tbody>
                   {(Object.keys(CANALES) as CanalPedido[])
                     .filter((canal) => canal === "MESA" || canal === "MOSTRADOR" || (reporte.porCanal[canal]?.cuentas ?? 0) > 0)
                     .map((canal) => (
-                      <tr key={canal} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">{CANALES[canal]}</td>
-                        <td className="py-1.5 pr-4 text-muted-foreground">{reporte.porCanal[canal]?.cuentas ?? 0} cuenta(s)</td>
-                        <td className="py-1.5 text-right font-semibold">{formatoPesos(reporte.porCanal[canal]?.ventas ?? 0)}</td>
+                      <tr key={canal} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4">{CANALES[canal]}</td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">{reporte.porCanal[canal]?.cuentas ?? 0} cuenta(s)</td>
+                        <td className="py-2.5 text-right font-semibold">{formatoPesos(reporte.porCanal[canal]?.ventas ?? 0)}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -285,25 +285,25 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.porSede.length > 1 ? (
             <section>
-              <h2 className="text-sm font-bold">Por sede</h2>
+              <h2 className="text-base font-semibold tracking-tight">Por sede</h2>
               <table className="mt-3 w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-border text-xs text-muted-foreground">
-                    <th className="py-1.5 pr-4">Sede</th>
-                    <th className="py-1.5 pr-4">Cuentas</th>
-                    <th className="py-1.5 pr-4 text-right">Ticket promedio</th>
-                    <th className="py-1.5 pr-4 text-right">Propinas</th>
-                    <th className="py-1.5 text-right">Ventas</th>
+                  <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                    <th className="py-2.5 pr-4">Sede</th>
+                    <th className="py-2.5 pr-4">Cuentas</th>
+                    <th className="py-2.5 pr-4 text-right">Ticket promedio</th>
+                    <th className="py-2.5 pr-4 text-right">Propinas</th>
+                    <th className="py-2.5 text-right">Ventas</th>
                   </tr>
                 </thead>
                 <tbody>
                   {reporte.porSede.map((s) => (
-                    <tr key={s.sedeId} className="border-b border-border/60">
-                      <td className="py-1.5 pr-4 font-semibold">{s.nombre}</td>
-                      <td className="py-1.5 pr-4 text-muted-foreground">{s.cuentas}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(s.cuentas ? Math.round(s.ventas / s.cuentas) : 0)}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(s.propinas)}</td>
-                      <td className="py-1.5 text-right font-semibold">{formatoPesos(s.ventas)}</td>
+                    <tr key={s.sedeId} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                      <td className="py-2.5 pr-4 font-semibold">{s.nombre}</td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">{s.cuentas}</td>
+                      <td className="py-2.5 pr-4 text-right">{formatoPesos(s.cuentas ? Math.round(s.ventas / s.cuentas) : 0)}</td>
+                      <td className="py-2.5 pr-4 text-right">{formatoPesos(s.propinas)}</td>
+                      <td className="py-2.5 text-right font-semibold">{formatoPesos(s.ventas)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -313,24 +313,24 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.porMesero.length > 0 ? (
             <section>
-              <h2 className="text-sm font-bold">Por mesero (ventas en mesa)</h2>
+              <h2 className="text-base font-semibold tracking-tight">Por mesero (ventas en mesa)</h2>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm tabular-nums">
                   <thead>
-                    <tr className="border-b border-border text-xs text-muted-foreground">
-                      <th className="py-1.5 pr-4">Mesero</th>
-                      <th className="py-1.5 pr-4">Cuentas</th>
-                      <th className="py-1.5 pr-4 text-right">Propinas</th>
-                      <th className="py-1.5 text-right">Ventas</th>
+                    <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                      <th className="py-2.5 pr-4">Mesero</th>
+                      <th className="py-2.5 pr-4">Cuentas</th>
+                      <th className="py-2.5 pr-4 text-right">Propinas</th>
+                      <th className="py-2.5 text-right">Ventas</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reporte.porMesero.map((m) => (
-                      <tr key={m.meseroId} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">{m.nombre}</td>
-                        <td className="py-1.5 pr-4 text-muted-foreground">{m.cuentas}</td>
-                        <td className="py-1.5 pr-4 text-right">{formatoPesos(m.propinas)}</td>
-                        <td className="py-1.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
+                      <tr key={m.meseroId} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4">{m.nombre}</td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">{m.cuentas}</td>
+                        <td className="py-2.5 pr-4 text-right">{formatoPesos(m.propinas)}</td>
+                        <td className="py-2.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -341,33 +341,33 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.porProducto.length > 0 ? (
             <section>
-              <h2 className="text-sm font-bold">Productos más vendidos</h2>
+              <h2 className="text-base font-semibold tracking-tight">Productos más vendidos</h2>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm tabular-nums">
                   <thead>
-                    <tr className="border-b border-border text-xs text-muted-foreground">
-                      <th className="py-1.5 pr-4">Producto</th>
-                      <th className="py-1.5 pr-4">Unidades</th>
-                      <th className="py-1.5 pr-4 text-right">Ventas</th>
-                      <th className="py-1.5 pr-4 text-right">Ganancia</th>
-                      <th className="py-1.5 pr-4 text-right">Margen</th>
-                      <th className="py-1.5">En la carta</th>
+                    <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                      <th className="py-2.5 pr-4">Producto</th>
+                      <th className="py-2.5 pr-4">Unidades</th>
+                      <th className="py-2.5 pr-4 text-right">Ventas</th>
+                      <th className="py-2.5 pr-4 text-right">Ganancia</th>
+                      <th className="py-2.5 pr-4 text-right">Margen</th>
+                      <th className="py-2.5">En la carta</th>
                     </tr>
                   </thead>
                   <tbody>
                     {productos.map((p) => (
-                      <tr key={p.productoId} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4">
+                      <tr key={p.productoId} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4">
                           {p.nombre}
                           <span className="block text-[11px] text-muted-foreground">{p.categoria}</span>
                         </td>
-                        <td className="py-1.5 pr-4">{p.cantidad}</td>
-                        <td className="py-1.5 pr-4 text-right font-semibold">{formatoPesos(p.ventas)}</td>
-                        <td className={`py-1.5 pr-4 text-right ${p.ganancia !== null && p.ganancia < 0 ? "text-red-600" : ""}`}>
+                        <td className="py-2.5 pr-4">{p.cantidad}</td>
+                        <td className="py-2.5 pr-4 text-right font-semibold">{formatoPesos(p.ventas)}</td>
+                        <td className={`py-2.5 pr-4 text-right ${p.ganancia !== null && p.ganancia < 0 ? "text-peligro" : ""}`}>
                           {p.ganancia !== null ? formatoPesos(p.ganancia) : <span className="text-xs text-muted-foreground">sin costo</span>}
                         </td>
-                        <td className="py-1.5 pr-4 text-right">{p.margenPct !== null ? `${p.margenPct}%` : "—"}</td>
-                        <td className="py-1.5">
+                        <td className="py-2.5 pr-4 text-right">{p.margenPct !== null ? `${p.margenPct}%` : "—"}</td>
+                        <td className="py-2.5">
                           {p.clasificacion ? (
                             <span
                               title={CLASIFICACION[p.clasificacion].consejo}
@@ -407,14 +407,14 @@ export function ReporteVentasVista({ token }: { token: string }) {
             <div className="grid gap-6 sm:grid-cols-2">
               {reporte.porCombo.length > 0 ? (
                 <section>
-                  <h2 className="text-sm font-bold">Combos vendidos</h2>
+                  <h2 className="text-base font-semibold tracking-tight">Combos vendidos</h2>
                   <table className="mt-3 w-full text-left text-sm">
                     <tbody>
                       {reporte.porCombo.map((c) => (
-                        <tr key={c.nombre} className="border-b border-border/60">
-                          <td className="py-1.5 pr-4">🍱 {c.nombre}</td>
-                          <td className="py-1.5 pr-4 text-muted-foreground">{c.vendidos}</td>
-                          <td className="py-1.5 text-right font-semibold">{formatoPesos(c.ventas)}</td>
+                        <tr key={c.nombre} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                          <td className="py-2.5 pr-4">🍱 {c.nombre}</td>
+                          <td className="py-2.5 pr-4 text-muted-foreground">{c.vendidos}</td>
+                          <td className="py-2.5 text-right font-semibold">{formatoPesos(c.ventas)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -423,14 +423,14 @@ export function ReporteVentasVista({ token }: { token: string }) {
               ) : null}
               {reporte.porAdicion.length > 0 ? (
                 <section>
-                  <h2 className="text-sm font-bold">Adiciones más pedidas</h2>
+                  <h2 className="text-base font-semibold tracking-tight">Adiciones más pedidas</h2>
                   <table className="mt-3 w-full text-left text-sm">
                     <tbody>
                       {reporte.porAdicion.map((a) => (
-                        <tr key={a.nombre} className="border-b border-border/60">
-                          <td className="py-1.5 pr-4">{a.nombre}</td>
-                          <td className="py-1.5 pr-4 text-muted-foreground">{a.cantidad}</td>
-                          <td className="py-1.5 text-right font-semibold">{formatoPesos(a.ventas)}</td>
+                        <tr key={a.nombre} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                          <td className="py-2.5 pr-4">{a.nombre}</td>
+                          <td className="py-2.5 pr-4 text-muted-foreground">{a.cantidad}</td>
+                          <td className="py-2.5 text-right font-semibold">{formatoPesos(a.ventas)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -443,31 +443,31 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.resumen.descuentos.cuentas > 0 ? (
             <section>
-              <h2 className="text-sm font-bold">Descuentos y cortesías</h2>
+              <h2 className="text-base font-semibold tracking-tight">Descuentos y cortesías</h2>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm tabular-nums">
                   <thead>
-                    <tr className="border-b border-border text-xs text-muted-foreground">
-                      <th className="py-1.5 pr-4">Fecha</th>
-                      <th className="py-1.5 pr-4">Dónde</th>
-                      <th className="py-1.5 pr-4">Motivo</th>
-                      <th className="py-1.5 pr-4">Autorizó</th>
-                      <th className="py-1.5 text-right">Descuento</th>
+                    <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                      <th className="py-2.5 pr-4">Fecha</th>
+                      <th className="py-2.5 pr-4">Dónde</th>
+                      <th className="py-2.5 pr-4">Motivo</th>
+                      <th className="py-2.5 pr-4">Autorizó</th>
+                      <th className="py-2.5 text-right">Descuento</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reporte.cuentas
                       .filter((c) => c.estado === "PAGADA" && c.descuento > 0)
                       .map((c) => (
-                        <tr key={c.id} className="border-b border-border/60">
-                          <td className="py-1.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
-                          <td className="py-1.5 pr-4">
+                        <tr key={c.id} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                          <td className="py-2.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
+                          <td className="py-2.5 pr-4">
                             {c.ubicacion}
                             <span className="block text-[11px] text-muted-foreground">atendió {c.atendidoPor}</span>
                           </td>
-                          <td className="py-1.5 pr-4">{c.descuentoMotivo ?? "—"}</td>
-                          <td className="py-1.5 pr-4 text-muted-foreground">{c.descuentoAutorizadoPor ?? "—"}</td>
-                          <td className="py-1.5 text-right font-semibold">
+                          <td className="py-2.5 pr-4">{c.descuentoMotivo ?? "—"}</td>
+                          <td className="py-2.5 pr-4 text-muted-foreground">{c.descuentoAutorizadoPor ?? "—"}</td>
+                          <td className="py-2.5 text-right font-semibold">
                             {formatoPesos(c.descuento)}
                             <span className="block text-[11px] font-normal text-muted-foreground">de {formatoPesos(c.subtotal)}</span>
                           </td>
@@ -481,27 +481,27 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.perdidas.length > 0 ? (
             <section>
-              <h2 className="text-sm font-bold text-red-600">Cuentas perdidas (se fueron sin pagar)</h2>
+              <h2 className="text-sm font-semibold text-peligro">Cuentas perdidas (se fueron sin pagar)</h2>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm tabular-nums">
                   <thead>
-                    <tr className="border-b border-border text-xs text-muted-foreground">
-                      <th className="py-1.5 pr-4">Fecha</th>
-                      <th className="py-1.5 pr-4">Dónde</th>
-                      <th className="py-1.5 pr-4">Atendió</th>
-                      <th className="py-1.5 text-right">Total</th>
+                    <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                      <th className="py-2.5 pr-4">Fecha</th>
+                      <th className="py-2.5 pr-4">Dónde</th>
+                      <th className="py-2.5 pr-4">Atendió</th>
+                      <th className="py-2.5 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reporte.perdidas.map((c) => (
-                      <tr key={c.id} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
-                        <td className="py-1.5 pr-4">{c.ubicacion}</td>
-                        <td className="py-1.5 pr-4">
+                      <tr key={c.id} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
+                        <td className="py-2.5 pr-4">{c.ubicacion}</td>
+                        <td className="py-2.5 pr-4">
                           {c.atendidoPor}
                           {c.autorizadaPor ? <span className="block text-[11px] text-muted-foreground">autorizó {c.autorizadaPor}</span> : null}
                         </td>
-                        <td className="py-1.5 text-right font-semibold text-red-600">{formatoPesos(c.total)}</td>
+                        <td className="py-1.5 text-right font-semibold text-peligro">{formatoPesos(c.total)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -512,34 +512,34 @@ export function ReporteVentasVista({ token }: { token: string }) {
 
           {reporte.cancelaciones.length > 0 ? (
             <section>
-              <h2 className="text-sm font-bold">Productos cancelados</h2>
+              <h2 className="text-base font-semibold tracking-tight">Productos cancelados</h2>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm tabular-nums">
                   <thead>
-                    <tr className="border-b border-border text-xs text-muted-foreground">
-                      <th className="py-1.5 pr-4">Fecha</th>
-                      <th className="py-1.5 pr-4">Producto</th>
-                      <th className="py-1.5 pr-4">Dónde</th>
-                      <th className="py-1.5 pr-4">Canceló</th>
-                      <th className="py-1.5 text-right">Valor</th>
+                    <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                      <th className="py-2.5 pr-4">Fecha</th>
+                      <th className="py-2.5 pr-4">Producto</th>
+                      <th className="py-2.5 pr-4">Dónde</th>
+                      <th className="py-2.5 pr-4">Canceló</th>
+                      <th className="py-2.5 text-right">Valor</th>
                     </tr>
                   </thead>
                   <tbody>
                     {reporte.cancelaciones.map((c) => (
-                      <tr key={c.id} className="border-b border-border/60">
-                        <td className="py-1.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
-                        <td className="py-1.5 pr-4">
+                      <tr key={c.id} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                        <td className="py-2.5 pr-4 text-xs text-muted-foreground">{formatoFechaHora(c.fecha)}</td>
+                        <td className="py-2.5 pr-4">
                           {c.cantidad}× {c.producto}
                           {c.yaEnCocina ? (
-                            <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">merma</span>
+                            <span className="ml-1.5 rounded-full bg-peligro/10 px-1.5 py-0.5 text-[10px] font-semibold text-peligro">merma</span>
                           ) : null}
                         </td>
-                        <td className="py-1.5 pr-4">{c.ubicacion}</td>
-                        <td className="py-1.5 pr-4 text-muted-foreground">
+                        <td className="py-2.5 pr-4">{c.ubicacion}</td>
+                        <td className="py-2.5 pr-4 text-muted-foreground">
                           {c.canceladoPor}
                           {c.autorizadoPor ? <span className="block text-[11px]">autorizó {c.autorizadoPor}</span> : null}
                         </td>
-                        <td className="py-1.5 text-right">{formatoPesos(c.valor)}</td>
+                        <td className="py-2.5 text-right">{formatoPesos(c.valor)}</td>
                       </tr>
                     ))}
                   </tbody>

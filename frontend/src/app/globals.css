@@ -160,6 +160,32 @@
     outline-offset: 2px;
   }
 
+  /*
+   * Campos con borde que no usan <Entrada>/<Selector>: fondo de superficie,
+   * borde que reacciona al mouse y el mismo anillo de foco. Con :where() no
+   * pesan nada: cualquier clase utilitaria de la pantalla manda sobre esto.
+   */
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), select, textarea)[class*="border-border"] {
+    background-color: var(--surface);
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  :where(input, select, textarea)[class*="border-border"]:hover {
+    border-color: var(--border-strong);
+  }
+
+  :where(input, select, textarea)[class*="border-border"]:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 15%, transparent);
+  }
+
+  :where(input[type="checkbox"], input[type="radio"]) {
+    accent-color: var(--accent);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     ::before,

@@ -15,12 +15,12 @@ export function RepresentacionGrafica({ doc, qr }: { doc: DocumentoFiscalDetalle
   const tipoId = TIPOS_IDENTIFICACION.find((t) => t.codigo === c.customer.identificationType)?.nombre ?? "Identificación";
   return (
     <div className="mx-auto max-w-xs text-xs">
-      <p className="text-center text-sm font-bold">{doc.emisor.razonSocial}</p>
+      <p className="text-center text-sm font-semibold">{doc.emisor.razonSocial}</p>
       <p className="text-center">
         NIT {doc.emisor.nit}-{doc.emisor.dv}
       </p>
       <p className="mt-2 text-center font-semibold">{TIPO_DOCUMENTO_LABEL[doc.tipo]}</p>
-      <p className="text-center text-sm font-bold">No. {doc.numeroCompleto}</p>
+      <p className="text-center text-sm font-semibold">No. {doc.numeroCompleto}</p>
       <p className="text-center">{formatoFechaHora(doc.creadoEn)}</p>
       {doc.anula ? <p className="text-center">Anula el documento {doc.anula}</p> : null}
       <div className="mt-2 border-t border-dashed border-foreground pt-1">
@@ -59,7 +59,7 @@ export function RepresentacionGrafica({ doc, qr }: { doc: DocumentoFiscalDetalle
             <span>{conCentavos(c.totalAmounts.chargeTotal)}</span>
           </div>
         ) : null}
-        <div className="flex justify-between text-sm font-bold">
+        <div className="flex justify-between text-sm font-semibold">
           <span>Total</span>
           <span>{pesos(c.totalAmounts.payableTotal)}</span>
         </div>

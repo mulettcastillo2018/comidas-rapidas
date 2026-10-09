@@ -36,7 +36,7 @@ function CampoCantidad({ unidad, onCambio }: { unidad: UnidadInsumo; onCambio: (
         }}
         inputMode="decimal"
         placeholder="0"
-        className="w-24 rounded-lg border border-border px-2 py-1.5 text-sm"
+        className="w-24 rounded-xl border border-border px-2 py-1.5 text-sm"
       />
       {opciones.length > 1 ? (
         <select
@@ -45,7 +45,7 @@ function CampoCantidad({ unidad, onCambio }: { unidad: UnidadInsumo; onCambio: (
             setFactor(Number(e.target.value));
             avisar(valor, Number(e.target.value));
           }}
-          className="rounded-lg border border-border px-1 py-1.5 text-sm"
+          className="rounded-xl border border-border px-1 py-1.5 text-sm"
         >
           {opciones.map((o) => (
             <option key={o.etiqueta} value={o.factor}>
@@ -99,16 +99,16 @@ function NuevoInsumo({ token, onCreado }: { token: string; onCreado: () => void 
   }
 
   return (
-    <form key={`${unidad}-${version}`} onSubmit={crear} className="space-y-2 rounded-xl border border-border p-3 text-sm">
-      <p className="font-bold">Nuevo insumo</p>
+    <form key={`${unidad}-${version}`} onSubmit={crear} className="space-y-2 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
+      <p className="font-semibold">Nuevo insumo</p>
       <div className="flex flex-wrap items-end gap-3">
         <label>
           <span className="block text-xs font-semibold text-muted-foreground">Nombre</span>
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. Carne de res" className="rounded-lg border border-border px-2 py-1.5" />
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. Carne de res" className="rounded-xl border border-border px-2 py-1.5" />
         </label>
         <label>
           <span className="block text-xs font-semibold text-muted-foreground">Se mide en</span>
-          <select value={unidad} onChange={(e) => setUnidad(e.target.value as UnidadInsumo)} className="rounded-lg border border-border px-2 py-1.5">
+          <select value={unidad} onChange={(e) => setUnidad(e.target.value as UnidadInsumo)} className="rounded-xl border border-border px-2 py-1.5">
             {(Object.keys(UNIDAD_LABEL) as UnidadInsumo[]).map((u) => (
               <option key={u} value={u}>
                 {UNIDAD_LABEL[u]}
@@ -133,8 +133,8 @@ function NuevoInsumo({ token, onCreado }: { token: string; onCreado: () => void 
           <CampoPesos compacto valor={precioRef} onChange={setPrecioRef} />
         </div>
       </div>
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
-      <button disabled={nombre.trim().length < 2} className="btn-primary rounded-full px-4 py-1.5 text-xs disabled:opacity-50">
+      {error ? <p className="text-xs text-peligro">{error}</p> : null}
+      <button disabled={nombre.trim().length < 2} className="btn-primary rounded-xl px-4 py-1.5 text-xs disabled:opacity-50">
         Crear insumo
       </button>
     </form>
@@ -178,7 +178,7 @@ function Compra({ token, insumo, onListo }: { token: string; insumo: Insumo; onL
           <input type="checkbox" checked={caja} onChange={(e) => setCaja(e.target.checked)} /> Se pagó con efectivo de la caja
         </label>
       ) : null}
-      {error ? <p className="text-red-600">{error}</p> : null}
+      {error ? <p className="text-peligro">{error}</p> : null}
       <button onClick={registrar} disabled={!cantidad || cantidad <= 0} className="btn-primary rounded-full px-4 py-1 disabled:opacity-50">
         Registrar compra
       </button>
@@ -206,7 +206,7 @@ function Conteo({ token, insumo, onListo }: { token: string; insumo: Insumo; onL
       <div className="flex flex-wrap items-center gap-2">
         Contado de verdad: <CampoCantidad unidad={insumo.unidad} onCambio={setReal} />
         {diferencia !== null ? (
-          <span className={diferencia < 0 ? "font-semibold text-red-600" : "text-muted-foreground"}>
+          <span className={diferencia < 0 ? "font-semibold text-peligro" : "text-muted-foreground"}>
             {diferencia < 0
               ? `Faltan ${formatoCantidad(-diferencia, insumo.unidad)} (${formatoPesos(Math.round(-diferencia * insumo.costoUnitario))}) frente a lo que dicen las recetas`
               : diferencia > 0
@@ -215,7 +215,7 @@ function Conteo({ token, insumo, onListo }: { token: string; insumo: Insumo; onL
           </span>
         ) : null}
       </div>
-      {error ? <p className="text-red-600">{error}</p> : null}
+      {error ? <p className="text-peligro">{error}</p> : null}
       <button onClick={guardar} disabled={real === null} className="btn-primary rounded-full px-4 py-1 disabled:opacity-50">
         Guardar conteo
       </button>
@@ -257,13 +257,13 @@ export function Insumos({ token, onAviso }: { token: string; onAviso: (m: string
         son exactos): te avisa cuando algo baja del mínimo, y al contar ves cuánto se pierde.
       </p>
       <NuevoInsumo token={token} onCreado={() => listo("Insumo creado")} />
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
       {insumos && insumos.length > 0 ? (
         <>
           <p className="text-xs text-muted-foreground">Valor aproximado en inventario: {formatoPesos(valorTotal)}</p>
           <ul className="space-y-2">
             {insumos.map((i) => (
-              <li key={i.id} className={`rounded-xl border p-3 text-sm ${i.stock <= i.stockMinimo ? "border-amber-500" : "border-border"} ${i.activo ? "" : "opacity-50"}`}>
+              <li key={i.id} className={`rounded-2xl border p-3 text-sm bg-surface shadow-suave ${i.stock <= i.stockMinimo ? "border-aviso" : "border-border"} ${i.activo ? "" : "opacity-50"}`}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold">{i.nombre}</p>
@@ -274,7 +274,7 @@ export function Insumos({ token, onAviso }: { token: string; onAviso: (m: string
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className={`font-bold ${i.stock <= 0 ? "text-red-600" : i.stock <= i.stockMinimo ? "text-amber-700" : ""}`}>{formatoCantidad(i.stock, i.unidad)}</p>
+                    <p className={`font-semibold ${i.stock <= 0 ? "text-peligro" : i.stock <= i.stockMinimo ? "text-aviso" : ""}`}>{formatoCantidad(i.stock, i.unidad)}</p>
                     <p className="text-[11px] text-muted-foreground">mínimo {formatoCantidad(i.stockMinimo, i.unidad)}</p>
                   </div>
                 </div>
@@ -300,7 +300,7 @@ export function Insumos({ token, onAviso }: { token: string; onAviso: (m: string
                           {m.nota ? ` (${m.nota})` : ""}
                           {m.usuario ? ` · ${m.usuario}` : ""}
                         </span>
-                        <span className={m.cantidad < 0 ? "text-red-600" : "text-green-700"}>
+                        <span className={m.cantidad < 0 ? "text-peligro" : "text-exito"}>
                           {m.cantidad > 0 ? "+" : ""}
                           {formatoCantidad(m.cantidad, i.unidad)} → {formatoCantidad(m.stockResultante, i.unidad)}
                         </span>

@@ -54,7 +54,7 @@ export function PlataformasAdmin({
       {plataformas.length > 0 ? (
         <ul className="space-y-1.5 text-sm">
           {plataformas.map((p) => (
-            <li key={p.id} className={`flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 ${p.activa ? "" : "opacity-50"}`}>
+            <li key={p.id} className={`flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2 ${p.activa ? "" : "opacity-50"}`}>
               <span>
                 <strong>{p.nombre}</strong> · comisión {p.comisionPct}%
               </span>
@@ -76,19 +76,19 @@ export function PlataformasAdmin({
         <p className="text-sm text-muted-foreground">Todavía no has agregado ninguna app.</p>
       )}
       <form onSubmit={agregar} className="flex flex-wrap items-center gap-2">
-        <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre (ej. Rappi)" className="rounded-lg border border-border px-3 py-1.5 text-sm" />
+        <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre (ej. Rappi)" className="rounded-xl border border-border px-3 py-1.5 text-sm" />
         <input
           value={comision}
           onChange={(e) => setComision(e.target.value)}
           placeholder="Comisión %"
           inputMode="decimal"
-          className="w-28 rounded-lg border border-border px-3 py-1.5 text-sm"
+          className="w-28 rounded-xl border border-border px-3 py-1.5 text-sm"
         />
-        <button disabled={!nombre.trim() || !comision} className="rounded-full border border-accent px-4 py-1.5 text-sm font-semibold text-accent disabled:opacity-50">
+        <button disabled={!nombre.trim() || !comision} className="rounded-xl border border-accent px-4 py-1.5 text-sm font-semibold text-accent disabled:opacity-50">
           + Agregar app
         </button>
       </form>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
     </div>
   );
 }

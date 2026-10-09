@@ -21,10 +21,10 @@ import { RepresentacionGrafica } from "./RepresentacionGrafica";
 import { conAlcance, useVerTodas } from "@/lib/sedes";
 
 const COLOR_ESTADO: Record<EstadoDocumentoFiscal, string> = {
-  PENDIENTE: "bg-amber-100 text-amber-800",
-  ENVIADO: "bg-sky-100 text-sky-800",
-  ACEPTADO: "bg-green-100 text-green-800",
-  RECHAZADO: "bg-red-100 text-red-800",
+  PENDIENTE: "bg-aviso/10 text-aviso",
+  ENVIADO: "bg-info/10 text-info",
+  ACEPTADO: "bg-exito/10 text-exito",
+  RECHAZADO: "bg-peligro/10 text-peligro",
 };
 
 function ANombreDe({ token, doc, onListo }: { token: string; doc: DocumentoFiscalResumen; onListo: (mensaje: string) => void }) {
@@ -49,7 +49,7 @@ function ANombreDe({ token, doc, onListo }: { token: string; doc: DocumentoFisca
   return (
     <div className="mt-2 space-y-2 rounded-lg bg-muted/60 p-2">
       <DatosFacturacion valor={adquiriente} onCambio={setAdquiriente} />
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-peligro">{error}</p> : null}
       <button onClick={emitir} disabled={Boolean(problema)} className="btn-primary rounded-full px-4 py-1 text-xs disabled:opacity-50">
         Emitir factura a su nombre
       </button>
@@ -134,7 +134,7 @@ export function DocumentosFiscales({ token, onAviso }: { token: string; onAviso:
           Enviar pendientes ahora
         </button>
       </div>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
       {!datos ? (
         <p className="text-sm text-muted-foreground">Cargando…</p>
       ) : datos.documentos.length === 0 ? (
@@ -145,7 +145,7 @@ export function DocumentosFiscales({ token, onAviso }: { token: string; onAviso:
             <li
               key={d.id}
               data-resaltado={resaltado.documento === d.id}
-              className={`rounded-xl border border-border p-3 text-sm ${resaltado.documento === d.id ? CLASE_RESALTADO : ""}`}
+              className={`rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave ${resaltado.documento === d.id ? CLASE_RESALTADO : ""}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
@@ -164,9 +164,9 @@ export function DocumentosFiscales({ token, onAviso }: { token: string; onAviso:
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${COLOR_ESTADO[d.estado]}`}>{ESTADO_DOCUMENTO_LABEL[d.estado]}</span>
               </div>
-              {d.estado !== "ACEPTADO" && d.mensaje ? <p className="mt-1 text-xs text-amber-800">{d.mensaje}</p> : null}
+              {d.estado !== "ACEPTADO" && d.mensaje ? <p className="mt-1 text-xs text-aviso">{d.mensaje}</p> : null}
               {d.estado === "RECHAZADO" && d.errores.length > 0 ? (
-                <ul className="mt-1 list-disc pl-5 text-xs text-red-700">
+                <ul className="mt-1 list-disc pl-5 text-xs text-peligro">
                   {d.errores.slice(0, 5).map((e) => (
                     <li key={e}>{e}</li>
                   ))}
@@ -185,7 +185,7 @@ export function DocumentosFiscales({ token, onAviso }: { token: string; onAviso:
                 ) : null}
                 {d.estado === "ACEPTADO" && (d.tipo === "FACTURA" || d.tipo === "POS") && !d.anuladoPor ? (
                   <>
-                    <button onClick={() => anular(d)} className="font-semibold text-red-600">
+                    <button onClick={() => anular(d)} className="font-semibold text-peligro">
                       Anular
                     </button>
                     {d.clienteIdentificacion === "222222222222" ? (

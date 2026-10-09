@@ -42,10 +42,10 @@ export function MiClaveSupervisor({ token, tienePin, onCambio }: { token: string
   }
 
   return (
-    <section className="rounded-xl border border-border p-4 text-sm">
+    <section className="rounded-2xl border border-border p-4 text-sm bg-surface shadow-suave">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <ShieldCheck size={18} className={tienePin ? "text-green-700" : "text-amber-600"} />
+          <ShieldCheck size={18} className={tienePin ? "text-exito" : "text-aviso"} />
           <div>
             <p className="font-semibold">Mi clave de supervisor</p>
             <p className="text-xs text-muted-foreground">
@@ -61,7 +61,7 @@ export function MiClaveSupervisor({ token, tienePin, onCambio }: { token: string
               {tienePin ? "Cambiar" : "Configurar"}
             </button>
             {tienePin ? (
-              <button onClick={quitar} className="text-xs font-semibold text-red-600">
+              <button onClick={quitar} className="text-xs font-semibold text-peligro">
                 Quitar
               </button>
             ) : null}
@@ -78,7 +78,7 @@ export function MiClaveSupervisor({ token, tienePin, onCambio }: { token: string
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
             placeholder="Nueva clave (4 a 6 números)"
-            className="w-48 rounded-lg border border-border px-2 py-1.5"
+            className="w-48 rounded-xl border border-border px-2 py-1.5"
           />
           <input
             type="password"
@@ -88,15 +88,15 @@ export function MiClaveSupervisor({ token, tienePin, onCambio }: { token: string
             value={confirmacion}
             onChange={(e) => setConfirmacion(e.target.value.replace(/\D/g, ""))}
             placeholder="Repítela"
-            className="w-36 rounded-lg border border-border px-2 py-1.5"
+            className="w-36 rounded-xl border border-border px-2 py-1.5"
           />
-          <button type="submit" disabled={guardando || pin.length < 4} className="btn-primary rounded-full px-4 py-1.5 text-xs disabled:opacity-50">
+          <button type="submit" disabled={guardando || pin.length < 4} className="btn-primary rounded-xl px-4 py-1.5 text-xs disabled:opacity-50">
             Guardar
           </button>
           <button type="button" onClick={() => setEditando(false)} className="text-xs text-muted-foreground">
             Cancelar
           </button>
-          {error ? <p className="w-full text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="w-full text-xs text-peligro">{error}</p> : null}
         </form>
       ) : null}
     </section>

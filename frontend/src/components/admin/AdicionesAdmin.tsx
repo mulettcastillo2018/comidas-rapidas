@@ -38,11 +38,11 @@ function Formulario({
   }
 
   return (
-    <form onSubmit={enviar} className="space-y-3 rounded-xl border border-border p-3 text-sm">
+    <form onSubmit={enviar} className="space-y-3 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="block">
           <span className="font-semibold">Nombre</span>
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} required maxLength={60} placeholder="Extra queso, Sin cebolla…" className="mt-1 w-full rounded-lg border border-border px-2 py-2" />
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} required maxLength={60} placeholder="Extra queso, Sin cebolla…" className="mt-1 w-full rounded-xl border border-border px-2 py-2" />
         </label>
         <CampoPesos label="Precio para el cliente" ayuda="0 si no cobra nada" valor={precio} onChange={setPrecio} />
         <CampoPesos label="Costo" ayuda="Opcional" valor={costo} onChange={setCosto} />
@@ -52,7 +52,7 @@ function Formulario({
         <SelectorProductos productos={productos.filter((p) => !p.esCombo)} elegidos={productoIds} onChange={setProductoIds} />
       </div>
       <div className="flex gap-2">
-        <button type="submit" disabled={!nombre.trim()} className="btn-primary rounded-full px-4 py-1.5 text-xs disabled:opacity-50">
+        <button type="submit" disabled={!nombre.trim()} className="btn-primary rounded-xl px-4 py-1.5 text-xs disabled:opacity-50">
           Guardar
         </button>
         <button type="button" onClick={onCancelar} className="text-xs text-muted-foreground">
@@ -92,23 +92,23 @@ export function AdicionesAdmin({ token, adiciones, productos, onCambio }: { toke
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-bold">Adiciones</h2>
+          <h2 className="text-base font-semibold tracking-tight">Adiciones</h2>
           <p className="text-xs text-muted-foreground">Extras con precio (se cobran solos) u opciones sin costo, por producto.</p>
         </div>
         {editando === null ? (
-          <button onClick={() => setEditando("nueva")} className="btn-primary rounded-full px-3 py-1.5 text-xs">
+          <button onClick={() => setEditando("nueva")} className="btn-primary rounded-xl px-3 py-1.5 text-xs">
             + Nueva adición
           </button>
         ) : null}
       </div>
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-peligro">{error}</p> : null}
       {editando === "nueva" ? <Formulario productos={productos} onGuardar={(d) => guardar(null, d)} onCancelar={() => setEditando(null)} /> : null}
       {adiciones.length === 0 && editando !== "nueva" ? <p className="text-sm text-muted-foreground">Todavía no hay adiciones.</p> : null}
       {adiciones.map((a) =>
         editando === a.id ? (
           <Formulario key={a.id} inicial={a} productos={productos} onGuardar={(d) => guardar(a.id, d)} onCancelar={() => setEditando(null)} />
         ) : (
-          <div key={a.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border p-3 text-sm ${a.activa ? "" : "opacity-60"}`}>
+          <div key={a.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave ${a.activa ? "" : "opacity-60"}`}>
             <div>
               <p className="font-semibold">
                 {a.nombre} <span className="font-normal text-muted-foreground">· {a.precio > 0 ? `+${formatoPesos(a.precio)}` : "sin costo"}</span>

@@ -15,10 +15,10 @@ import { CuadreMeseros } from "@/components/caja/CuadreMeseros";
 import type { CajaActual, CierreCaja } from "@/lib/types";
 
 function Diferencia({ valor, grande }: { valor: number; grande?: boolean }) {
-  const clase = grande ? "text-lg font-extrabold" : "font-semibold";
-  if (valor === 0) return <span className={`${clase} text-green-700`}>Cuadra</span>;
-  if (valor < 0) return <span className={`${clase} text-red-600`}>Faltan {formatoPesos(-valor)}</span>;
-  return <span className={`${clase} text-amber-600`}>Sobran {formatoPesos(valor)}</span>;
+  const clase = grande ? "text-lg font-semibold tracking-tight" : "font-semibold";
+  if (valor === 0) return <span className={`${clase} text-exito`}>Cuadra</span>;
+  if (valor < 0) return <span className={`${clase} text-peligro`}>Faltan {formatoPesos(-valor)}</span>;
+  return <span className={`${clase} text-aviso`}>Sobran {formatoPesos(valor)}</span>;
 }
 
 function Comprobante({ cierre }: { cierre: CierreCaja }) {
@@ -30,7 +30,7 @@ function Comprobante({ cierre }: { cierre: CierreCaja }) {
   );
   return (
     <div className="mx-auto max-w-sm text-sm">
-      <p className="text-center text-base font-bold">Cierre de caja</p>
+      <p className="text-center text-base font-semibold">Cierre de caja</p>
       <p className="text-center text-xs">
         {formatoFechaHora(cierre.desde)} → {formatoFechaHora(cierre.hasta)}
       </p>
@@ -144,7 +144,7 @@ export default function AdminCajaPage() {
         </p>
 
         {recienCerrado ? (
-          <div className="rounded-xl border border-green-600 bg-green-50 p-4 text-sm text-green-900">
+          <div className="rounded-2xl border border-exito bg-exito/10 p-4 text-sm text-exito shadow-suave">
             <p className="font-semibold">
               Caja cerrada. <Diferencia valor={recienCerrado.diferencia} />
             </p>
@@ -155,12 +155,12 @@ export default function AdminCajaPage() {
         ) : null}
 
         <section className="space-y-4">
-          <h2 className="text-sm font-bold">
+          <h2 className="text-base font-semibold tracking-tight">
             Turno actual <span className="font-normal text-muted-foreground">— desde {formatoFechaHora(actual.desde)}</span>
           </h2>
 
           {actual.mesasAbiertas > 0 || actual.cuentasPorCobrar > 0 ? (
-            <div className="flex gap-2 rounded-xl border border-amber-500 bg-amber-50 p-3 text-xs text-amber-900">
+            <div className="flex gap-2 rounded-2xl border border-aviso bg-aviso/10 p-3 text-xs text-aviso shadow-suave">
               <AlertTriangle size={16} className="shrink-0" />
               <p>
                 {actual.mesasAbiertas > 0 ? `Hay ${actual.mesasAbiertas} mesa(s) abierta(s). ` : ""}
@@ -174,20 +174,20 @@ export default function AdminCajaPage() {
             {totalesPorMetodo(actual)
               .filter(([metodo, valor]) => valor > 0 || metodo === "EFECTIVO")
               .map(([metodo, valor]) => (
-                <div key={metodo} className="rounded-xl border border-border p-3">
+                <div key={metodo} className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
                   <p className="text-xs text-muted-foreground">{METODO_PAGO_LABEL[metodo]}</p>
-                  <p className="mt-1 text-lg font-extrabold">{formatoPesos(valor)}</p>
+                  <p className="mt-1 text-lg font-semibold tracking-tight">{formatoPesos(valor)}</p>
                 </div>
               ))}
-            <div className="rounded-xl border border-accent p-3">
+            <div className="rounded-2xl border border-accent p-3 bg-surface shadow-suave">
               <p className="text-xs text-muted-foreground">Total cobrado</p>
-              <p className="mt-1 text-lg font-extrabold">{formatoPesos(totalCobrado(actual))}</p>
+              <p className="mt-1 text-lg font-semibold tracking-tight">{formatoPesos(totalCobrado(actual))}</p>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
             {actual.cuentasPagadas} cuenta(s) cobrada(s) · propinas incluidas: {formatoPesos(actual.propinas)}
             {actual.cuentasPerdidas > 0 ? (
-              <span className="text-red-600">
+              <span className="text-peligro">
                 {" "}
                 · {actual.cuentasPerdidas} se fue(ron) sin pagar ({formatoPesos(actual.totalPerdidas)})
               </span>
@@ -199,9 +199,9 @@ export default function AdminCajaPage() {
         <MovimientosCaja token={token} movimientos={actual.movimientos} onCambio={cargar} />
 
         <section className="space-y-4">
-          <h2 className="text-sm font-bold">Cerrar caja</h2>
+          <h2 className="text-base font-semibold tracking-tight">Cerrar caja</h2>
           {hayMovimientos ? (
-            <form onSubmit={handleCerrar} className="space-y-4 rounded-xl border border-border p-4">
+            <form onSubmit={handleCerrar} className="space-y-4 rounded-2xl border border-border p-4 bg-surface shadow-suave">
               <div className="grid gap-4 sm:grid-cols-2">
                 <CampoPesos label="Base inicial" ayuda="Efectivo con el que arrancó la caja (para vueltas)" valor={baseInicial} onChange={setBaseInicial} />
                 <CampoPesos label="Efectivo contado" ayuda="Todo el efectivo que hay ahora en la caja" valor={efectivoContado} onChange={setEfectivoContado} />
@@ -218,7 +218,7 @@ export default function AdminCajaPage() {
                 {efectivoContado !== null ? <Diferencia valor={efectivoContado - esperado} grande /> : null}
               </div>
               {pendientesMeseros.length > 0 ? (
-                <p className="flex gap-2 text-xs text-amber-700">
+                <p className="flex gap-2 text-xs text-aviso">
                   <AlertTriangle size={14} className="shrink-0" />
                   Hay meseros que no han entregado todo su efectivo: si la plata no está en la caja, el cierre mostrará un faltante.
                 </p>
@@ -231,50 +231,50 @@ export default function AdminCajaPage() {
                   onChange={(e) => setNotas(e.target.value)}
                   maxLength={500}
                   rows={2}
-                  className="mt-1 w-full rounded-lg border border-border px-2 py-1.5"
+                  className="mt-1 w-full rounded-xl border border-border px-2 py-1.5"
                 />
               </label>
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              <button type="submit" disabled={guardando || efectivoContado === null} className="btn-primary rounded-full px-5 py-2 text-sm disabled:opacity-50">
+              {error ? <p className="text-sm text-peligro">{error}</p> : null}
+              <button type="submit" disabled={guardando || efectivoContado === null} className="btn-primary rounded-xl px-5 py-2 text-sm disabled:opacity-50">
                 {guardando ? "Cerrando…" : "Cerrar caja"}
               </button>
             </form>
           ) : (
-            <p className="rounded-xl border border-border p-4 text-sm text-muted-foreground">No hay cuentas cobradas ni movimientos desde el último cierre.</p>
+            <p className="rounded-2xl border border-border p-4 text-sm text-muted-foreground bg-surface shadow-suave">No hay cuentas cobradas ni movimientos desde el último cierre.</p>
           )}
         </section>
 
         {historial.length > 0 ? (
           <section>
-            <h2 className="text-sm font-bold">Cierres anteriores</h2>
+            <h2 className="text-base font-semibold tracking-tight">Cierres anteriores</h2>
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm tabular-nums">
                 <thead>
-                  <tr className="border-b border-border text-xs text-muted-foreground">
-                    <th className="py-1.5 pr-4">Cierre</th>
-                    <th className="py-1.5 pr-4">Cerró</th>
-                    <th className="py-1.5 pr-4 text-right">Total cobrado</th>
-                    <th className="py-1.5 pr-4 text-right">Efectivo esperado</th>
-                    <th className="py-1.5 pr-4 text-right">Contado</th>
-                    <th className="py-1.5 pr-4">Diferencia</th>
-                    <th className="py-1.5" />
+                  <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                    <th className="py-2.5 pr-4">Cierre</th>
+                    <th className="py-2.5 pr-4">Cerró</th>
+                    <th className="py-2.5 pr-4 text-right">Total cobrado</th>
+                    <th className="py-2.5 pr-4 text-right">Efectivo esperado</th>
+                    <th className="py-2.5 pr-4 text-right">Contado</th>
+                    <th className="py-2.5 pr-4">Diferencia</th>
+                    <th className="py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
                   {historial.map((c) => (
                     <tr key={c.id} className="border-b border-border/60 align-top">
-                      <td className="py-1.5 pr-4 text-xs">
+                      <td className="py-2.5 pr-4 text-xs">
                         {formatoFechaHora(c.hasta)}
                         {c.notas ? <p className="mt-0.5 max-w-48 text-muted-foreground">{c.notas}</p> : null}
                       </td>
-                      <td className="py-1.5 pr-4">{nombreCompleto(c.cerradoPor)}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(totalCobrado(c))}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(efectivoEsperado(c.baseInicial, c))}</td>
-                      <td className="py-1.5 pr-4 text-right">{formatoPesos(c.efectivoContado)}</td>
-                      <td className="py-1.5 pr-4">
+                      <td className="py-2.5 pr-4">{nombreCompleto(c.cerradoPor)}</td>
+                      <td className="py-2.5 pr-4 text-right">{formatoPesos(totalCobrado(c))}</td>
+                      <td className="py-2.5 pr-4 text-right">{formatoPesos(efectivoEsperado(c.baseInicial, c))}</td>
+                      <td className="py-2.5 pr-4 text-right">{formatoPesos(c.efectivoContado)}</td>
+                      <td className="py-2.5 pr-4">
                         <Diferencia valor={c.diferencia} />
                       </td>
-                      <td className="py-1.5">
+                      <td className="py-2.5">
                         <button onClick={() => setImprimiendo(c)} title="Imprimir comprobante" className="text-muted-foreground hover:text-accent">
                           <Printer size={16} />
                         </button>

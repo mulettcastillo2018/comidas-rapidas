@@ -90,14 +90,14 @@ export default function AdminGastosPage() {
         para no perder.
       </p>
 
-      <form onSubmit={guardar} className="space-y-3 rounded-xl border border-border p-4">
-        <h2 className="text-sm font-bold">
+      <form onSubmit={guardar} className="space-y-3 rounded-2xl border border-border p-4 bg-surface shadow-suave">
+        <h2 className="text-base font-semibold tracking-tight">
           Registrar un gasto{variasSedes ? (general ? " del negocio en general" : ` de ${nombreActual(sedes)}`) : ""}
         </h2>
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="text-sm">
             <span className="font-semibold">Categoría</span>
-            <select value={categoria} onChange={(e) => elegirCategoria(e.target.value as CategoriaGasto)} className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm">
+            <select value={categoria} onChange={(e) => elegirCategoria(e.target.value as CategoriaGasto)} className="mt-1 w-full rounded-xl border border-border px-2 py-2 text-sm">
               {CATEGORIAS_GASTO.map((c) => (
                 <option key={c} value={c}>
                   {CATEGORIA_GASTO_LABEL[c]}
@@ -116,7 +116,7 @@ export default function AdminGastosPage() {
                 // Solo un gasto de hoy puede salir de la caja.
                 if (e.target.value !== hoy) setDesdeCaja(false);
               }}
-              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5"
+              className="mt-1 w-full rounded-xl border border-border px-2 py-1.5"
             />
           </label>
           <label className="text-sm">
@@ -125,7 +125,7 @@ export default function AdminGastosPage() {
               value={concepto}
               onChange={(e) => setConcepto(e.target.value)}
               placeholder="Ej. 20 kg de carne, recibo de la luz"
-              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-border px-3 py-2 text-sm"
             />
           </label>
           <CampoPesos label="Valor" valor={monto} onChange={setMonto} />
@@ -153,8 +153,8 @@ export default function AdminGastosPage() {
             </label>
           ) : null}
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button disabled={guardando || !monto || concepto.trim().length < 3} className="btn-primary rounded-full px-5 py-2 text-sm disabled:opacity-50">
+        {error ? <p className="text-sm text-peligro">{error}</p> : null}
+        <button disabled={guardando || !monto || concepto.trim().length < 3} className="btn-primary rounded-xl px-5 py-2 text-sm disabled:opacity-50">
           {guardando ? "Guardando…" : "Registrar gasto"}
         </button>
       </form>
@@ -176,11 +176,11 @@ export default function AdminGastosPage() {
         ) : (
           <>
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-border p-4">
+              <div className="rounded-2xl border border-border p-4 bg-surface shadow-suave">
                 <p className="text-xs text-muted-foreground">Total de gastos</p>
-                <p className="mt-1 text-xl font-extrabold">{formatoPesos(lista.total)}</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight">{formatoPesos(lista.total)}</p>
               </div>
-              <div className="rounded-xl border border-border p-4 sm:col-span-2">
+              <div className="rounded-2xl border border-border p-4 sm:col-span-2 bg-surface shadow-suave">
                 <p className="text-xs text-muted-foreground">Por categoría</p>
                 <ul className="mt-1 space-y-0.5 text-sm">
                   {lista.porCategoria.map((c) => (
@@ -193,35 +193,35 @@ export default function AdminGastosPage() {
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm tabular-nums">
                 <thead>
-                  <tr className="border-b border-border text-xs text-muted-foreground">
-                    <th className="py-1.5 pr-4">Fecha</th>
-                    <th className="py-1.5 pr-4">Concepto</th>
-                    <th className="py-1.5 pr-4">Categoría</th>
-                    <th className="py-1.5 pr-4 text-right">Valor</th>
-                    <th className="py-1.5" />
+                  <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                    <th className="py-2.5 pr-4">Fecha</th>
+                    <th className="py-2.5 pr-4">Concepto</th>
+                    <th className="py-2.5 pr-4">Categoría</th>
+                    <th className="py-2.5 pr-4 text-right">Valor</th>
+                    <th className="py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
                   {lista.gastos.map((g) => (
-                    <tr key={g.id} className="border-b border-border/60">
-                      <td className="py-1.5 pr-4 text-xs capitalize text-muted-foreground">{nombreDia(g.dia)}</td>
-                      <td className="py-1.5 pr-4">
+                    <tr key={g.id} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                      <td className="py-2.5 pr-4 text-xs capitalize text-muted-foreground">{nombreDia(g.dia)}</td>
+                      <td className="py-2.5 pr-4">
                         {g.concepto}
                         <span className="block text-[11px] text-muted-foreground">
                           {[todas ? (g.sede ?? "general") : null, g.esFijo ? "fijo" : null, g.desdeCaja ? "salió de la caja" : null, `registró ${g.registradoPor}`].filter(Boolean).join(" · ")}
                         </span>
                       </td>
-                      <td className="py-1.5 pr-4 text-xs">{CATEGORIA_GASTO_LABEL[g.categoria]}</td>
-                      <td className="py-1.5 pr-4 text-right font-semibold">{formatoPesos(g.monto)}</td>
-                      <td className="py-1.5 text-right">
+                      <td className="py-2.5 pr-4 text-xs">{CATEGORIA_GASTO_LABEL[g.categoria]}</td>
+                      <td className="py-2.5 pr-4 text-right font-semibold">{formatoPesos(g.monto)}</td>
+                      <td className="py-2.5 text-right">
                         {g.enCierre ? (
                           <span className="text-[10px] text-muted-foreground" title="Ya está en un cierre de caja">
                             cerrado
                           </span>
                         ) : (
-                          <button onClick={() => borrar(g.id)} className="text-muted-foreground hover:text-red-600" aria-label="Borrar gasto">
+                          <button onClick={() => borrar(g.id)} className="text-muted-foreground hover:text-peligro" aria-label="Borrar gasto">
                             <Trash2 size={14} />
                           </button>
                         )}

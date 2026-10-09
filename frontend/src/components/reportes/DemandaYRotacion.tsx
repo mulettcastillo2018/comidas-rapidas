@@ -45,7 +45,7 @@ export function DemandaYRotacion({ reporte }: { reporte: ReporteVentas }) {
     <>
       {horas.length > 0 ? (
         <section>
-          <h2 className="text-sm font-bold">¿A qué hora llegan los pedidos?</h2>
+          <h2 className="text-base font-semibold tracking-tight">¿A qué hora llegan los pedidos?</h2>
           <p className="text-xs text-muted-foreground">
             Pedidos por hora del día en el rango. {horaPico ? `La hora más fuerte es la de las ${nombreHora(horaPico.hora)}.` : ""}
           </p>
@@ -59,7 +59,7 @@ export function DemandaYRotacion({ reporte }: { reporte: ReporteVentas }) {
 
       {reporte.porDia.length >= 7 ? (
         <section>
-          <h2 className="text-sm font-bold">¿Qué días se vende más?</h2>
+          <h2 className="text-base font-semibold tracking-tight">¿Qué días se vende más?</h2>
           <p className="text-xs text-muted-foreground">Venta promedio de cada día de la semana en el rango.</p>
           <div className="mt-3 space-y-1">
             {promedios.map((d) => (
@@ -71,42 +71,42 @@ export function DemandaYRotacion({ reporte }: { reporte: ReporteVentas }) {
 
       {r.mesasAtendidas > 0 ? (
         <section>
-          <h2 className="text-sm font-bold">Rotación de mesas</h2>
+          <h2 className="text-base font-semibold tracking-tight">Rotación de mesas</h2>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-xl border border-border p-3">
+            <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
               <p className="text-xs text-muted-foreground">Grupos atendidos</p>
-              <p className="mt-1 text-lg font-extrabold">{r.mesasAtendidas}</p>
+              <p className="mt-1 text-lg font-semibold tracking-tight">{r.mesasAtendidas}</p>
             </div>
-            <div className="rounded-xl border border-border p-3">
+            <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
               <p className="text-xs text-muted-foreground">Tiempo promedio en la mesa</p>
-              <p className="mt-1 text-lg font-extrabold">{duracion(r.duracionPromedioMin)}</p>
+              <p className="mt-1 text-lg font-semibold tracking-tight">{duracion(r.duracionPromedioMin)}</p>
             </div>
-            <div className="rounded-xl border border-border p-3">
+            <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
               <p className="text-xs text-muted-foreground">Personas por grupo</p>
-              <p className="mt-1 text-lg font-extrabold">{r.comensalesPromedio ?? "—"}</p>
+              <p className="mt-1 text-lg font-semibold tracking-tight">{r.comensalesPromedio ?? "—"}</p>
             </div>
-            <div className="rounded-xl border border-border p-3">
+            <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
               <p className="text-xs text-muted-foreground">Veces que se usa cada mesa al día</p>
-              <p className="mt-1 text-lg font-extrabold">{r.vecesPorMesaAlDia ?? "—"}</p>
+              <p className="mt-1 text-lg font-semibold tracking-tight">{r.vecesPorMesaAlDia ?? "—"}</p>
             </div>
           </div>
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm tabular-nums">
               <thead>
-                <tr className="border-b border-border text-xs text-muted-foreground">
-                  <th className="py-1.5 pr-4">Mesa</th>
-                  <th className="py-1.5 pr-4">Grupos</th>
-                  <th className="py-1.5 pr-4">Tiempo promedio</th>
-                  <th className="py-1.5 text-right">Ventas</th>
+                <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+                  <th className="py-2.5 pr-4">Mesa</th>
+                  <th className="py-2.5 pr-4">Grupos</th>
+                  <th className="py-2.5 pr-4">Tiempo promedio</th>
+                  <th className="py-2.5 text-right">Ventas</th>
                 </tr>
               </thead>
               <tbody>
                 {r.porMesa.map((m) => (
-                  <tr key={m.mesa} className="border-b border-border/60">
-                    <td className="py-1.5 pr-4">Mesa {m.mesa}</td>
-                    <td className="py-1.5 pr-4">{m.veces}</td>
-                    <td className="py-1.5 pr-4">{duracion(m.duracionPromedioMin)}</td>
-                    <td className="py-1.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
+                  <tr key={m.mesa} className="border-b border-border/60 transition-colors hover:bg-surface-2/60">
+                    <td className="py-2.5 pr-4">Mesa {m.mesa}</td>
+                    <td className="py-2.5 pr-4">{m.veces}</td>
+                    <td className="py-2.5 pr-4">{duracion(m.duracionPromedioMin)}</td>
+                    <td className="py-2.5 text-right font-semibold">{formatoPesos(m.ventas)}</td>
                   </tr>
                 ))}
               </tbody>

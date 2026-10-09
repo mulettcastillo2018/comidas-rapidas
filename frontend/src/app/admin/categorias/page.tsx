@@ -114,7 +114,7 @@ export default function AdminCategoriasPage() {
 
   return (
     <div className="space-y-6">
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {categorias.map((categoria) => {
@@ -123,7 +123,7 @@ export default function AdminCategoriasPage() {
             <form
               key={categoria.id}
               onSubmit={(e) => handleUpdate(categoria.id, e)}
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-border p-3"
+              className="flex flex-col items-center gap-1.5 rounded-2xl border border-border p-3 bg-surface shadow-suave"
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
                 <CategoriaIcon size={22} />
@@ -132,13 +132,13 @@ export default function AdminCategoriasPage() {
                 name="nombre"
                 defaultValue={categoria.nombre}
                 required
-                className="w-full rounded-lg border border-border px-2 py-1 text-sm"
+                className="w-full rounded-xl border border-border px-2 py-1 text-sm"
               />
               <input
                 name="slug"
                 defaultValue={categoria.slug}
                 required
-                className="w-full rounded-lg border border-border px-2 py-1 text-sm"
+                className="w-full rounded-xl border border-border px-2 py-1 text-sm"
               />
               <IconPicker value={editIcon} onChange={setEditIcon} />
               <div className="flex w-full gap-2">
@@ -157,7 +157,7 @@ export default function AdminCategoriasPage() {
           ) : (
             <div
               key={categoria.id}
-              className="flex flex-col items-center gap-1 rounded-xl border border-border p-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
+              className="flex flex-col items-center gap-1 rounded-2xl border border-border p-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-md bg-surface shadow-suave"
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
                 <CategoriaIcon size={22} />
@@ -168,7 +168,7 @@ export default function AdminCategoriasPage() {
                 <button onClick={() => startEditing(categoria)} className="text-xs font-semibold text-accent">
                   Editar
                 </button>
-                <button onClick={() => handleDelete(categoria.id)} className="text-xs font-semibold text-red-600">
+                <button onClick={() => handleDelete(categoria.id)} className="text-xs font-semibold text-peligro">
                   Eliminar
                 </button>
               </div>
@@ -177,11 +177,11 @@ export default function AdminCategoriasPage() {
         })}
       </div>
 
-      <div className="rounded-xl border border-border p-4">
-        <h2 className="text-sm font-bold">Nueva categoría</h2>
+      <div className="rounded-2xl border border-border p-4 bg-surface shadow-suave">
+        <h2 className="text-base font-semibold tracking-tight">Nueva categoría</h2>
         <form onSubmit={handleCreate} className="mt-3 flex flex-wrap items-start gap-2">
-          <input name="nombre" placeholder="Nombre" required className="rounded-lg border border-border px-2 py-1 text-sm" />
-          <input name="slug" placeholder="slug" required className="rounded-lg border border-border px-2 py-1 text-sm" />
+          <input name="nombre" placeholder="Nombre" required className="rounded-xl border border-border px-2 py-1 text-sm" />
+          <input name="slug" placeholder="slug" required className="rounded-xl border border-border px-2 py-1 text-sm" />
           <div className="w-full max-w-xs sm:w-64">
             <IconPicker value={newIcon} onChange={setNewIcon} />
           </div>

@@ -119,8 +119,8 @@ export default function AdminDomiciliosPage() {
       {modalClave}
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-bold">Domicilios y apps en curso</h2>
-          <button onClick={() => setNuevoAbierto((v) => !v)} className="btn-primary rounded-full px-4 py-1.5 text-xs">
+          <h2 className="text-base font-semibold tracking-tight">Domicilios y apps en curso</h2>
+          <button onClick={() => setNuevoAbierto((v) => !v)} className="btn-primary rounded-xl px-4 py-1.5 text-xs">
             {nuevoAbierto ? "Cerrar" : "+ Nuevo domicilio o pedido de app"}
           </button>
         </div>
@@ -136,7 +136,7 @@ export default function AdminDomiciliosPage() {
             }}
           />
         ) : null}
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-peligro">{error}</p> : null}
         {domicilios.length === 0 ? (
           <p className="text-sm text-muted-foreground">No hay domicilios ni pedidos de apps en curso.</p>
         ) : (
@@ -157,7 +157,7 @@ export default function AdminDomiciliosPage() {
       </section>
 
       <section>
-        <h2 className="text-sm font-bold">Para llevar (mesas abiertas)</h2>
+        <h2 className="text-base font-semibold tracking-tight">Para llevar (mesas abiertas)</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Productos que un cliente pidió para llevar mientras sigue en su mesa (ej. algo para alguien que no vino).
         </p>
@@ -167,7 +167,7 @@ export default function AdminDomiciliosPage() {
         ) : (
           <div className="mt-3 space-y-2">
             {itemsParaLlevar.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-2 rounded-xl border border-border p-3 text-sm">
+              <div key={item.id} className="flex items-center justify-between gap-2 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
                 <div>
                   <p className="font-semibold">
                     {item.cantidad}× {conAdiciones(item, item.producto?.nombre)}
@@ -193,7 +193,7 @@ export default function AdminDomiciliosPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-bold">Apps de domicilios</h2>
+        <h2 className="text-base font-semibold tracking-tight">Apps de domicilios</h2>
         <p className="text-sm text-muted-foreground">
           La comisión se descuenta de la ganancia en los reportes. Lo que venden las apps no entra a la caja: la app lo consigna.
         </p>

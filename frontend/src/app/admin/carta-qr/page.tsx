@@ -77,7 +77,7 @@ export default function AdminCartaQrPage() {
           <div className="grid grid-cols-2 gap-6 p-4">
             {imprimiendo.map((qr) => (
               <div key={qr.titulo} className="flex break-inside-avoid flex-col items-center gap-2 rounded-xl border-2 border-dashed border-foreground p-4 text-center">
-                <p className="text-xl font-extrabold">{qr.titulo}</p>
+                <p className="text-xl font-semibold tracking-tight">{qr.titulo}</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={qr.imagen} alt={qr.titulo} className="h-48 w-48" />
                 <p className="text-xs">{qr.subtitulo}</p>
@@ -95,7 +95,7 @@ export default function AdminCartaQrPage() {
       </p>
 
       {base && esDireccionLocal(base) ? (
-        <div className="flex gap-2 rounded-xl border border-amber-500 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="flex gap-2 rounded-2xl border border-aviso bg-aviso/10 p-3 text-xs text-aviso shadow-suave">
           <AlertTriangle size={16} className="shrink-0" />
           <p>
             Estos QR apuntan a <strong>{base}</strong>, una dirección local: solo funcionan dentro de este wifi y dejarán
@@ -107,7 +107,7 @@ export default function AdminCartaQrPage() {
 
       <div>
         <label className="mb-1 block text-xs font-semibold text-muted-foreground">Mesa</label>
-        <select value={seleccion} onChange={(e) => setSeleccion(e.target.value)} className="w-full rounded-lg border border-border px-3 py-2 text-sm">
+        <select value={seleccion} onChange={(e) => setSeleccion(e.target.value)} className="w-full rounded-xl border border-border px-3 py-2 text-sm">
           <option value="">Carta general (sin mesa, solo lectura)</option>
           <option value="mostrador">🧾 Mostrador (para recoger, sin mesa)</option>
           {mesas.map((mesa) => (
@@ -122,7 +122,7 @@ export default function AdminCartaQrPage() {
         <p className="break-all text-center text-xs text-muted-foreground">{url}</p>
       </div>
       {mesas.length > 0 ? (
-        <button onClick={imprimirTodos} className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-semibold">
+        <button onClick={imprimirTodos} className="flex items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-semibold">
           <Printer size={16} /> Imprimir los QR de todas las mesas
         </button>
       ) : null}

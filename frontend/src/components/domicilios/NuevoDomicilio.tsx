@@ -112,7 +112,7 @@ export function NuevoDomicilio({
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-border p-4">
+    <div className="space-y-3 rounded-2xl border border-border p-4 bg-surface shadow-suave">
       <div className="flex flex-wrap gap-2">
         {(["DOMICILIO", "PLATAFORMA"] as const).map((c) => (
           <button
@@ -127,11 +127,11 @@ export function NuevoDomicilio({
 
       {esDomicilio ? (
         <div className="grid gap-2 sm:grid-cols-2">
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="rounded-lg border border-border px-3 py-2 text-sm" />
-          <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Teléfono" inputMode="tel" className="rounded-lg border border-border px-3 py-2 text-sm" />
-          <input value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Dirección (ej. Cra 45 # 12-30 apto 201)" className="rounded-lg border border-border px-3 py-2 text-sm sm:col-span-2" />
-          <input value={barrio} onChange={(e) => setBarrio(e.target.value)} placeholder="Barrio (opcional)" className="rounded-lg border border-border px-3 py-2 text-sm" />
-          <input value={indicaciones} onChange={(e) => setIndicaciones(e.target.value)} placeholder="Indicaciones (portería, casa esquinera...)" className="rounded-lg border border-border px-3 py-2 text-sm" />
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente" className="rounded-xl border border-border px-3 py-2 text-sm" />
+          <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Teléfono" inputMode="tel" className="rounded-xl border border-border px-3 py-2 text-sm" />
+          <input value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Dirección (ej. Cra 45 # 12-30 apto 201)" className="rounded-xl border border-border px-3 py-2 text-sm sm:col-span-2" />
+          <input value={barrio} onChange={(e) => setBarrio(e.target.value)} placeholder="Barrio (opcional)" className="rounded-xl border border-border px-3 py-2 text-sm" />
+          <input value={indicaciones} onChange={(e) => setIndicaciones(e.target.value)} placeholder="Indicaciones (portería, casa esquinera...)" className="rounded-xl border border-border px-3 py-2 text-sm" />
           <CampoPesos label="Valor del domicilio" valor={envio} onChange={setEnvio} />
           <div className="space-y-1.5 text-sm">
             <span className="font-semibold">Pago</span>
@@ -144,7 +144,7 @@ export function NuevoDomicilio({
               </button>
             </div>
             {yaPago ? (
-              <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value as MetodoPago)} className="w-full rounded-lg border border-border px-2 py-1.5 text-sm">
+              <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value as MetodoPago)} className="w-full rounded-xl border border-border px-2 py-1.5 text-sm">
                 {METODOS_PAGO.filter((m) => m !== "EFECTIVO").map((m) => (
                   <option key={m} value={m}>
                     {METODO_PAGO_LABEL[m]}
@@ -168,7 +168,7 @@ export function NuevoDomicilio({
         <p className="text-sm text-muted-foreground">Primero agrega abajo las apps con las que trabajas y su comisión.</p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-3">
-          <select value={plataformaId} onChange={(e) => setPlataformaId(e.target.value)} className="rounded-lg border border-border px-2 py-2 text-sm">
+          <select value={plataformaId} onChange={(e) => setPlataformaId(e.target.value)} className="rounded-xl border border-border px-2 py-2 text-sm">
             <option value="">¿Qué app?</option>
             {activas.map((p) => (
               <option key={p.id} value={p.id}>
@@ -176,8 +176,8 @@ export function NuevoDomicilio({
               </option>
             ))}
           </select>
-          <input value={codigoPlataforma} onChange={(e) => setCodigoPlataforma(e.target.value)} placeholder="# de la orden en la app" className="rounded-lg border border-border px-3 py-2 text-sm" />
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente (opcional)" className="rounded-lg border border-border px-3 py-2 text-sm" />
+          <input value={codigoPlataforma} onChange={(e) => setCodigoPlataforma(e.target.value)} placeholder="# de la orden en la app" className="rounded-xl border border-border px-3 py-2 text-sm" />
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del cliente (opcional)" className="rounded-xl border border-border px-3 py-2 text-sm" />
         </div>
       )}
 
@@ -194,21 +194,21 @@ export function NuevoDomicilio({
         ) : plataforma ? (
           <div className="flex justify-between text-xs">
             <span className="text-muted-foreground">Comisión de {plataforma.nombre} ({plataforma.comisionPct}%)</span>
-            <span className="text-red-600">−{formatoPesos(Math.round((subtotal * plataforma.comisionPct) / 100))}</span>
+            <span className="text-peligro">−{formatoPesos(Math.round((subtotal * plataforma.comisionPct) / 100))}</span>
           </div>
         ) : null}
-        <div className="flex justify-between font-bold">
+        <div className="flex justify-between font-semibold">
           <span>{esDomicilio ? "Total a cobrar" : "Total de la orden"}</span>
           <span>{formatoPesos(total)}</span>
         </div>
         {vueltas !== null ? (
-          <p className={`text-xs font-semibold ${vueltas < 0 ? "text-red-600" : ""}`}>
+          <p className={`text-xs font-semibold ${vueltas < 0 ? "text-peligro" : ""}`}>
             {vueltas < 0 ? `Con ${formatoPesos(pagaCon!)} no alcanza` : `Llevar vueltas de ${formatoPesos(vueltas)}`}
           </p>
         ) : null}
       </div>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
 
       <NuevoPedido
         key={version}

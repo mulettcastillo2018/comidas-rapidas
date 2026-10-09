@@ -204,17 +204,17 @@ export default function AdminUsuariosPage() {
   return (
     <div className="space-y-6">
       {token && yo ? <MiClaveSupervisor token={token} tienePin={yo.tienePin} onCambio={loadUsuarios} /> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
 
       <div className="space-y-2">
         {usuarios.map((user) => (
-          <div key={user.id} className="rounded-xl border border-border p-3">
+          <div key={user.id} className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-semibold">
-                  {nombreCompleto(user)} {!user.isActive ? <span className="text-red-600">(desactivado)</span> : null}
+                  {nombreCompleto(user)} {!user.isActive ? <span className="text-peligro">(desactivado)</span> : null}
                   {user.role === "ADMIN" && user.tienePin ? (
-                    <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800">con clave de supervisor</span>
+                    <span className="ml-2 rounded-full bg-exito/10 px-2 py-0.5 text-[10px] font-semibold text-exito">con clave de supervisor</span>
                   ) : null}
                 </p>
                 <p className="text-sm text-muted-foreground">
@@ -251,7 +251,7 @@ export default function AdminUsuariosPage() {
                         onChange={(e) => handleChangeSede(user, e.target.value)}
                         disabled={updatingId === user.id}
                         title="Sede donde trabaja"
-                        className="rounded-lg border border-border px-2 py-1 text-sm"
+                        className="rounded-xl border border-border px-2 py-1 text-sm"
                       >
                         {listaSedes.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -265,7 +265,7 @@ export default function AdminUsuariosPage() {
                       value={user.role}
                       onChange={(e) => handleChangeRole(user, e.target.value as UserRole)}
                       disabled={updatingId === user.id}
-                      className="rounded-lg border border-border px-2 py-1 text-sm"
+                      className="rounded-xl border border-border px-2 py-1 text-sm"
                     >
                       {Object.entries(ROLE_LABELS).map(([role, label]) => (
                         <option key={role} value={role}>
@@ -276,7 +276,7 @@ export default function AdminUsuariosPage() {
                     <button
                       onClick={() => handleToggleActive(user)}
                       disabled={updatingId === user.id}
-                      className="text-sm font-semibold text-red-600 disabled:opacity-50"
+                      className="text-sm font-semibold text-peligro disabled:opacity-50"
                     >
                       {user.isActive ? "Desactivar" : "Reactivar"}
                     </button>
@@ -290,9 +290,9 @@ export default function AdminUsuariosPage() {
                 onSubmit={(e) => handleEditName(user.id, e)}
                 className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3"
               >
-                {nameError ? <p className="w-full text-sm text-red-600">{nameError}</p> : null}
-                <input name="nombre" placeholder="Nombre" defaultValue={user.nombre} required className="rounded-lg border border-border px-2 py-1 text-sm" />
-                <input name="apellido" placeholder="Apellido" defaultValue={user.apellido} className="rounded-lg border border-border px-2 py-1 text-sm" />
+                {nameError ? <p className="w-full text-sm text-peligro">{nameError}</p> : null}
+                <input name="nombre" placeholder="Nombre" defaultValue={user.nombre} required className="rounded-xl border border-border px-2 py-1 text-sm" />
+                <input name="apellido" placeholder="Apellido" defaultValue={user.apellido} className="rounded-xl border border-border px-2 py-1 text-sm" />
                 <button type="submit" disabled={updatingId === user.id} className="btn-primary rounded-full px-4 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50">
                   Guardar
                 </button>
@@ -307,9 +307,9 @@ export default function AdminUsuariosPage() {
                 onSubmit={(e) => handleResetPassword(user.id, e)}
                 className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3"
               >
-                {resetError ? <p className="w-full text-sm text-red-600">{resetError}</p> : null}
-                <input type="password" name="newPassword" placeholder="Contraseña nueva" required minLength={8} className="rounded-lg border border-border px-2 py-1 text-sm" />
-                <input type="password" name="confirmPassword" placeholder="Confirmar" required minLength={8} className="rounded-lg border border-border px-2 py-1 text-sm" />
+                {resetError ? <p className="w-full text-sm text-peligro">{resetError}</p> : null}
+                <input type="password" name="newPassword" placeholder="Contraseña nueva" required minLength={8} className="rounded-xl border border-border px-2 py-1 text-sm" />
+                <input type="password" name="confirmPassword" placeholder="Confirmar" required minLength={8} className="rounded-xl border border-border px-2 py-1 text-sm" />
                 <button type="submit" disabled={updatingId === user.id} className="btn-primary rounded-full px-4 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50">
                   Guardar
                 </button>
@@ -323,20 +323,20 @@ export default function AdminUsuariosPage() {
       </div>
 
       {creating ? (
-        <form onSubmit={handleCreate} className="space-y-3 rounded-xl border border-border p-4">
-          <h2 className="text-sm font-bold">Nuevo usuario</h2>
+        <form onSubmit={handleCreate} className="space-y-3 rounded-2xl border border-border p-4 bg-surface shadow-suave">
+          <h2 className="text-base font-semibold tracking-tight">Nuevo usuario</h2>
           <div className="grid grid-cols-2 gap-3">
-            <input name="nombre" placeholder="Nombre" required className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-            <input name="apellido" placeholder="Apellido" className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
+            <input name="nombre" placeholder="Nombre" required className="w-full rounded-xl border border-border px-3 py-2 text-sm" />
+            <input name="apellido" placeholder="Apellido" className="w-full rounded-xl border border-border px-3 py-2 text-sm" />
           </div>
-          <input name="email" type="email" placeholder="Correo" required className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-          <input name="password" type="password" placeholder="Contraseña" required minLength={8} className="w-full rounded-lg border border-border px-3 py-2 text-sm" />
+          <input name="email" type="email" placeholder="Correo" required className="w-full rounded-xl border border-border px-3 py-2 text-sm" />
+          <input name="password" type="password" placeholder="Contraseña" required minLength={8} className="w-full rounded-xl border border-border px-3 py-2 text-sm" />
           <select
             name="role"
             required
             value={rolNuevo}
             onChange={(e) => setRolNuevo(e.target.value as UserRole)}
-            className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-border px-3 py-2 text-sm"
           >
             {Object.entries(ROLE_LABELS).map(([role, label]) => (
               <option key={role} value={role}>
@@ -347,7 +347,7 @@ export default function AdminUsuariosPage() {
           {eligeSede ? (
             <label className="block text-xs font-semibold text-muted-foreground">
               Sede donde trabaja
-              <select value={sedeNueva === "GENERAL" && rolNuevo !== "ADMIN" ? sedes?.actual : (sedeNueva ?? sedes?.actual)} onChange={(e) => setSedeNueva(e.target.value)} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm">
+              <select value={sedeNueva === "GENERAL" && rolNuevo !== "ADMIN" ? sedes?.actual : (sedeNueva ?? sedes?.actual)} onChange={(e) => setSedeNueva(e.target.value)} className="mt-1 w-full rounded-xl border border-border px-3 py-2 text-sm">
                 {listaSedes.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nombre}
@@ -358,16 +358,16 @@ export default function AdminUsuariosPage() {
             </label>
           ) : null}
           <div className="flex gap-2">
-            <button type="submit" disabled={saving} className="btn-primary flex-1 rounded-full px-6 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="submit" disabled={saving} className="btn-primary flex-1 rounded-xl px-6 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? "Creando…" : "Crear usuario"}
             </button>
-            <button type="button" onClick={() => setCreating(false)} className="rounded-full border border-border px-6 py-2 text-sm text-muted-foreground">
+            <button type="button" onClick={() => setCreating(false)} className="rounded-xl border border-border px-6 py-2 text-sm text-muted-foreground">
               Cancelar
             </button>
           </div>
         </form>
       ) : (
-        <button onClick={() => setCreating(true)} className="btn-primary rounded-full px-4 py-2 text-sm">
+        <button onClick={() => setCreating(true)} className="btn-primary rounded-xl px-4 py-2 text-sm">
           + Nuevo usuario
         </button>
       )}

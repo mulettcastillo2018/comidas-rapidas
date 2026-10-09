@@ -36,14 +36,14 @@ export default function AdminFacturacionPage() {
 
   return (
     <div className="space-y-6">
-      <div className={`rounded-xl border p-4 text-sm ${config.activa && faltantes.length === 0 ? "border-green-600" : "border-amber-500"}`}>
+      <div className={`rounded-2xl border p-4 text-sm bg-surface shadow-suave ${config.activa && faltantes.length === 0 ? "border-exito" : "border-aviso"}`}>
         <p className="font-semibold">
           {config.activa ? "Facturación electrónica activa" : "Facturación electrónica apagada"} ·{" "}
           {config.esSandbox ? "ambiente de pruebas (sandbox de Alanube, habilitación DIAN)" : config.alanubeUrl.includes("sandbox") ? "pruebas" : "producción"}
         </p>
-        {faltantes.length > 0 ? <p className="mt-1 text-amber-800">Falta configurar: {faltantes.join(", ")}.</p> : null}
+        {faltantes.length > 0 ? <p className="mt-1 text-aviso">Falta configurar: {faltantes.join(", ")}.</p> : null}
         {config.avisos.map((a) => (
-          <p key={a} className="mt-1 text-amber-800">
+          <p key={a} className="mt-1 text-aviso">
             {a}
           </p>
         ))}
@@ -72,7 +72,7 @@ export default function AdminFacturacionPage() {
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold">Documentos electrónicos</h2>
+          <h2 className="text-base font-semibold tracking-tight">Documentos electrónicos</h2>
           <AlcanceSedes />
         </div>
         <DocumentosFiscales token={token} onAviso={showToast} />

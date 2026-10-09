@@ -43,11 +43,11 @@ export function SelectorRango({
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <label className="flex items-center gap-1.5">
           Desde
-          <input type="date" value={desde} max={hasta} onChange={(e) => onCambio(e.target.value, hasta)} className="rounded-lg border border-border px-2 py-1" />
+          <input type="date" value={desde} max={hasta} onChange={(e) => onCambio(e.target.value, hasta)} className="rounded-xl border border-border px-2 py-1" />
         </label>
         <label className="flex items-center gap-1.5">
           Hasta
-          <input type="date" value={hasta} min={desde} onChange={(e) => onCambio(desde, e.target.value)} className="rounded-lg border border-border px-2 py-1" />
+          <input type="date" value={hasta} min={desde} onChange={(e) => onCambio(desde, e.target.value)} className="rounded-xl border border-border px-2 py-1" />
         </label>
       </div>
     </div>

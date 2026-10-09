@@ -7,3 +7,4 @@ export { AreaTexto, Campo, Entrada, estilosEntrada, Selector, type TamanoCampo }
 export { estilosInsignia, Insignia, PuntoVivo, type TonoInsignia } from "./Insignia";
 export { Contenedor, EncabezadoPagina } from "./Encabezado";
 export { Esqueleto } from "./Esqueleto";
+export { Segmentado } from "./Segmentado";

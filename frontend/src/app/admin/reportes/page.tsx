@@ -1,5 +1,6 @@
 "use client";
 
+import { Segmentado } from "@/components/ui";
 import { useState } from "react";
 import { useAuthStore } from "@/store/auth.store";
 import { ReporteVentasVista } from "@/components/reportes/ReporteVentasVista";
@@ -24,17 +25,7 @@ export default function AdminReportesPage() {
   return (
     <div className="space-y-6">
       <AlcanceSedes />
-      <div className="flex gap-1 rounded-full bg-muted p-1 text-sm font-semibold sm:w-fit">
-        {VISTAS.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setVista(v.id)}
-            className={`flex-1 rounded-full px-4 py-1.5 sm:flex-none ${vista === v.id ? "bg-background shadow-sm" : "text-muted-foreground"}`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
+      <Segmentado etiqueta="Reportes" opciones={VISTAS} valor={vista} onCambio={setVista} />
       {vista === "ventas" ? (
         <ReporteVentasVista token={token} />
       ) : vista === "resultados" ? (

@@ -50,14 +50,14 @@ export function MovimientosCaja({ token, movimientos, onCambio }: { token: strin
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-sm font-bold">Entradas y salidas de efectivo</h2>
+        <h2 className="text-base font-semibold tracking-tight">Entradas y salidas de efectivo</h2>
         <p className="text-xs text-muted-foreground">
           Lo que sale de la caja sin ser una venta (pago a un proveedor, un retiro) o lo que entra además de las ventas
           (más base). Así el cierre cuadra.
         </p>
       </div>
-      <form onSubmit={registrar} className="flex flex-wrap items-end gap-2 rounded-xl border border-border p-3 text-sm">
-        <select value={tipo} onChange={(e) => setTipo(e.target.value as "SALIDA" | "ENTRADA")} className="rounded-lg border border-border px-2 py-2">
+      <form onSubmit={registrar} className="flex flex-wrap items-end gap-2 rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
+        <select value={tipo} onChange={(e) => setTipo(e.target.value as "SALIDA" | "ENTRADA")} className="rounded-xl border border-border px-2 py-2">
           <option value="SALIDA">Salida</option>
           <option value="ENTRADA">Entrada</option>
         </select>
@@ -69,13 +69,13 @@ export function MovimientosCaja({ token, movimientos, onCambio }: { token: strin
           onChange={(e) => setConcepto(e.target.value)}
           placeholder={tipo === "SALIDA" ? "Concepto (ej. pago del pan)" : "Concepto (ej. más base)"}
           maxLength={200}
-          className="min-w-40 flex-1 rounded-lg border border-border px-2 py-2"
+          className="min-w-40 flex-1 rounded-xl border border-border px-2 py-2"
         />
-        <button type="submit" disabled={guardando || !monto || !concepto.trim()} className="btn-primary rounded-full px-4 py-2 text-xs disabled:opacity-50">
+        <button type="submit" disabled={guardando || !monto || !concepto.trim()} className="btn-primary rounded-xl px-4 py-2 text-xs disabled:opacity-50">
           Registrar
         </button>
       </form>
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-peligro">{error}</p> : null}
       {movimientos.length > 0 ? (
         <ul className="divide-y divide-border rounded-xl border border-border text-sm">
           {movimientos.map((m) => (
@@ -90,11 +90,11 @@ export function MovimientosCaja({ token, movimientos, onCambio }: { token: strin
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-2">
-                <span className={`font-semibold ${m.tipo === "SALIDA" ? "text-red-600" : "text-green-700"}`}>
+                <span className={`font-semibold ${m.tipo === "SALIDA" ? "text-peligro" : "text-exito"}`}>
                   {m.tipo === "SALIDA" ? "−" : "+"}
                   {formatoPesos(m.monto)}
                 </span>
-                <button onClick={() => borrar(m)} title="Borrar (solo para corregir errores)" className="text-muted-foreground hover:text-red-600">
+                <button onClick={() => borrar(m)} title="Borrar (solo para corregir errores)" className="text-muted-foreground hover:text-peligro">
                   <Trash2 size={14} />
                 </button>
               </span>

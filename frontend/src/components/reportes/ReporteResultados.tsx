@@ -10,12 +10,12 @@ import { SelectorRango } from "./SelectorRango";
 
 function Linea({ label, valor, nivel = 0, fuerte, negativo, detalle }: { label: string; valor: number; nivel?: number; fuerte?: boolean; negativo?: boolean; detalle?: string }) {
   return (
-    <div className={`flex items-start justify-between gap-3 py-1 ${fuerte ? "border-t border-border font-bold" : ""}`} style={{ paddingLeft: nivel * 16 }}>
+    <div className={`flex items-start justify-between gap-3 py-1 ${fuerte ? "border-t border-border font-semibold" : ""}`} style={{ paddingLeft: nivel * 16 }}>
       <span className={fuerte ? "" : "text-muted-foreground"}>
         {label}
         {detalle ? <span className="block text-[11px] font-normal text-muted-foreground">{detalle}</span> : null}
       </span>
-      <span className={`shrink-0 ${valor < 0 ? "text-red-600" : ""}`}>{negativo && valor > 0 ? `−${formatoPesos(valor)}` : formatoPesos(valor)}</span>
+      <span className={`shrink-0 ${valor < 0 ? "text-peligro" : ""}`}>{negativo && valor > 0 ? `−${formatoPesos(valor)}` : formatoPesos(valor)}</span>
     </div>
   );
 }
@@ -51,26 +51,26 @@ export function ReporteResultados({ token }: { token: string }) {
           setHasta(h);
         }}
       />
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
       {!r ? (
         <p className="text-sm text-muted-foreground">Cargando…</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-2xl border border-border p-4 bg-surface shadow-suave">
               <p className="text-xs text-muted-foreground">Ingresos</p>
-              <p className="mt-1 text-xl font-extrabold">{formatoPesos(r.ingresos.total)}</p>
+              <p className="mt-1 text-xl font-semibold tracking-tight">{formatoPesos(r.ingresos.total)}</p>
               <p className="text-xs text-muted-foreground">{r.cuentas} cuenta(s), sin propinas</p>
             </div>
-            <div className={`rounded-xl border p-4 ${r.utilidadNeta < 0 ? "border-red-600" : "border-border"}`}>
+            <div className={`rounded-2xl border p-4 bg-surface shadow-suave ${r.utilidadNeta < 0 ? "border-peligro" : "border-border"}`}>
               <p className="text-xs text-muted-foreground">Utilidad neta</p>
-              <p className={`mt-1 text-xl font-extrabold ${r.utilidadNeta < 0 ? "text-red-600" : "text-green-700"}`}>{formatoPesos(r.utilidadNeta)}</p>
+              <p className={`mt-1 text-xl font-semibold tracking-tight ${r.utilidadNeta < 0 ? "text-peligro" : "text-exito"}`}>{formatoPesos(r.utilidadNeta)}</p>
               <p className="text-xs text-muted-foreground">{r.margenNetoPct !== null ? `${r.margenNetoPct}% de los ingresos` : "—"}</p>
             </div>
             {r.puntoEquilibrio ? (
-              <div className={`col-span-2 rounded-xl border p-4 sm:col-span-1 ${r.puntoEquilibrio.alcanzado ? "border-green-600" : "border-amber-500"}`}>
+              <div className={`col-span-2 rounded-2xl border p-4 sm:col-span-1 bg-surface shadow-suave ${r.puntoEquilibrio.alcanzado ? "border-exito" : "border-aviso"}`}>
                 <p className="text-xs text-muted-foreground">Punto de equilibrio</p>
-                <p className="mt-1 text-xl font-extrabold">{formatoPesos(r.puntoEquilibrio.ventasNecesarias)}</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight">{formatoPesos(r.puntoEquilibrio.ventasNecesarias)}</p>
                 <p className="text-xs text-muted-foreground">
                   ≈ {formatoPesos(r.puntoEquilibrio.ventasPorDia)} al día · {r.puntoEquilibrio.alcanzado ? "ya lo alcanzaste ✓" : "todavía no se alcanza"}
                 </p>
@@ -78,8 +78,8 @@ export function ReporteResultados({ token }: { token: string }) {
             ) : null}
           </div>
 
-          <section className="rounded-xl border border-border p-4 text-sm">
-            <h2 className="mb-2 text-sm font-bold">Estado de resultados</h2>
+          <section className="rounded-2xl border border-border p-4 text-sm bg-surface shadow-suave">
+            <h2 className="mb-2 text-sm font-semibold">Estado de resultados</h2>
             <Linea label="Ventas de productos" valor={r.ingresos.ventasProductos} detalle="ya con descuentos y cortesías restados" />
             {r.ingresos.envios > 0 ? <Linea label="Domicilios cobrados" valor={r.ingresos.envios} /> : null}
             <Linea label="Ingresos" valor={r.ingresos.total} fuerte />
@@ -109,7 +109,7 @@ export function ReporteResultados({ token }: { token: string }) {
           </section>
 
           {r.fuenteCosto === "PRODUCTOS" && r.comprasInsumos > 0 ? (
-            <p className={`rounded-lg p-3 text-xs ${r.comprasInsumos > r.costoVentas * 1.15 ? "bg-amber-50 text-amber-800" : "bg-muted text-muted-foreground"}`}>
+            <p className={`rounded-lg p-3 text-xs ${r.comprasInsumos > r.costoVentas * 1.15 ? "bg-aviso/10 text-aviso" : "bg-muted text-muted-foreground"}`}>
               Compraste {formatoPesos(r.comprasInsumos)} en insumos y, según los costos de tus productos, lo vendido gastó{" "}
               {formatoPesos(r.costoVentas)}.
               {r.comprasInsumos > r.costoVentas * 1.15
@@ -119,7 +119,7 @@ export function ReporteResultados({ token }: { token: string }) {
             </p>
           ) : null}
           {r.productosSinCosto.length > 0 ? (
-            <p className="text-xs text-amber-700">Sin costo configurado (su costo no se cuenta): {r.productosSinCosto.join(", ")}.</p>
+            <p className="text-xs text-aviso">Sin costo configurado (su costo no se cuenta): {r.productosSinCosto.join(", ")}.</p>
           ) : null}
           {r.puntoEquilibrio ? (
             <p className="text-xs text-muted-foreground">

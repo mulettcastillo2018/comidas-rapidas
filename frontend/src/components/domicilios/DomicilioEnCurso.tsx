@@ -46,7 +46,7 @@ export function DomicilioEnCurso({
   const enCamino = d?.estado === "EN_CAMINO";
 
   return (
-    <div className={`space-y-2 rounded-xl border p-3 text-sm ${pedido.estado === "LISTO" && !enCamino ? "border-2 border-accent" : "border-border"}`}>
+    <div className={`space-y-2 rounded-2xl border p-3 text-sm bg-surface shadow-suave ${pedido.estado === "LISTO" && !enCamino ? "border-2 border-accent" : "border-border"}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-semibold">
@@ -85,7 +85,7 @@ export function DomicilioEnCurso({
             Total <strong>{formatoPesos(factura.total)}</strong>
             {factura.envioMonto > 0 ? ` (incluye domicilio ${formatoPesos(factura.envioMonto)})` : ""}
           </span>
-          <span className={pendienteDeCobro ? "font-semibold text-amber-700" : "text-green-700"}>
+          <span className={pendienteDeCobro ? "font-semibold text-aviso" : "text-exito"}>
             {pendienteDeCobro
               ? d?.pagaCon
                 ? `Cobrar al entregar · paga con ${formatoPesos(d.pagaCon)} → vueltas ${formatoPesos(Math.max(0, d.pagaCon - factura.total))}`
@@ -99,7 +99,7 @@ export function DomicilioEnCurso({
 
       {pedido.estado === "LISTO" && !enCamino ? (
         pedido.canal === "PLATAFORMA" ? (
-          <button onClick={() => onDespachar("")} disabled={ocupado} className="btn-primary w-full rounded-full px-3 py-1.5 text-xs disabled:opacity-50">
+          <button onClick={() => onDespachar("")} disabled={ocupado} className="btn-primary w-full rounded-xl px-3 py-1.5 text-xs disabled:opacity-50">
             Entregado al repartidor de la app
           </button>
         ) : (
@@ -109,14 +109,14 @@ export function DomicilioEnCurso({
               onChange={(e) => setDomiciliario(e.target.value)}
               list="domiciliarios"
               placeholder="¿Quién lo lleva?"
-              className="min-w-0 flex-1 rounded-lg border border-border px-2 py-1 text-xs"
+              className="min-w-0 flex-1 rounded-xl border border-border px-2 py-1 text-xs"
             />
             <datalist id="domiciliarios">
               {domiciliarios.map((n) => (
                 <option key={n} value={n} />
               ))}
             </datalist>
-            <button onClick={() => onDespachar(domiciliario.trim())} disabled={ocupado} className="btn-primary rounded-full px-3 py-1.5 text-xs disabled:opacity-50">
+            <button onClick={() => onDespachar(domiciliario.trim())} disabled={ocupado} className="btn-primary rounded-xl px-3 py-1.5 text-xs disabled:opacity-50">
               Salió
             </button>
           </div>
@@ -132,13 +132,13 @@ export function DomicilioEnCurso({
             <button
               onClick={() => (pendienteDeCobro ? setCobrando(true) : onEntregado(null))}
               disabled={ocupado}
-              className="btn-primary w-full rounded-full px-3 py-1.5 text-xs disabled:opacity-50"
+              className="btn-primary w-full rounded-xl px-3 py-1.5 text-xs disabled:opacity-50"
             >
               {pendienteDeCobro ? "Ya lo entregó: registrar el cobro" : "Ya lo entregó"}
             </button>
           )}
           {motivo === null ? (
-            <button onClick={() => setMotivo("")} className="w-full text-xs text-red-600">
+            <button onClick={() => setMotivo("")} className="w-full text-xs text-peligro">
               No se pudo entregar
             </button>
           ) : (
@@ -147,12 +147,12 @@ export function DomicilioEnCurso({
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
                 placeholder="¿Qué pasó? (no contestó, dirección errada...)"
-                className="min-w-0 flex-1 rounded-lg border border-border px-2 py-1 text-xs"
+                className="min-w-0 flex-1 rounded-xl border border-border px-2 py-1 text-xs"
               />
               <button
                 onClick={() => onFallido(motivo.trim())}
                 disabled={ocupado || motivo.trim().length < 3}
-                className="rounded-full border border-red-600 px-3 py-1 text-xs font-semibold text-red-600 disabled:opacity-50"
+                className="rounded-full border border-peligro px-3 py-1 text-xs font-semibold text-peligro disabled:opacity-50"
               >
                 Registrar
               </button>

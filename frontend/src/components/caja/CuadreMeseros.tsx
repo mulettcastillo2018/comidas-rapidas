@@ -33,33 +33,33 @@ export function CuadreMeseros({ token, cuadre, onCambio }: { token: string; cuad
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-sm font-bold">Efectivo cobrado por los meseros</h2>
+        <h2 className="text-base font-semibold tracking-tight">Efectivo cobrado por los meseros</h2>
         <p className="text-xs text-muted-foreground">
           Lo que cada mesero cobró en efectivo en sus mesas y lo que ya entregó a la caja. Registra la entrega cuando te
           traiga la plata.
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+        <table className="w-full text-left text-sm tabular-nums">
           <thead>
-            <tr className="border-b border-border text-xs text-muted-foreground">
-              <th className="py-1.5 pr-4">Mesero</th>
-              <th className="py-1.5 pr-4 text-right">Cobró</th>
-              <th className="py-1.5 pr-4 text-right">Entregó</th>
-              <th className="py-1.5 pr-4 text-right">Pendiente</th>
-              <th className="py-1.5" />
+            <tr className="border-b border-border text-xs text-muted-foreground font-medium">
+              <th className="py-2.5 pr-4">Mesero</th>
+              <th className="py-2.5 pr-4 text-right">Cobró</th>
+              <th className="py-2.5 pr-4 text-right">Entregó</th>
+              <th className="py-2.5 pr-4 text-right">Pendiente</th>
+              <th className="py-2.5" />
             </tr>
           </thead>
           <tbody>
             {cuadre.map((m) => (
               <tr key={m.userId} className="border-b border-border/60 align-middle">
-                <td className="py-1.5 pr-4">{m.nombre}</td>
-                <td className="py-1.5 pr-4 text-right">{formatoPesos(m.cobrado)}</td>
-                <td className="py-1.5 pr-4 text-right">{formatoPesos(m.entregado)}</td>
-                <td className={`py-1.5 pr-4 text-right font-semibold ${m.pendiente > 0 ? "text-amber-600" : m.pendiente < 0 ? "text-red-600" : "text-green-700"}`}>
+                <td className="py-2.5 pr-4">{m.nombre}</td>
+                <td className="py-2.5 pr-4 text-right">{formatoPesos(m.cobrado)}</td>
+                <td className="py-2.5 pr-4 text-right">{formatoPesos(m.entregado)}</td>
+                <td className={`py-2.5 pr-4 text-right font-semibold ${m.pendiente > 0 ? "text-aviso" : m.pendiente < 0 ? "text-peligro" : "text-exito"}`}>
                   {m.pendiente === 0 ? "Al día" : formatoPesos(m.pendiente)}
                 </td>
-                <td className="py-1.5 text-right">
+                <td className="py-2.5 text-right">
                   {entregando?.userId === m.userId ? (
                     <span className="flex items-center justify-end gap-1">
                       <span className="w-28">
@@ -86,7 +86,7 @@ export function CuadreMeseros({ token, cuadre, onCambio }: { token: string; cuad
           </tbody>
         </table>
       </div>
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-peligro">{error}</p> : null}
     </section>
   );
 }

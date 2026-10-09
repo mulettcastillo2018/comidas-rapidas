@@ -102,14 +102,14 @@ export function ConfiguracionFacturacion({
         </p>
       ) : null}
       <fieldset disabled={soloLectura} className="space-y-5">
-      <label className="flex items-center gap-2 rounded-xl border border-border p-3 text-sm font-semibold">
+      <label className="flex items-center gap-2 rounded-2xl border border-border p-3 text-sm font-semibold bg-surface shadow-suave">
         <input type="checkbox" checked={campos.activa} onChange={(e) => set("activa", e.target.checked)} />
         Facturar electrónicamente cada cuenta cobrada
         <span className="font-normal text-muted-foreground">(lo cobrado antes de activarla no se factura)</span>
       </label>
 
-      <fieldset className="space-y-3 rounded-xl border border-border p-3">
-        <legend className="px-1 text-sm font-bold">Conexión con Alanube</legend>
+      <fieldset className="space-y-3 rounded-2xl border border-border p-3 bg-surface shadow-suave">
+        <legend className="px-1 text-sm font-semibold">Conexión con Alanube</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo label="Ambiente">
             <select
@@ -137,8 +137,8 @@ export function ConfiguracionFacturacion({
         </div>
       </fieldset>
 
-      <fieldset className="space-y-3 rounded-xl border border-border p-3">
-        <legend className="px-1 text-sm font-bold">Empresa</legend>
+      <fieldset className="space-y-3 rounded-2xl border border-border p-3 bg-surface shadow-suave">
+        <legend className="px-1 text-sm font-semibold">Empresa</legend>
         <div className="grid gap-3 sm:grid-cols-3">
           <Campo label="NIT" ayuda={campos.nit ? `Dígito de verificación: ${digitoVerificacion(campos.nit)}` : "Sin dígito de verificación"}>
             <input {...texto("nit")} inputMode="numeric" className={entrada} />
@@ -161,8 +161,8 @@ export function ConfiguracionFacturacion({
         <p className="text-xs text-muted-foreground">Guarda antes de usar estos botones. En el sandbox, Alanube usa el NIT de pruebas 900559088.</p>
       </fieldset>
 
-      <fieldset className="space-y-3 rounded-xl border border-border p-3">
-        <legend className="px-1 text-sm font-bold">Impuesto y documento</legend>
+      <fieldset className="space-y-3 rounded-2xl border border-border p-3 bg-surface shadow-suave">
+        <legend className="px-1 text-sm font-semibold">Impuesto y documento</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo label="Impuesto incluido en los precios de la carta">
             <select
@@ -187,8 +187,8 @@ export function ConfiguracionFacturacion({
         </div>
       </fieldset>
 
-      <fieldset className="space-y-3 rounded-xl border border-border p-3">
-        <legend className="px-1 text-sm font-bold">Numeración de facturación electrónica (resolución DIAN)</legend>
+      <fieldset className="space-y-3 rounded-2xl border border-border p-3 bg-surface shadow-suave">
+        <legend className="px-1 text-sm font-semibold">Numeración de facturación electrónica (resolución DIAN)</legend>
         <div className="grid gap-3 sm:grid-cols-4">
           <Campo label="Resolución">
             <input {...texto("feResolucion")} className={entrada} />
@@ -222,8 +222,8 @@ export function ConfiguracionFacturacion({
         ) : null}
       </fieldset>
 
-      <div className="rounded-xl border border-border p-3 text-sm">
-        <p className="font-bold">Documento equivalente POS (si lo usas)</p>
+      <div className="rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
+        <p className="font-semibold">Documento equivalente POS (si lo usas)</p>
         <p className="mt-1 text-muted-foreground">
           Cada sede tiene su caja y su propia resolución de numeración POS: se configuran en{" "}
           <Link href="/admin/sedes" className="font-semibold text-accent">
@@ -233,8 +233,8 @@ export function ConfiguracionFacturacion({
         </p>
       </div>
 
-      <fieldset className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2">
-        <legend className="px-1 text-sm font-bold">Notas para anular</legend>
+      <fieldset className="grid gap-3 rounded-2xl border border-border p-3 sm:grid-cols-2 bg-surface shadow-suave">
+        <legend className="px-1 text-sm font-semibold">Notas para anular</legend>
         <Campo label="Prefijo de notas crédito">
           <input {...texto("notaPrefijo")} className={entrada} />
         </Campo>
@@ -243,9 +243,9 @@ export function ConfiguracionFacturacion({
         </Campo>
       </fieldset>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
       {soloLectura ? null : (
-        <button disabled={guardando} className="btn-primary rounded-full px-6 py-2 text-sm disabled:opacity-50">
+        <button disabled={guardando} className="btn-primary rounded-xl px-6 py-2 text-sm disabled:opacity-50">
           {guardando ? "Guardando…" : "Guardar configuración"}
         </button>
       )}

@@ -114,11 +114,11 @@ export default function AdminMostradorPage() {
       <p className="text-sm text-muted-foreground">
         Pedidos de clientes sin mesa (QR de mostrador) — se atienden y se cobran aquí, en caja. Se actualiza solo.
       </p>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
       {lectorResaltado}
 
       <section>
-        <h2 className="text-sm font-bold">Esperando confirmación en caja</h2>
+        <h2 className="text-base font-semibold tracking-tight">Esperando confirmación en caja</h2>
         {solicitudes.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No hay pedidos de mostrador esperando ahora mismo.</p>
         ) : (
@@ -142,7 +142,7 @@ export default function AdminMostradorPage() {
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-2 text-sm font-bold">
+                  <p className="mt-2 text-sm font-semibold">
                     Total: {formatoPesos(total)}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -160,7 +160,7 @@ export default function AdminMostradorPage() {
                     <button
                       onClick={() => handleDescartar(solicitud)}
                       disabled={confirmandoId === solicitud.id}
-                      className="w-full rounded-full border border-border px-4 py-1.5 text-sm text-muted-foreground"
+                      className="w-full rounded-xl border border-border px-4 py-1.5 text-sm text-muted-foreground"
                     >
                       Descartar
                     </button>
@@ -173,13 +173,13 @@ export default function AdminMostradorPage() {
       </section>
 
       <section>
-        <h2 className="text-sm font-bold">En preparación / listos para recoger</h2>
+        <h2 className="text-base font-semibold tracking-tight">En preparación / listos para recoger</h2>
         {pedidos.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No hay pedidos de mostrador activos en este momento.</p>
         ) : (
           <div className="mt-3 space-y-3">
             {pedidos.map((pedido) => (
-              <div key={pedido.id} className="rounded-xl border border-border p-4">
+              <div key={pedido.id} className="rounded-2xl border border-border p-4 bg-surface shadow-suave">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold">{pedido.nombreCliente}</p>
@@ -213,7 +213,7 @@ export default function AdminMostradorPage() {
                 {pedido.estado === "LISTO" ? (
                   <button
                     onClick={() => handleRecogido(pedido)}
-                    className="btn-primary mt-3 w-full rounded-full px-3 py-1.5 text-xs"
+                    className="btn-primary mt-3 w-full rounded-xl px-3 py-1.5 text-xs"
                   >
                     Marcar como recogido
                   </button>

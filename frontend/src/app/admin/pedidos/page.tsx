@@ -71,9 +71,9 @@ export default function AdminPedidosPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {porMesa.map(([clave, { titulo, items }]) => (
-            <div key={clave} className="rounded-xl border border-border p-4">
+            <div key={clave} className="rounded-2xl border border-border p-4 bg-surface shadow-suave">
               <div className="flex items-center justify-between">
-                <h2 className="font-bold">{titulo}</h2>
+                <h2 className="font-semibold">{titulo}</h2>
                 <span className="text-xs text-muted-foreground">
                   {items[0]?.pedido.mesaSesion
                     ? `Mesero: ${nombreCompleto(items[0].pedido.mesaSesion.mesero) || "—"}`
@@ -86,7 +86,7 @@ export default function AdminPedidosPage() {
                   return (
                     <div
                       key={item.id}
-                      className={`rounded-lg border p-2 text-sm ${atrasado ? "border-2 border-red-600 bg-red-50" : "border-border"}`}
+                      className={`rounded-lg border p-2 text-sm ${atrasado ? "border-2 border-peligro bg-peligro/10" : "border-border"}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span>
@@ -105,13 +105,13 @@ export default function AdminPedidosPage() {
                         </span>
                       </div>
                       {item.paraLlevar ? (
-                        <p className="text-xs font-bold text-accent">🥡 Para llevar</p>
+                        <p className="text-xs font-semibold text-accent">🥡 Para llevar</p>
                       ) : item.comensal ? (
                         <p className="text-xs text-muted-foreground">Para: {item.comensal.nombre}</p>
                       ) : null}
                       {item.notas ? <p className="text-xs text-muted-foreground">{item.notas}</p> : null}
                       {atrasado ? (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] font-bold text-red-700">
+                        <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-peligro">
                           <AlertTriangle size={12} /> Atrasado
                         </p>
                       ) : null}

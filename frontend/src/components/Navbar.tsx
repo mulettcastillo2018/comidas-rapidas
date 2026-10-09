@@ -31,8 +31,13 @@ const ENLACES: { href: string; label: string; icono: LucideIcon; roles: UserRole
 
 const esActiva = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
-// Los tableros (cocina y pantalla) usan todo el ancho: la barra se alinea con ellos.
-const esTablero = (pathname: string) => /^\/(cocina|pantalla)(\/|$)/.test(pathname);
+// La barra toma el mismo ancho que el contenido de cada zona para quedar alineada:
+// tableros (cocina y pantalla) a todo el ancho, administración amplia, el resto estándar.
+function anchoBarra(pathname: string) {
+  if (/^\/(cocina|pantalla)(\/|$)/.test(pathname)) return "max-w-[1920px]";
+  if (/^\/admin(\/|$)/.test(pathname)) return "max-w-[1600px]";
+  return "max-w-7xl";
+}
 
 function iniciales(user: AuthUser) {
   return [user.nombre, user.apellido]
@@ -126,7 +131,7 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/75 backdrop-blur-xl backdrop-saturate-150 print:hidden">
-      <div className={cx("mx-auto flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-8", esTablero(pathname) ? "max-w-[1920px]" : "max-w-7xl")}>
+      <div className={cx("mx-auto flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-8", anchoBarra(pathname))}>
         <Marca />
 
         {enlaces.length ? (

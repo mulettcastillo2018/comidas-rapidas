@@ -97,7 +97,7 @@ export default function AdminClientesPage() {
   return (
     <div className="space-y-6">
       {config ? (
-        <section className="space-y-2 rounded-xl border border-border p-4 text-sm">
+        <section className="space-y-2 rounded-2xl border border-border p-4 text-sm bg-surface shadow-suave">
           <label className="flex items-center gap-2 font-semibold">
             <input type="checkbox" checked={config.puntosActivo} onChange={(e) => guardarConfig({ puntosActivo: e.target.checked })} />
             Programa de puntos activo
@@ -110,7 +110,7 @@ export default function AdminClientesPage() {
               step={100}
               defaultValue={config.pesosPorPunto}
               onBlur={(e) => Number(e.target.value) !== config.pesosPorPunto && guardarConfig({ pesosPorPunto: Math.round(Number(e.target.value)) })}
-              className="w-24 rounded-lg border border-border px-2 py-1"
+              className="w-24 rounded-xl border border-border px-2 py-1"
             />
             pesos · cada punto vale
             <input
@@ -118,7 +118,7 @@ export default function AdminClientesPage() {
               min={1}
               defaultValue={config.valorPunto}
               onBlur={(e) => Number(e.target.value) !== config.valorPunto && guardarConfig({ valorPunto: Math.round(Number(e.target.value)) })}
-              className="w-20 rounded-lg border border-border px-2 py-1"
+              className="w-20 rounded-xl border border-border px-2 py-1"
             />
             pesos · se canjean desde
             <input
@@ -126,7 +126,7 @@ export default function AdminClientesPage() {
               min={1}
               defaultValue={config.minimoCanje}
               onBlur={(e) => Number(e.target.value) !== config.minimoCanje && guardarConfig({ minimoCanje: Math.round(Number(e.target.value)) })}
-              className="w-20 rounded-lg border border-border px-2 py-1"
+              className="w-20 rounded-xl border border-border px-2 py-1"
             />
             puntos
           </div>
@@ -139,26 +139,26 @@ export default function AdminClientesPage() {
 
       {r ? (
         <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-          <div className="rounded-xl border border-border p-3">
+          <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
             <p className="text-xs text-muted-foreground">Clientes inscritos</p>
-            <p className="text-xl font-extrabold">{r.clientes}</p>
+            <p className="text-xl font-semibold tracking-tight">{r.clientes}</p>
           </div>
-          <div className="rounded-xl border border-border p-3">
+          <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
             <p className="text-xs text-muted-foreground">Puntos sin canjear</p>
-            <p className="text-xl font-extrabold">{r.puntosPendientes.toLocaleString("es-CO")}</p>
+            <p className="text-xl font-semibold tracking-tight">{r.puntosPendientes.toLocaleString("es-CO")}</p>
             <p className="text-xs text-muted-foreground">equivalen a {formatoPesos(r.valorPuntosPendientes)} en descuentos</p>
           </div>
-          <div className="rounded-xl border border-border p-3">
+          <div className="rounded-2xl border border-border p-3 bg-surface shadow-suave">
             <p className="text-xs text-muted-foreground">Cuentas con cliente identificado</p>
-            <p className="text-xl font-extrabold">{r.cuentas > 0 ? Math.round((r.cuentasConCliente / r.cuentas) * 100) : 0}%</p>
+            <p className="text-xl font-semibold tracking-tight">{r.cuentas > 0 ? Math.round((r.cuentasConCliente / r.cuentas) * 100) : 0}%</p>
             <p className="text-xs text-muted-foreground">últimos 30 días</p>
           </div>
         </div>
       ) : null}
 
       <section className="space-y-2">
-        <input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar por nombre o celular" className="w-full max-w-sm rounded-lg border border-border px-3 py-2 text-sm" />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar por nombre o celular" className="w-full max-w-sm rounded-xl border border-border px-3 py-2 text-sm" />
+        {error ? <p className="text-sm text-peligro">{error}</p> : null}
         {!lista ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
         ) : lista.clientes.length === 0 ? (
@@ -166,7 +166,7 @@ export default function AdminClientesPage() {
         ) : (
           <ul className="space-y-2">
             {lista.clientes.map((c) => (
-              <li key={c.id} className="rounded-xl border border-border p-3 text-sm">
+              <li key={c.id} className="rounded-2xl border border-border p-3 text-sm bg-surface shadow-suave">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold">{c.nombre}</p>
@@ -175,7 +175,7 @@ export default function AdminClientesPage() {
                       {c.ultimaVisita ? ` · última ${formatoFechaHora(c.ultimaVisita)}` : ""}
                     </p>
                   </div>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">⭐ {c.puntos}</span>
+                  <span className="rounded-full bg-aviso/10 px-2 py-0.5 text-xs font-semibold text-aviso">⭐ {c.puntos}</span>
                 </div>
                 <div className="mt-2 flex gap-3 text-xs">
                   <button onClick={() => verMovimientos(c.id)} className="text-accent">
@@ -184,7 +184,7 @@ export default function AdminClientesPage() {
                   <button onClick={() => ajustar(c)} className="text-accent">
                     Ajustar puntos
                   </button>
-                  <button onClick={() => eliminar(c)} className="text-red-600">
+                  <button onClick={() => eliminar(c)} className="text-peligro">
                     Borrar sus datos
                   </button>
                 </div>
@@ -198,7 +198,7 @@ export default function AdminClientesPage() {
                           {m.nota ? ` (${m.nota})` : ""}
                           {m.usuario ? ` · ${m.usuario}` : ""}
                         </span>
-                        <span className={m.puntos < 0 ? "text-red-600" : "text-green-700"}>
+                        <span className={m.puntos < 0 ? "text-peligro" : "text-exito"}>
                           {m.puntos > 0 ? "+" : ""}
                           {m.puntos} → {m.saldo}
                         </span>

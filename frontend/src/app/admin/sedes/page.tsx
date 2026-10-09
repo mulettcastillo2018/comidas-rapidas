@@ -89,7 +89,7 @@ export default function AdminSedesPage() {
     await guardar(`/sedes/${sede.id}`, "PUT", cambios, "Sede actualizada");
   }
 
-  if (!datos) return error ? <p className="text-sm text-red-600">{error}</p> : null;
+  if (!datos) return error ? <p className="text-sm text-peligro">{error}</p> : null;
   const general = datos.puedeCambiar;
 
   return (
@@ -98,22 +98,22 @@ export default function AdminSedesPage() {
         Cada sede tiene sus mesas, su personal, su cocina, su inventario y su caja, con su propia numeración POS. La carta y los precios son los mismos en
         todas. {general ? "Elige en la barra de arriba la sede en la que estás trabajando." : null}
       </p>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-peligro">{error}</p> : null}
 
       <div className="space-y-3">
         {datos.sedes.map((sede) => (
-          <div key={sede.id} className={`rounded-xl border p-4 ${sede.activa ? "border-border" : "border-dashed border-border opacity-70"}`}>
+          <div key={sede.id} className={`rounded-2xl border p-4 bg-surface shadow-suave ${sede.activa ? "border-border" : "border-dashed border-border opacity-70"}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="flex items-center gap-2 font-semibold">
                   <MapPin size={16} className="text-accent" />
                   {sede.nombre}
                   {sede.esPrincipal ? (
-                    <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                    <span className="flex items-center gap-1 rounded-full bg-aviso/10 px-2 py-0.5 text-[10px] font-semibold text-aviso">
                       <Star size={10} /> principal
                     </span>
                   ) : null}
-                  {!sede.activa ? <span className="text-xs text-red-600">(inactiva)</span> : null}
+                  {!sede.activa ? <span className="text-xs text-peligro">(inactiva)</span> : null}
                   {sede.id === datos.actual ? <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">aquí estás</span> : null}
                 </p>
                 <p className="text-sm text-muted-foreground">
@@ -124,7 +124,7 @@ export default function AdminSedesPage() {
                   {sede.cajaPlaca ? `${sede.cajaPlaca} (${sede.cajaUbicacion ?? "sin ubicación"})` : "sin datos"}
                 </p>
                 {sede.faltantesPos && sede.faltantesPos.length > 0 ? (
-                  <p className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+                  <p className="mt-1 flex items-center gap-1 text-xs text-aviso">
                     <AlertTriangle size={12} /> Para el documento POS falta: {sede.faltantesPos.join(", ")}.
                   </p>
                 ) : null}
@@ -147,7 +147,7 @@ export default function AdminSedesPage() {
                         sede.activa ? `¿Desactivar ${sede.nombre}? Deja de aparecer para elegir y su QR de mostrador deja de funcionar.` : `¿Reactivar ${sede.nombre}?`
                       )
                     }
-                    className="text-red-600"
+                    className="text-peligro"
                   >
                     {sede.activa ? "Desactivar" : "Reactivar"}
                   </button>
@@ -158,10 +158,10 @@ export default function AdminSedesPage() {
               <form onSubmit={(e) => editar(sede, e)} className="mt-3 border-t border-border pt-3">
                 <CamposSede sede={sede} general={general} />
                 <div className="mt-3 flex gap-2">
-                  <button type="submit" disabled={guardando} className="btn-primary rounded-full px-5 py-1.5 text-sm disabled:opacity-50">
+                  <button type="submit" disabled={guardando} className="btn-primary rounded-xl px-5 py-1.5 text-sm disabled:opacity-50">
                     Guardar
                   </button>
-                  <button type="button" onClick={() => setEditando(null)} className="rounded-full border border-border px-5 py-1.5 text-sm text-muted-foreground">
+                  <button type="button" onClick={() => setEditando(null)} className="rounded-xl border border-border px-5 py-1.5 text-sm text-muted-foreground">
                     Cancelar
                   </button>
                 </div>
@@ -173,23 +173,23 @@ export default function AdminSedesPage() {
 
       {general ? (
         creando ? (
-          <form onSubmit={crear} className="space-y-3 rounded-xl border border-border p-4">
-            <h2 className="text-sm font-bold">Nueva sede</h2>
+          <form onSubmit={crear} className="space-y-3 rounded-2xl border border-border p-4 bg-surface shadow-suave">
+            <h2 className="text-base font-semibold tracking-tight">Nueva sede</h2>
             <CamposSede general />
             <p className="text-xs text-muted-foreground">
               Después crea sus mesas (eligiéndola en la barra) y asigna su personal en Usuarios. La numeración POS y la caja se pueden completar luego.
             </p>
             <div className="flex gap-2">
-              <button type="submit" disabled={guardando} className="btn-primary flex-1 rounded-full px-6 py-2 text-sm disabled:opacity-50">
+              <button type="submit" disabled={guardando} className="btn-primary flex-1 rounded-xl px-6 py-2 text-sm disabled:opacity-50">
                 {guardando ? "Creando…" : "Crear sede"}
               </button>
-              <button type="button" onClick={() => setCreando(false)} className="rounded-full border border-border px-6 py-2 text-sm text-muted-foreground">
+              <button type="button" onClick={() => setCreando(false)} className="rounded-xl border border-border px-6 py-2 text-sm text-muted-foreground">
                 Cancelar
               </button>
             </div>
           </form>
         ) : (
-          <button onClick={() => setCreando(true)} className="btn-primary rounded-full px-4 py-2 text-sm">
+          <button onClick={() => setCreando(true)} className="btn-primary rounded-xl px-4 py-2 text-sm">
             + Nueva sede
           </button>
         )
@@ -212,7 +212,7 @@ function CamposSede({ sede, general }: { sede?: Sede; general: boolean }) {
         </label>
       </div>
       <fieldset className="rounded-lg border border-border p-3">
-        <legend className="px-1 text-xs font-bold">Documento equivalente POS (resolución de la DIAN para esta caja)</legend>
+        <legend className="px-1 text-xs font-semibold">Documento equivalente POS (resolución de la DIAN para esta caja)</legend>
         <div className="grid gap-3 sm:grid-cols-3">
           <input name="posResolucion" placeholder="N.º de resolución" defaultValue={sede?.posResolucion ?? ""} maxLength={14} className={campo} />
           <input name="posPrefijo" placeholder="Prefijo (p. ej. POS1)" defaultValue={sede?.posPrefijo ?? ""} maxLength={4} pattern="[A-Za-z0-9]{1,4}" className={campo} />
@@ -231,7 +231,7 @@ function CamposSede({ sede, general }: { sede?: Sede; general: boolean }) {
         </div>
       </fieldset>
       <fieldset className="rounded-lg border border-border p-3">
-        <legend className="px-1 text-xs font-bold">Caja registradora</legend>
+        <legend className="px-1 text-xs font-semibold">Caja registradora</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <input name="cajaPlaca" placeholder="Placa o serial" defaultValue={sede?.cajaPlaca ?? ""} maxLength={50} className={campo} />
           <input name="cajaUbicacion" placeholder="Ubicación (p. ej. Local Centro)" defaultValue={sede?.cajaUbicacion ?? ""} maxLength={100} className={campo} />

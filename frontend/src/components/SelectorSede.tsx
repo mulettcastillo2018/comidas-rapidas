@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, MapPin } from "lucide-react";
+import { cx } from "@/components/ui";
 import { activas, elegirSede, nombreActual, useAlcanceSedes, useSedes } from "@/lib/sedes";
 
 // En la barra: la sede en la que se trabaja. El administrador general la
@@ -54,12 +55,16 @@ export function AlcanceSedes() {
     { valor: true, label: "Todas las sedes" },
   ];
   return (
-    <div className="flex w-fit gap-1 rounded-full bg-muted p-1 text-xs font-semibold print:hidden">
+    <div className="flex w-fit gap-1 rounded-full bg-surface-2 p-1 text-xs font-semibold ring-1 ring-border ring-inset print:hidden">
       {opciones.map((o) => (
         <button
           key={String(o.valor)}
           onClick={() => setTodas(o.valor)}
-          className={`rounded-full px-3 py-1 ${todas === o.valor ? "bg-background shadow-sm" : "text-muted-foreground"}`}
+          aria-pressed={todas === o.valor}
+          className={cx(
+            "rounded-full px-3.5 py-1.5 transition-all duration-200 ease-salida",
+            todas === o.valor ? "bg-surface text-foreground shadow-suave" : "text-muted-foreground hover:text-foreground",
+          )}
         >
           {o.label}
         </button>
