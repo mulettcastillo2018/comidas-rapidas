@@ -6,7 +6,7 @@
     "dev": "next dev -p 3010",
     "build": "next build",
     "start": "next start -p 3010",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/**/*.test.mjs\""
   },
   "dependencies": {
     "lucide-react": "^1.48.0",

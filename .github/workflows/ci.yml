@@ -106,6 +106,13 @@ jobs:
       - name: Tipos
         run: npx tsc --noEmit
       - name: Pruebas unitarias
-        run: npm test
+        # Si fallan, el final de la salida queda como anotación del CI (visible sin iniciar sesión).
+        run: |
+          set +e
+          npm test > pruebas.log 2>&1
+          codigo=$?
+          cat pruebas.log
+          if [ $codigo -ne 0 ]; then echo "::error title=Pruebas del frontend::$(tail -c 1500 pruebas.log | tr '\n' ' ')"; fi
+          exit $codigo
       - name: Compilación de producción
         run: npm run build
