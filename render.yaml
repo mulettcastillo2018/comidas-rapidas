@@ -1,0 +1,26 @@
+# Blueprint de Render para la API de comidas rápidas (el frontend va en Vercel).
+# Paso a paso en docs/DESPLIEGUE.md. Los valores con `sync: false` se escriben
+# en el panel de Render al crear el servicio (nunca en el repositorio).
+services:
+  - type: web
+    name: comidas-rapidas-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    region: ohio
+    # --include=dev: TypeScript y la CLI de Prisma son dependencias de
+    # desarrollo y hacen falta para compilar y migrar.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false

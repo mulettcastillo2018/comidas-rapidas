@@ -1,5 +1,7 @@
 # Comidas Rápidas — pedidos en tiempo real para restaurantes
 
+[![CI](https://github.com/mulettcastillo2018/comidas-rapidas/actions/workflows/ci.yml/badge.svg)](https://github.com/mulettcastillo2018/comidas-rapidas/actions/workflows/ci.yml)
+
 Sistema completo para restaurantes de comida rápida: el mesero toma los pedidos en el celular, la cocina los recibe al instante y los despacha plato por plato, el cliente puede pedir desde el QR de su mesa, y la administración maneja caja, inventario, costos, facturación electrónica DIAN y varias sedes.
 
 > **Construido dirigiendo un agente de IA** (Claude Code). Yo definí el producto, las reglas del negocio, las prioridades y cómo se verificaba cada fase; el agente escribió el código, las migraciones y las pruebas. Detalle en [Cómo se construyó con IA](#cómo-se-construyó-con-ia).
@@ -143,9 +145,11 @@ npm run db:verificar                       # el esquema coincide con la base
 
 Requisitos, cuentas de prueba y precauciones en [backend/tests/README.md](backend/tests/README.md).
 
+En GitHub Actions (`.github/workflows/ci.yml`) corren en cada cambio contra un PostgreSQL desechable: migraciones, tipos, pruebas unitarias, build, las suites de extremo a extremo contra la API compilada y el apagado ordenado del servidor.
+
 ## Estado
 
-Funcional de punta a punta en local. Pendiente: desplegar una demo pública, usar credenciales reales de Alanube (se probó con su ambiente de pruebas y un simulador) e integración continua en GitHub Actions.
+Funcional de punta a punta y lista para publicar: integración continua en GitHub Actions y guía de despliegue en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md) (Neon, Render y Vercel). Pendiente: publicar la demo y conectar el ambiente de pruebas real de Alanube (la facturación electrónica se probó contra un simulador local de su API).
 
 ---
 
