@@ -8,7 +8,7 @@ const INTERVALO_MS = 30_000;
 // de preparación y, si nadie lo ha marcado, avisa a cocina. `retrasoNotificado`
 // evita repetir el aviso en cada tick.
 export function iniciarRevisionRetrasos() {
-  setInterval(() => {
+  return setInterval(() => {
     revisarItemsRetrasados().catch((err) => console.error("Error revisando retrasos:", err));
   }, INTERVALO_MS);
 }

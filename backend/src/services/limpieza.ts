@@ -16,7 +16,7 @@ const DIAS_VIGENCIA_TELEFONO = 30;
 export function iniciarLimpiezaPeriodica() {
   const correr = () => ejecutarLimpieza().catch((err) => console.error("Error en la limpieza periódica:", err));
   correr();
-  setInterval(correr, INTERVALO_MS);
+  return setInterval(correr, INTERVALO_MS);
 }
 
 // Exportada también para las pruebas, que la corren sin esperar el intervalo.

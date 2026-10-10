@@ -419,7 +419,7 @@ export function programarProcesamiento() {
 }
 
 export function iniciarFacturacionPeriodica() {
-  setInterval(() => void procesarPendientes(), INTERVALO_MS);
+  return setInterval(() => void procesarPendientes(), INTERVALO_MS);
 }
 
 // ---------------------------------------------------------------------------

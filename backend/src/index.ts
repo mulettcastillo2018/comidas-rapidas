@@ -33,6 +33,7 @@ import { gastosRouter } from "./routes/gastos.routes";
 import { turnosRouter } from "./routes/turnos.routes";
 import { configuracionRouter, reportesGestionRouter } from "./routes/gestion.routes";
 import { allowedOrigins } from "./lib/corsOrigins";
+import { prisma } from "./lib/prisma";
 import { ErrorDeNegocio } from "./lib/errores";
 import { iniciarRevisionRetrasos } from "./services/retrasoChecker";
 import { iniciarLimpiezaPeriodica } from "./services/limpieza";
@@ -54,8 +55,14 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true });
+// Para el monitoreo del hosting: confirma también que la base responde.
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, db: true });
+  } catch {
+    res.status(503).json({ ok: false, db: false });
+  }
 });
 
 app.use("/auth", authRouter);
@@ -123,12 +130,33 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const httpServer = http.createServer(app);
-createRealtimeServer(httpServer);
+const io = createRealtimeServer(httpServer);
 
 httpServer.listen(port, () => {
   console.log(`API escuchando en http://localhost:${port}`);
 });
 
-iniciarRevisionRetrasos();
-iniciarLimpiezaPeriodica();
-iniciarFacturacionPeriodica();
+const tareasPeriodicas = [iniciarRevisionRetrasos(), iniciarLimpiezaPeriodica(), iniciarFacturacionPeriodica()];
+
+// Apagado ordenado: el hosting (Render, un contenedor) avisa con SIGTERM antes de
+// reiniciar o publicar una versión nueva. Se dejan de aceptar conexiones, se
+// detienen las tareas periódicas, se deja terminar lo que está en curso y se
+// cierra la base. Si algo se queda colgado, se sale igual a los 10 s.
+let apagando = false;
+async function apagar(senal: string) {
+  if (apagando) return;
+  apagando = true;
+  console.log(`${senal} recibido: cerrando el servidor...`);
+  setTimeout(() => {
+    console.error("El cierre tardó más de 10 s: saliendo de todas formas.");
+    process.exit(1);
+  }, 10_000).unref();
+  tareasPeriodicas.forEach(clearInterval);
+  // io.close() desconecta los sockets y cierra también el servidor HTTP.
+  await new Promise<void>((resolve) => io.close(() => resolve()));
+  await prisma.$disconnect();
+  console.log("Servidor cerrado.");
+  process.exit(0);
+}
+process.on("SIGTERM", () => void apagar("SIGTERM"));
+process.on("SIGINT", () => void apagar("SIGINT"));

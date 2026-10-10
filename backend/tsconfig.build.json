@@ -1,0 +1,10 @@
+{
+  // Compilación de producción: solo la aplicación (sin el seed ni las
+  // pruebas), para que quede en dist/index.js como espera `npm start`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*"]
+}
