@@ -1,0 +1,109 @@
+# Integración continua: en cada push a main y en cada pull request se revisa que
+# el backend y el frontend compilen, se corren las pruebas unitarias y las de
+# extremo a extremo contra una base PostgreSQL nueva (nunca la real), y se
+# comprueba que la API se apague en orden al recibir SIGTERM (como en Render).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: comidas
+          POSTGRES_PASSWORD: comidas
+          POSTGRES_DB: comidas_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U comidas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Valores solo para esta base desechable de pruebas.
+      DATABASE_URL: postgresql://comidas:comidas@localhost:5432/comidas_ci
+      JWT_SECRET: secreto-solo-para-las-pruebas-automaticas
+      SEED_ADMIN_PASSWORD: clave-solo-para-ci
+      E2E_PASSWORD: clave-solo-para-ci
+      FRONTEND_URL: http://localhost:3010
+      PORT: "4001"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Migraciones
+        run: npx prisma migrate deploy
+      - name: El schema coincide con las migraciones
+        run: npm run db:verificar
+      - name: Tipos (código y pruebas)
+        run: |
+          npx tsc --noEmit
+          npx tsc -p tests
+      - name: Pruebas unitarias
+        run: npm test
+      - name: Compilación de producción
+        run: npm run build && test -f dist/index.js
+      - name: Datos iniciales (categorías, productos y mesas de ejemplo)
+        run: npx prisma db seed
+      - name: Arrancar la API compilada (como en producción)
+        run: |
+          node dist/index.js > api.log 2>&1 &
+          echo $! > api.pid
+          for i in $(seq 1 30); do curl -sf http://localhost:4001/health && exit 0; sleep 1; done
+          cat api.log; exit 1
+      - name: Cuentas de prueba de mesero y cocina
+        run: |
+          TOKEN=$(curl -sf -X POST http://localhost:4001/auth/login -H "content-type: application/json" \
+            -d "{\"email\":\"admin@comidasrapidas.test\",\"password\":\"$E2E_PASSWORD\"}" \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).token))")
+          for cuenta in "mesero2_test MESERO Mesero" "cocina_test COCINA Cocina"; do
+            set -- $cuenta
+            curl -sf -X POST http://localhost:4001/usuarios -H "content-type: application/json" -H "authorization: Bearer $TOKEN" \
+              -d "{\"nombre\":\"$3\",\"apellido\":\"CI\",\"email\":\"$1@comidasrapidas.test\",\"password\":\"$E2E_PASSWORD\",\"role\":\"$2\"}" > /dev/null
+          done
+      - name: Pruebas de extremo a extremo
+        run: npm run test:e2e
+      - name: Apagado ordenado con SIGTERM
+        run: |
+          kill -TERM "$(cat api.pid)"
+          for i in $(seq 1 15); do kill -0 "$(cat api.pid)" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$(cat api.pid)" 2>/dev/null; then echo "La API no se cerró a tiempo"; exit 1; fi
+          grep -q "Servidor cerrado." api.log
+      - name: Registro de la API si algo falló
+        if: failure()
+        run: cat api.log
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:4001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Tipos
+        run: npx tsc --noEmit
+      - name: Pruebas unitarias
+        run: npm test
+      - name: Compilación de producción
+        run: npm run build
